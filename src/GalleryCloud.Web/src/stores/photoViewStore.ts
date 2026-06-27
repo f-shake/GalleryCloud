@@ -1,33 +1,40 @@
 import { defineStore } from 'pinia'
-import { ref, shallowRef } from 'vue'
+import { ref } from 'vue'
 
 export interface ThumbRect { x: number; y: number; width: number; height: number }
+
+let sessionId = 0
 
 export const usePhotoViewStore = defineStore('photoView', () => {
   const photoId = ref<string | null>(null)
   const startRect = ref<ThumbRect | null>(null)
   const open = ref(false)
+  const session = ref(0)
+  let closeTimer: ReturnType<typeof setTimeout> | null = null
 
   function show(id: string, rect: ThumbRect) {
+    if (open.value) return
+    if (closeTimer) { clearTimeout(closeTimer); closeTimer = null }
+    sessionId++
+    session.value = sessionId
     photoId.value = id
     startRect.value = rect
     open.value = true
-    history.pushState({ photoView: true }, '', `/photo/${id}`)
   }
 
   function close() {
+    if (!open.value) return
     open.value = false
-    setTimeout(() => { photoId.value = null; startRect.value = null }, 350)
-    history.back()
+    if (closeTimer) clearTimeout(closeTimer)
+    const sid = session.value
+    closeTimer = setTimeout(() => {
+      if (session.value === sid) {
+        photoId.value = null
+        startRect.value = null
+      }
+      closeTimer = null
+    }, 350)
   }
 
-  // Handle browser back button
-  function onPopState() {
-    if (open.value) {
-      open.value = false
-      setTimeout(() => { photoId.value = null; startRect.value = null }, 350)
-    }
-  }
-
-  return { photoId, startRect, open, show, close, onPopState }
+  return { photoId, startRect, open, session, show, close }
 })

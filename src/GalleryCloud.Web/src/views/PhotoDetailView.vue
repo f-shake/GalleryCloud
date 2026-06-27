@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
+import { ref, computed, watch } from 'vue'
 import client from '../api/client'
 import { thumbUrl } from '../composables/useThumbnailUrl'
 import { usePhotoViewStore } from '../stores/photoViewStore'
@@ -30,11 +30,19 @@ const startTransform = computed(() => {
 
 const imgStyle = computed(() => {
   const base = { width: vw + 'px', height: vh + 'px' }
-  if (phase.value === 'start' || phase.value === 'exit') return { ...base, transform: startTransform.value }
+  if (phase.value === 'start' || phase.value === 'exit')
+    return { ...base, transform: startTransform.value }
   return base
 })
 
-const imgClass = computed(() => phase.value === 'start' ? 'pv-img' : 'pv-img pv-img--anim')
+const imgClass = computed(() => {
+  const c = ['pv-img']
+  if (phase.value !== 'start') c.push('pv-img--anim')
+  if (phase.value === 'start') c.push('pv-img--cover')
+  if (phase.value === 'exit') c.push('pv-img--fade')
+  return c
+})
+
 const backdropOn = computed(() => phase.value === 'done')
 
 const src = computed(() => phase.value === 'done' && previewReady.value ? previewSrc.value : gridSrc.value)
@@ -43,6 +51,7 @@ const originalUrl = computed(() => `/api/photos/${store.photoId}/file?token=${lo
 watch(() => store.open, async (val) => {
   if (!val || !store.photoId) return
   const id = store.photoId
+  const sid = store.session
   gridSrc.value = thumbUrl(id, 'grid', 800)
   previewReady.value = false
   photo.value = null
@@ -52,15 +61,18 @@ watch(() => store.open, async (val) => {
 
   // Wait for DOM, then expand
   await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)))
+  if (sid !== store.session) return  // aborted by newer session
   phase.value = 'expand'
 
   // Load metadata
-  try { const res = await client.get(`/photos/${id}`); photo.value = res.data } catch { /* */ }
+  try { const res = await client.get(`/photos/${id}`); if (sid === store.session) photo.value = res.data } catch { /* */ }
 
   // Preload preview
   previewSrc.value = thumbUrl(id, 'preview', 2560)
   const img = new Image()
-  img.onload = () => { previewReady.value = true; phase.value = 'done' }
+  img.onload = () => {
+    if (sid === store.session) { previewReady.value = true; phase.value = 'done' }
+  }
   img.src = previewSrc.value
 })
 
@@ -76,8 +88,7 @@ function doClose() {
   setTimeout(() => store.close(), 350)
 }
 
-onMounted(() => { window.addEventListener('popstate', store.onPopState) })
-onUnmounted(() => { window.removeEventListener('popstate', store.onPopState) })
+
 </script>
 
 <template>
@@ -134,10 +145,15 @@ onUnmounted(() => { window.removeEventListener('popstate', store.onPopState) })
 .pv-img {
   object-fit: contain; border-radius: 0; will-change: transform;
 }
-.pv-img:not(.pv-img--anim) { transition: none; border-radius: 4px; }
+.pv-img:not(.pv-img--anim) { transition: none; border-radius: 4px; opacity: 0; }
 .pv-img--anim {
-  transition: transform .35s cubic-bezier(.25,.46,.45,.94), border-radius .35s ease;
+  transition: transform .35s cubic-bezier(.25,.46,.45,.94), border-radius .35s ease, opacity .2s ease;
   border-radius: 0;
+}
+.pv-img--cover { object-fit: cover; }
+.pv-img--fade {
+  opacity: 0;
+  transition: transform .35s cubic-bezier(.25,.46,.45,.94), border-radius .35s ease, opacity .15s ease .25s;
 }
 
 .pv-topbar {

@@ -76,10 +76,10 @@ const defaultExpanded = computed(() => tree.value.slice(0, 10).map(n => n.path))
       <div v-else-if="loading" style="text-align:center;padding:32px"><el-icon class="is-loading" :size="24"><Loading /></el-icon></div>
       <div v-else-if="photos.length" :style="{ display:'grid', gridTemplateColumns:`repeat(${columns}, 1fr)`, gap:'4px' }">
         <div v-for="p in photos" :key="p.id"
-          style="cursor:pointer;overflow:hidden;border-radius:4px;background:var(--el-fill-color-light)"
-          :style="{ aspectRatio: (p.width && p.height) ? p.width/p.height : '1' }"
+          style="cursor:pointer;overflow:hidden;border-radius:4px;background:var(--el-fill-color-light);aspect-ratio:1"
           @click="onPhotoClick(p.id, $event)">
-          <el-image :src="thumbUrl(p.id, 'grid', Math.ceil(400/columns*3))" fit="cover" lazy style="width:100%;height:100%" />
+          <img :src="thumbUrl(p.id, 'grid', Math.ceil(400/columns*3))" loading="lazy"
+            style="width:100%;height:100%;object-fit:cover;display:block" />
         </div>
       </div>
     </div>
