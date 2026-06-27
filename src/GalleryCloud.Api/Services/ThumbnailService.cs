@@ -21,6 +21,14 @@ public class ThumbnailService : IThumbnailService
     private readonly ILogger<ThumbnailService> _logger;
     private readonly ConcurrentDictionary<string, SemaphoreSlim> _photoLocks = new();
 
+    // Separate semaphores: preview has dedicated slots, grid uses the rest
+    private SemaphoreSlim _gridSemaphore = new(2, 2);
+    private SemaphoreSlim _previewSemaphore = new(2, 2);
+    private readonly int _gridMax = 2;
+    private readonly int _previewMax = 2;
+    private int _gridWaiting = 0;
+    private int _previewWaiting = 0;
+
     private ThumbnailGenerationStatus _regenerationStatus = new();
     private CancellationTokenSource? _regenerationCts;
 
@@ -39,8 +47,9 @@ public class ThumbnailService : IThumbnailService
         _logger = logger;
     }
 
-    public async Task<Stream?> GetThumbnailAsync(string photoId, ThumbnailSize size, int width)
+    public async Task<Stream?> GetThumbnailAsync(string photoId, ThumbnailSize size, int width, CancellationToken ct = default)
     {
+        ct.ThrowIfCancellationRequested();
         using var scope = _scopeFactory.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
 
@@ -77,7 +86,26 @@ public class ThumbnailService : IThumbnailService
         var fullPath = Path.GetFullPath(Path.Combine(user.RootPath, photo.FilePath));
         if (!File.Exists(fullPath)) return null;
 
-        // Generate thumbnail with per-photo lock
+        // Global concurrency: preview has dedicated slots, grid queues separately
+        var isPreview = sizeKey == "preview";
+        var globalSem = isPreview ? _previewSemaphore : _gridSemaphore;
+
+        int waitingBefore;
+        if (isPreview) waitingBefore = Interlocked.Increment(ref _previewWaiting);
+        else waitingBefore = Interlocked.Increment(ref _gridWaiting);
+        if (waitingBefore > 1)
+            _logger.LogInformation("缩略图队列 [{Size}] {PhotoId}: {Waiting} 排队中", sizeKey, photoId[..8], waitingBefore);
+
+        await globalSem.WaitAsync(ct);
+
+        var active = 0;
+        if (isPreview) { active = _previewMax - _previewSemaphore.CurrentCount; Interlocked.Decrement(ref _previewWaiting); }
+        else { active = _gridMax - _gridSemaphore.CurrentCount; Interlocked.Decrement(ref _gridWaiting); }
+        if (active > 1 || waitingBefore > 1)
+            _logger.LogInformation("缩略图生成 [{Size}] {PhotoId}: {Active} 并发", sizeKey, photoId[..8], active);
+        try
+        {
+        // Per-photo lock to prevent duplicate generation
         var semaphore = _photoLocks.GetOrAdd(photoId, _ => new SemaphoreSlim(1, 1));
         await semaphore.WaitAsync();
         try
@@ -92,9 +120,9 @@ public class ThumbnailService : IThumbnailService
             }
 
             // Generate — pick settings based on size
-            var isPreview = sizeKey == "preview";
-            var format = await _settings.GetAsync(isPreview ? "preview.format" : "thumbnail.format", "webp");
-            var quality = await _settings.GetAsync(isPreview ? "preview.quality" : "thumbnail.quality", 80);
+            var isPreviewGen = sizeKey == "preview";
+            var format = await _settings.GetAsync(isPreviewGen ? "preview.format" : "thumbnail.format", "webp");
+            var quality = await _settings.GetAsync(isPreviewGen ? "preview.quality" : "thumbnail.quality", 80);
             var cacheDir = await _settings.GetAsync("thumbnail.cacheDir", "data/thumbnails");
 
             var cacheAbsoluteDir = Path.GetFullPath(Path.Combine(Directory.GetCurrentDirectory(), cacheDir, user.Id, sizeKey));
@@ -108,7 +136,8 @@ public class ThumbnailService : IThumbnailService
 
             var cachePath = Path.Combine(cacheAbsoluteDir, $"{photoId}_{width}{extension}");
 
-            using var image = await Image.LoadAsync(fullPath);
+            ct.ThrowIfCancellationRequested();
+            using var image = await Image.LoadAsync(fullPath, ct);
             IImageEncoder encoder = format.ToLowerInvariant() switch
             {
                 "jpg" or "jpeg" => new JpegEncoder { Quality = quality },
@@ -120,7 +149,7 @@ public class ThumbnailService : IThumbnailService
 
             // Clamp to max resolution for preview
             var targetW = width;
-            if (isPreview)
+            if (isPreviewGen)
             {
                 var maxRes = await _settings.GetAsync("preview.maxResolution", 2560);
                 targetW = Math.Min(targetW, maxRes);
@@ -152,6 +181,7 @@ public class ThumbnailService : IThumbnailService
             }
 
             await db.SaveChangesAsync();
+            _logger.LogInformation("缩略图完成 [{Size}] {PhotoId}", sizeKey, photoId[..8]);
 
             var resultBytes = await File.ReadAllBytesAsync(cachePath);
             CacheInMemory($"thumb:{photoId}:{sizeKey}", resultBytes);
@@ -165,6 +195,11 @@ public class ThumbnailService : IThumbnailService
         finally
         {
             semaphore.Release();
+        }
+        }
+        finally
+        {
+            globalSem.Release();
         }
     }
 

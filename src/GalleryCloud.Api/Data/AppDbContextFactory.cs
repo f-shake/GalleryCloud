@@ -8,7 +8,7 @@ public class AppDbContextFactory : IDesignTimeDbContextFactory<AppDbContext>
     public AppDbContext CreateDbContext(string[] args)
     {
         var optionsBuilder = new DbContextOptionsBuilder<AppDbContext>();
-        optionsBuilder.UseSqlite("Data Source=gallerycloud.db");
+        optionsBuilder.UseSqlite("Data Source=App_Data/gallerycloud.db");
         return new AppDbContext(optionsBuilder.Options);
     }
 }

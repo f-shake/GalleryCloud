@@ -11,7 +11,7 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Configuration.AddJsonFile("appsettings.json", optional: false, reloadOnChange: true);
 
 var connectionString = builder.Configuration.GetConnectionString("Default")
-    ?? "Data Source=data/gallerycloud.db";
+    ?? "Data Source=App_Data/gallerycloud.db";
 
 builder.Services.Configure<AuthOptions>(builder.Configuration.GetSection("Auth"));
 builder.Services.AddDbContext<AppDbContext>(options => options.UseSqlite(connectionString));

@@ -44,7 +44,7 @@ public static class DbMigrator
             Username = "admin",
             PasswordHash = HashPassword("admin"),
             DisplayName = "Administrator",
-            RootPath = Path.Combine(Directory.GetCurrentDirectory(), "data", "photos"),
+            RootPath = Path.Combine(Directory.GetCurrentDirectory(), "App_Data", "photos"),
             IsAdmin = true,
             IsActive = true,
         };

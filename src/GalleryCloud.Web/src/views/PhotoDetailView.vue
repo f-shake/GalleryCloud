@@ -9,7 +9,8 @@ const store = usePhotoViewStore()
 const photo = ref<any>(null)
 const favorited = ref(false)
 const showInfo = ref(false)
-const phase = ref<'start' | 'expand' | 'done' | 'exit'>('start')
+const phase = ref<'start' | 'expand' | 'show' | 'done' | 'exit'>('start')
+const showBar = ref(false)
 const gridSrc = ref('')
 const previewSrc = ref('')
 const previewReady = ref(false)
@@ -43,37 +44,40 @@ const imgClass = computed(() => {
   return c
 })
 
-const backdropOn = computed(() => phase.value === 'done')
+const backdropOn = computed(() => phase.value !== 'start' && phase.value !== 'exit')
 
-const src = computed(() => phase.value === 'done' && previewReady.value ? previewSrc.value : gridSrc.value)
+const src = computed(() => previewReady.value ? previewSrc.value : gridSrc.value)
 const originalUrl = computed(() => `/api/photos/${store.photoId}/file?token=${localStorage.getItem('token') || ''}`)
 
 watch(() => store.open, async (val) => {
   if (!val || !store.photoId) return
   const id = store.photoId
   const sid = store.session
-  gridSrc.value = thumbUrl(id, 'grid', 800)
+  // Start preview preload IMMEDIATELY — before any animation work
+  previewSrc.value = thumbUrl(id, 'preview', 2560)
+  const img = new Image()
+  img.onload = () => { if (sid === store.session) { previewReady.value = true; phase.value = 'done' } }
+  img.onerror = () => { if (sid === store.session) { phase.value = 'done' } } // also show buttons even if preview fails
+  img.src = previewSrc.value
+
+  gridSrc.value = thumbUrl(id, 'grid', 320)
   previewReady.value = false
   photo.value = null
   favorited.value = false
   showInfo.value = false
   phase.value = 'start'
+  showBar.value = false
 
-  // Wait for DOM, then expand
-  await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)))
-  if (sid !== store.session) return  // aborted by newer session
-  phase.value = 'expand'
+  // One frame to paint start position, then expand
+  requestAnimationFrame(() => {
+    if (sid !== store.session) return
+    phase.value = 'expand'
+    // Show buttons after animation completes (350ms)
+    setTimeout(() => { if (sid === store.session) { showBar.value = true; phase.value = 'show' } }, 380)
+  })
 
-  // Load metadata
+  // Load metadata in background
   try { const res = await client.get(`/photos/${id}`); if (sid === store.session) photo.value = res.data } catch { /* */ }
-
-  // Preload preview
-  previewSrc.value = thumbUrl(id, 'preview', 2560)
-  const img = new Image()
-  img.onload = () => {
-    if (sid === store.session) { previewReady.value = true; phase.value = 'done' }
-  }
-  img.src = previewSrc.value
 })
 
 function toggleFav() {
@@ -84,6 +88,7 @@ function toggleFav() {
 
 function doClose() {
   if (phase.value === 'start') return
+  showBar.value = false
   phase.value = 'exit'
   setTimeout(() => store.close(), 350)
 }
@@ -99,7 +104,7 @@ function doClose() {
     </div>
 
     <!-- Top bar -->
-    <div v-if="phase === 'done'" class="pv-topbar">
+    <div v-if="showBar" class="pv-topbar">
       <el-button circle :icon="'ArrowLeft'" @click="doClose" class="glass-btn" />
       <div style="flex:1" />
       <el-button circle :icon="favorited ? 'StarFilled' : 'Star'" @click="toggleFav"
@@ -145,7 +150,7 @@ function doClose() {
 .pv-img {
   object-fit: contain; border-radius: 0; will-change: transform;
 }
-.pv-img:not(.pv-img--anim) { transition: none; border-radius: 4px; opacity: 0; }
+.pv-img:not(.pv-img--anim) { transition: none; border-radius: 4px; }
 .pv-img--anim {
   transition: transform .35s cubic-bezier(.25,.46,.45,.94), border-radius .35s ease, opacity .2s ease;
   border-radius: 0;

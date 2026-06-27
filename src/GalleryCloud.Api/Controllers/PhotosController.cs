@@ -130,7 +130,7 @@ public class PhotosController : ControllerBase
             _ => ThumbnailSize.Grid
         };
 
-        var stream = await _thumbnailService.GetThumbnailAsync(id, thumbSize, w);
+        var stream = await _thumbnailService.GetThumbnailAsync(id, thumbSize, w, HttpContext.RequestAborted);
         if (stream == null)
             return NotFound(new { error = "Photo not found or unsupported format" });
 

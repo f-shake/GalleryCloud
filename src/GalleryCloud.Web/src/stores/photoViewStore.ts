@@ -10,6 +10,8 @@ export const usePhotoViewStore = defineStore('photoView', () => {
   const startRect = ref<ThumbRect | null>(null)
   const open = ref(false)
   const session = ref(0)
+  // Incremented to signal v-lazy-img to cancel all pending loads
+  const cancelTick = ref(0)
   let closeTimer: ReturnType<typeof setTimeout> | null = null
 
   function show(id: string, rect: ThumbRect) {
@@ -19,6 +21,7 @@ export const usePhotoViewStore = defineStore('photoView', () => {
     session.value = sessionId
     photoId.value = id
     startRect.value = rect
+    cancelTick.value++
     open.value = true
   }
 
@@ -31,10 +34,11 @@ export const usePhotoViewStore = defineStore('photoView', () => {
       if (session.value === sid) {
         photoId.value = null
         startRect.value = null
+        cancelTick.value++
       }
       closeTimer = null
     }, 350)
   }
 
-  return { photoId, startRect, open, session, show, close }
+  return { photoId, startRect, open, session, cancelTick, show, close }
 })

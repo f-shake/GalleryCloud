@@ -55,12 +55,11 @@ function onScroll() {
       </div>
       <div :style="{ display:'grid', gridTemplateColumns:`repeat(${columns}, 1fr)`, gap:'4px' }">
         <div v-for="p in group.photos" :key="p.id"
-          style="cursor:pointer;overflow:hidden;border-radius:4px;background:var(--el-fill-color-light);aspect-ratio:1"
+          class="thumb-cell"
           @click="onPhotoClick(p.id, $event)">
           <img
-            :src="thumbUrl(p.id, 'grid', Math.ceil(400/columns*3))"
-            loading="lazy"
-            style="width:100%;height:100%;object-fit:cover;display:block"
+            v-lazy-img="thumbUrl(p.id, 'grid', Math.ceil(400/columns*3))"
+            class="thumb-img"
           />
         </div>
       </div>

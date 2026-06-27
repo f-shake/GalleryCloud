@@ -88,7 +88,9 @@ async function save() {
                   <el-option v-for="o in f.options" :key="o.v" :label="o.l" :value="o.v" />
                 </el-select>
                 <el-input-number
-                  v-else-if="f.type === 'number'" v-model="settings[f.key]"
+                  v-else-if="f.type === 'number'"
+                  :model-value="Number(settings[f.key]) || 0"
+                  @update:model-value="settings[f.key] = String($event)"
                   :min="f.key.includes('quality') ? 10 : 1"
                   :max="f.key.includes('quality') ? 100 : 32768"
                 />

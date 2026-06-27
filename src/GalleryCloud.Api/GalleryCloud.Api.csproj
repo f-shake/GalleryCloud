@@ -22,7 +22,7 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <Watch Remove="data\**" />
+    <Watch Remove="App_Data\**" />
   </ItemGroup>
 
 </Project>

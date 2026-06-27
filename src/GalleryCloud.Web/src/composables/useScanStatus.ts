@@ -1,4 +1,4 @@
-import { ref, onUnmounted } from 'vue'
+import { ref } from 'vue'
 import client from '../api/client'
 
 const isScanning = ref(false)
@@ -18,5 +18,3 @@ async function poll() {
   try { const r = await client.get('/admin/scan/status'); isScanning.value = r.data.isRunning }
   catch { /* */ }
 }
-
-onUnmounted(() => { if (timer) clearInterval(timer) })  // eslint-disable-line

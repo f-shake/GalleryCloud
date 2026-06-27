@@ -50,11 +50,8 @@ function onScroll() {
     <el-empty v-if="!loading && photos.length === 0 && !isScanning" description="暂无收藏" />
 
     <div v-else :style="{ display:'grid', gridTemplateColumns:`repeat(${columns}, 1fr)`, gap:'4px' }">
-      <div v-for="p in photos" :key="p.id"
-        style="cursor:pointer;overflow:hidden;border-radius:4px;background:var(--el-fill-color-light);aspect-ratio:1"
-        @click="onPhotoClick(p.id, $event)">
-        <img :src="thumbUrl(p.id, 'grid', Math.ceil(400/columns*3))" loading="lazy"
-          style="width:100%;height:100%;object-fit:cover;display:block" />
+      <div v-for="p in photos" :key="p.id" class="thumb-cell" @click="onPhotoClick(p.id, $event)">
+        <img v-lazy-img="thumbUrl(p.id, 'grid', Math.ceil(400/columns*3))" class="thumb-img" />
       </div>
     </div>
 

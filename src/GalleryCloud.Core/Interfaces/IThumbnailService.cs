@@ -12,7 +12,7 @@ public record ThumbnailGenerationStatus
 
 public interface IThumbnailService
 {
-    Task<Stream?> GetThumbnailAsync(string photoId, ThumbnailSize size, int width);
+    Task<Stream?> GetThumbnailAsync(string photoId, ThumbnailSize size, int width, CancellationToken ct = default);
     Task RegenerateAllAsync(CancellationToken ct = default);
     ThumbnailGenerationStatus RegenerationStatus { get; }
 }
