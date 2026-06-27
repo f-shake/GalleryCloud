@@ -21,4 +21,8 @@
     <ImplicitUsings>enable</ImplicitUsings>
   </PropertyGroup>
 
+  <ItemGroup>
+    <Watch Remove="data\**" />
+  </ItemGroup>
+
 </Project>

@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
 import client from '../api/client'
+import { useScanStatus } from '../composables/useScanStatus'
 import { thumbUrl } from '../composables/useThumbnailUrl'
 
 interface Cluster { lat: number; lng: number; count: number; photos: any[] }

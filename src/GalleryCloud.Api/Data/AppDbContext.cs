@@ -43,6 +43,7 @@ public class AppDbContext : DbContext
             e.Property(x => x.FileFormat).HasMaxLength(16).IsRequired();
             e.Property(x => x.DeviceModel).HasMaxLength(256);
             e.Property(x => x.Md5Hash).HasMaxLength(32);
+        e.Property(x => x.FileModifiedAt);
 
             // Unique per user+path for non-deleted photos
             e.HasIndex(x => new { x.UserId, x.FilePath })

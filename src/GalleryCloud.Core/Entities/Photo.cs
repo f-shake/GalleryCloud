@@ -16,6 +16,7 @@ public class Photo
     public double? Latitude { get; set; }
     public double? Longitude { get; set; }
     public string? Md5Hash { get; set; }
+    public DateTime? FileModifiedAt { get; set; }
     public bool IsDeleted { get; set; }
     public DateTime? DeletedAt { get; set; }
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;

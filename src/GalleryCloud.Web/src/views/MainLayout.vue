@@ -3,6 +3,7 @@ import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { useAuthStore } from '../stores/authStore'
 import { useDark } from '../composables/useDark'
+import client from '../api/client'
 import PhotoDetailView from './PhotoDetailView.vue'
 
 const router = useRouter()
@@ -12,10 +13,23 @@ const { isDark, toggleDark } = useDark()
 
 const isMobile = ref(window.innerWidth < 768)
 const drawerVisible = ref(false)
+const isScanning = ref(false)
+
+let scanTimer: any = null
+async function checkScan() {
+  try { const r = await client.get('/admin/scan/status'); isScanning.value = r.data.isRunning }
+  catch { /* */ }
+}
 
 function onResize() { isMobile.value = window.innerWidth < 768 }
-onMounted(() => window.addEventListener('resize', onResize))
-onUnmounted(() => window.removeEventListener('resize', onResize))
+onMounted(() => {
+  window.addEventListener('resize', onResize)
+  if (auth.isAdmin) { checkScan(); scanTimer = setInterval(checkScan, 5000) }
+})
+onUnmounted(() => {
+  window.removeEventListener('resize', onResize)
+  if (scanTimer) clearInterval(scanTimer)
+})
 
 const navItems = computed(() => [
   { path: '/timeline', title: '时间线', icon: 'Picture' },
@@ -88,6 +102,7 @@ const currentTitle = computed(() => navItems.value.find(n => route.path.startsWi
       </el-drawer>
 
       <el-main class="app-main">
+        <el-alert v-if="isScanning" title="扫描进行中，照片列表可能不完整" type="info" show-icon :closable="false" class="scan-alert" />
         <router-view />
       </el-main>
     </el-container>
@@ -112,6 +127,7 @@ const currentTitle = computed(() => navItems.value.find(n => route.path.startsWi
         </el-popover>
       </el-header>
       <el-main class="app-main">
+        <el-alert v-if="isScanning" title="扫描进行中，照片列表可能不完整" type="info" show-icon :closable="false" class="scan-alert" />
         <router-view />
       </el-main>
     </el-container>
@@ -155,4 +171,5 @@ html, body, #app { margin:0; height:100%; }
   background: var(--el-bg-color-page);
   overflow-y: auto;
 }
+.scan-alert { margin: 8px 16px 0; border-radius: 8px; }
 </style>

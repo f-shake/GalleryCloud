@@ -14,6 +14,7 @@ public record ScanStatus
 public interface IScanService
 {
     ScanStatus Status { get; }
+    void Cancel();
     Task TriggerFullScanAsync(string userId, CancellationToken ct = default);
     Task TriggerIncrementalScanAsync(string userId, CancellationToken ct = default);
     Task TriggerFullScanForAllUsersAsync(CancellationToken ct = default);

@@ -5,12 +5,14 @@ import { usePhotoGrid } from '../composables/usePhotoGrid'
 import client from '../api/client'
 import { thumbUrl } from '../composables/useThumbnailUrl'
 import { usePhotoViewStore } from '../stores/photoViewStore'
+import { useScanStatus } from '../composables/useScanStatus'
 
 interface FolderNode { name: string; path: string; photoCount: number; subFolders: FolderNode[] }
 
 const router = useRouter()
 const viewStore = usePhotoViewStore()
 const { columns, zoomIn, zoomOut } = usePhotoGrid()
+const { isScanning } = useScanStatus()
 const tree = ref<FolderNode[]>([])
 const selPath = ref('')
 const photos = ref<any[]>([])
@@ -72,7 +74,7 @@ const defaultExpanded = computed(() => tree.value.slice(0, 10).map(n => n.path))
           <el-button icon="Plus" @click="zoomIn" :disabled="columns <= 3" />
         </el-button-group>
       </div>
-      <el-empty v-if="!selPath" description="选择左侧文件夹" />
+      <el-empty v-if="!selPath && !isScanning" description="选择左侧文件夹" />
       <div v-else-if="loading" style="text-align:center;padding:32px"><el-icon class="is-loading" :size="24"><Loading /></el-icon></div>
       <div v-else-if="photos.length" :style="{ display:'grid', gridTemplateColumns:`repeat(${columns}, 1fr)`, gap:'4px' }">
         <div v-for="p in photos" :key="p.id"

@@ -14,6 +14,7 @@ public class ScanService : IScanService
     private readonly ILogger<ScanService> _logger;
     private readonly object _statusLock = new();
     private ScanStatus _status = new();
+    private CancellationTokenSource? _cts;
 
     public ScanStatus Status
     {
@@ -28,41 +29,30 @@ public class ScanService : IScanService
         _logger = logger;
     }
 
+    public void Cancel()
+    {
+        _cts?.Cancel();
+        _logger.LogInformation("Scan cancellation requested");
+    }
+
     public async Task TriggerFullScanAsync(string userId, CancellationToken ct = default)
     {
         if (Status.IsRunning) return;
-
-        Status = new ScanStatus { IsRunning = true, Mode = "full", UserId = userId, StartedAt = DateTime.UtcNow };
-
-        try
-        {
-            await RunScanAsync(userId, ScanMode.Full, ct);
-        }
-        finally
-        {
-            Status = new ScanStatus();
-        }
+        await RunWithStatusAsync(userId, ScanMode.Full, ct);
     }
 
     public async Task TriggerIncrementalScanAsync(string userId, CancellationToken ct = default)
     {
         if (Status.IsRunning) return;
-
-        Status = new ScanStatus { IsRunning = true, Mode = "incremental", UserId = userId, StartedAt = DateTime.UtcNow };
-
-        try
-        {
-            await RunScanAsync(userId, ScanMode.Incremental, ct);
-        }
-        finally
-        {
-            Status = new ScanStatus();
-        }
+        await RunWithStatusAsync(userId, ScanMode.Incremental, ct);
     }
 
     public async Task TriggerFullScanForAllUsersAsync(CancellationToken ct = default)
     {
         if (Status.IsRunning) return;
+
+        _cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        var linkedCt = _cts.Token;
 
         Status = new ScanStatus { IsRunning = true, Mode = "full", StartedAt = DateTime.UtcNow };
 
@@ -70,31 +60,60 @@ public class ScanService : IScanService
         {
             using var scope = _scopeFactory.CreateScope();
             var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-            var userIds = await db.Users.Where(u => u.IsActive).Select(u => u.Id).ToListAsync(ct);
+            var users = await db.Users.Where(u => u.IsActive).ToListAsync(linkedCt);
 
-            Status = Status with { TotalFiles = userIds.Count * 1000 }; // rough estimate
-
-            foreach (var userId in userIds)
+            foreach (var user in users)
             {
-                if (ct.IsCancellationRequested) break;
-                Status = Status with { UserId = userId };
-                await RunScanAsync(userId, ScanMode.Full, ct);
+                if (linkedCt.IsCancellationRequested) break;
+                Status = Status with { UserId = user.Id };
+                await RunScanAsync(user, ScanMode.Full, linkedCt);
             }
+        }
+        catch (OperationCanceledException)
+        {
+            _logger.LogInformation("Scan cancelled by user");
         }
         finally
         {
+            _cts?.Dispose();
+            _cts = null;
             Status = new ScanStatus();
         }
     }
 
-    private async Task RunScanAsync(string userId, ScanMode mode, CancellationToken ct)
+    private async Task RunWithStatusAsync(string userId, ScanMode mode, CancellationToken ct)
+    {
+        _cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        var linkedCt = _cts.Token;
+
+        Status = new ScanStatus { IsRunning = true, Mode = mode.ToString().ToLower(), UserId = userId, StartedAt = DateTime.UtcNow };
+
+        try
+        {
+            using var scope = _scopeFactory.CreateScope();
+            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            var user = await db.Users.FirstOrDefaultAsync(u => u.Id == userId, linkedCt);
+            if (user == null) return;
+
+            await RunScanAsync(user, mode, linkedCt);
+        }
+        catch (OperationCanceledException)
+        {
+            _logger.LogInformation("Scan cancelled by user");
+        }
+        finally
+        {
+            _cts?.Dispose();
+            _cts = null;
+            Status = new ScanStatus();
+        }
+    }
+
+    private async Task RunScanAsync(Core.Entities.User user, ScanMode mode, CancellationToken ct)
     {
         using var scope = _scopeFactory.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-        var user = await db.Users.FirstOrDefaultAsync(u => u.Id == userId, ct);
-        if (user == null) return;
 
-        // Load scan settings from DB
         var formatsStr = await _settings.GetAsync("scan.supportedFormats") ?? ".jpg,.jpeg,.heic,.avif,.png,.webp";
         var supportedFormats = formatsStr.Split(',', StringSplitOptions.RemoveEmptyEntries)
             .Select(f => f.Trim().ToLowerInvariant())
@@ -102,10 +121,8 @@ public class ScanService : IScanService
 
         var excludeStr = await _settings.GetAsync("scan.excludePatterns") ?? "**/thumbnails/**";
         var excludeGlobs = excludeStr.Split(',', StringSplitOptions.RemoveEmptyEntries)
-            .Select(p => p.Trim())
-            .ToList();
+            .Select(p => p.Trim()).ToList();
 
-        // Thread limit for scanning
         var parallelThreads = await _settings.GetAsync("thumbnail.parallelThreads", 2);
         var semaphore = new SemaphoreSlim(Math.Max(1, parallelThreads));
 
@@ -116,7 +133,9 @@ public class ScanService : IScanService
             return;
         }
 
-        // Get all files
+        // Enumerate all files first to get accurate count
+        _logger.LogInformation("Enumerating files in {RootPath}...", rootPath);
+        Status = Status with { TotalFiles = 0, ProcessedFiles = -1 }; // -1 = enumerating
         var allFiles = new List<string>();
         var enumOptions = new EnumerationOptions
         {
@@ -126,6 +145,7 @@ public class ScanService : IScanService
 
         foreach (var fmt in supportedFormats)
         {
+            ct.ThrowIfCancellationRequested();
             try
             {
                 var files = Directory.GetFiles(rootPath, $"*{fmt}", enumOptions)
@@ -139,77 +159,59 @@ public class ScanService : IScanService
             }
         }
 
-        // Normalize to relative paths
-        var fileRelativePaths = allFiles
-            .Select(f => f[rootPath.Length..].TrimStart(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar).Replace('\\', '/'))
-            .ToList();
-
-        Status = Status with { TotalFiles = fileRelativePaths.Count, ProcessedFiles = 0 };
+        _logger.LogInformation("Found {Count} files to scan for user {User}", allFiles.Count, user.Id);
+        Status = Status with { TotalFiles = allFiles.Count, ProcessedFiles = 0 };
 
         var log = new ScanLog
         {
-            UserId = userId,
+            UserId = user.Id,
             StartedAt = DateTime.UtcNow,
             Mode = mode == ScanMode.Full ? "full" : "incremental",
-            TotalFound = fileRelativePaths.Count
+            TotalFound = allFiles.Count
         };
         db.ScanLogs.Add(log);
 
-        // Get existing photos for this user
         var existingPhotos = await db.Photos
-            .Where(p => p.UserId == userId)
+            .Where(p => p.UserId == user.Id)
             .ToDictionaryAsync(p => p.FilePath, p => p, ct);
 
-        int newAdded = 0, softDeleted = 0;
-
-        // Process files in parallel batches
+        int newAdded = 0, skipped = 0, errors = 0;
         var newPhotos = new ConcurrentBag<Photo>();
-        var processedCount = 0;
+        int processedCount = 0;
 
-        await Parallel.ForEachAsync(fileRelativePaths, new ParallelOptions
+        await Parallel.ForEachAsync(allFiles, new ParallelOptions
         {
             MaxDegreeOfParallelism = Math.Max(1, parallelThreads),
             CancellationToken = ct
-        }, async (relativePath, innerCt) =>
+        }, async (fullPath, innerCt) =>
         {
             await semaphore.WaitAsync(innerCt);
             try
             {
-                var fullPath = Path.Combine(rootPath, relativePath.Replace('/', Path.DirectorySeparatorChar));
+                var relativePath = fullPath[rootPath.Length..]
+                    .TrimStart(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar).Replace('\\', '/');
 
-                if (!File.Exists(fullPath)) return;
-
-                // Check if already exists (skip in incremental mode if unchanged)
                 if (existingPhotos.TryGetValue(relativePath, out var existing))
                 {
                     var fileInfo = new FileInfo(fullPath);
-                    if (existing.FileSize == fileInfo.Length)
+                    var modTime = fileInfo.LastWriteTimeUtc;
+                    if (existing.FileSize == fileInfo.Length && existing.FileModifiedAt == modTime)
                     {
-                        Interlocked.Increment(ref processedCount);
-                        return; // Unchanged
+                        Interlocked.Increment(ref skipped);
+                        return;
                     }
                 }
 
-                // Parse EXIF
                 var exif = ExifService.Extract(fullPath);
-
-                // Compute MD5 (only for new files)
-                string? md5 = null;
-                if (!existingPhotos.ContainsKey(relativePath))
-                {
-                    try { md5 = await HashService.ComputeMd5Async(fullPath); }
-                    catch { /* ignore hash errors */ }
-                }
-
                 var fileInfo2 = new FileInfo(fullPath);
-
                 var photo = new Photo
                 {
-                    UserId = userId,
+                    UserId = user.Id,
                     FilePath = relativePath,
                     FileName = Path.GetFileName(relativePath),
                     FileSize = fileInfo2.Length,
                     FileFormat = Path.GetExtension(relativePath).ToLowerInvariant(),
+                    FileModifiedAt = fileInfo2.LastWriteTimeUtc,
                     Width = exif.Width,
                     Height = exif.Height,
                     Orientation = exif.Orientation,
@@ -217,25 +219,24 @@ public class ScanService : IScanService
                     DeviceModel = exif.DeviceModel,
                     Latitude = exif.Latitude,
                     Longitude = exif.Longitude,
-                    Md5Hash = md5,
                     IsDeleted = false,
                 };
 
                 newPhotos.Add(photo);
-                Interlocked.Increment(ref newAdded);
+                var added = Interlocked.Increment(ref newAdded);
+                if (added % 100 == 0)
+                    _logger.LogInformation("Scanned {Count}/{Total} for user {User}", added, allFiles.Count, user.Id);
             }
             catch (Exception ex)
             {
-                _logger.LogWarning(ex, "Error processing file: {FilePath}", relativePath);
+                Interlocked.Increment(ref errors);
+                _logger.LogWarning(ex, "Error processing: {Path}", fullPath);
             }
             finally
             {
                 semaphore.Release();
                 var current = Interlocked.Increment(ref processedCount);
-                if (current % 100 == 0)
-                {
-                    Status = Status with { ProcessedFiles = current };
-                }
+                Status = Status with { ProcessedFiles = current };
             }
         });
 
@@ -247,8 +248,15 @@ public class ScanService : IScanService
             var existing = existingPhotos.GetValueOrDefault(photo.FilePath);
             if (existing != null)
             {
-                // Update
+                // Invalidate thumbnails if file content changed
+                if (existing.FileSize != photo.FileSize || existing.FileModifiedAt != photo.FileModifiedAt)
+                {
+                    var oldThumbs = await db.ThumbnailCaches.Where(t => t.PhotoId == existing.Id).ToListAsync(ct);
+                    db.ThumbnailCaches.RemoveRange(oldThumbs);
+                }
+
                 existing.FileSize = photo.FileSize;
+                existing.FileModifiedAt = photo.FileModifiedAt;
                 existing.Width = photo.Width;
                 existing.Height = photo.Height;
                 existing.Orientation = photo.Orientation;
@@ -257,6 +265,8 @@ public class ScanService : IScanService
                 existing.Latitude = photo.Latitude;
                 existing.Longitude = photo.Longitude;
                 existing.Md5Hash = photo.Md5Hash;
+                existing.IsDeleted = false;
+                existing.DeletedAt = null;
                 existing.UpdatedAt = DateTime.UtcNow;
             }
             else
@@ -265,8 +275,10 @@ public class ScanService : IScanService
             }
         }
 
-        // Soft-delete photos whose files no longer exist
-        var existingPaths = new HashSet<string>(fileRelativePaths);
+        // Soft-delete missing files
+        int softDeleted = 0;
+        var existingPaths = new HashSet<string>(allFiles
+            .Select(f => f[rootPath.Length..].TrimStart(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar).Replace('\\', '/')));
         foreach (var (path, photo) in existingPhotos)
         {
             if (!existingPaths.Contains(path) && !photo.IsDeleted)
@@ -281,36 +293,30 @@ public class ScanService : IScanService
         log.NewAdded = newAdded;
         log.SoftDeleted = softDeleted;
         log.FinishedAt = DateTime.UtcNow;
-        log.TotalFound = fileRelativePaths.Count;
 
         await db.SaveChangesAsync(ct);
-        _logger.LogInformation("Scan complete for user {UserId}: {NewAdded} new, {SoftDeleted} deleted",
-            userId, newAdded, softDeleted);
+        _logger.LogInformation(
+            "Scan complete: {Total} files, {New} new, {Skipped} skipped, {Deleted} deleted, {Errors} errors",
+            allFiles.Count, newAdded, skipped, softDeleted, errors);
     }
 
     private static bool IsExcluded(string filePath, string rootPath, List<string> globPatterns)
     {
-        var relative = filePath[rootPath.Length..].TrimStart(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar).Replace('\\', '/');
+        var relative = filePath[rootPath.Length..]
+            .TrimStart(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar).Replace('\\', '/');
 
         foreach (var pattern in globPatterns)
         {
-            if (MatchGlob(relative, pattern))
+            var regex = "^" + System.Text.RegularExpressions.Regex.Escape(pattern)
+                .Replace(@"\*\*", "___DB___")
+                .Replace(@"\*", "[^/]*")
+                .Replace("___DB___", ".*") + "$";
+
+            if (System.Text.RegularExpressions.Regex.IsMatch(relative, regex,
+                System.Text.RegularExpressions.RegexOptions.IgnoreCase))
                 return true;
         }
 
         return false;
-    }
-
-    private static bool MatchGlob(string path, string pattern)
-    {
-        // Simple glob matching: ** matches any depth, * matches within segment
-        var regex = "^" + System.Text.RegularExpressions.Regex.Escape(pattern)
-            .Replace(@"\*\*", "___DOUBLESTAR___")
-            .Replace(@"\*", "[^/]*")
-            .Replace("___DOUBLESTAR___", ".*")
-            + "$";
-
-        return System.Text.RegularExpressions.Regex.IsMatch(path, regex,
-            System.Text.RegularExpressions.RegexOptions.IgnoreCase);
     }
 }

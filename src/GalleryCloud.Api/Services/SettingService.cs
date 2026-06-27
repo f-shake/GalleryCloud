@@ -30,7 +30,6 @@ public class SettingService : ISettingService
         ["map.tileUrlNormal"] = "https://tile.openstreetmap.org/{z}/{x}/{y}.png",
         ["map.tileUrlSatellite"] = "https://mt1.google.com/vt/lyrs=s&x={x}&y={y}&z={z}",
         ["map.defaultBasemap"] = "normal",
-        ["auth.tokenExpiryDays"] = "30",
     };
 
     public SettingService(IServiceScopeFactory scopeFactory)

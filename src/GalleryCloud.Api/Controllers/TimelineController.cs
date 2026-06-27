@@ -30,32 +30,27 @@ public class TimelineController : ControllerBase
             .Where(p => p.UserId == _userContext.UserId && !p.IsDeleted && p.TakenAt != null)
             .OrderByDescending(p => p.TakenAt);
 
-        switch (groupLevel)
+        return groupLevel switch
         {
-            case "day":
-                return await GetDayGroups(query, cursor, limit);
-            case "month":
-                return await GetMonthGroups(query, cursor, limit);
-            default:
-                return await GetFlatList(query, cursor, limit);
-        }
+            "day" => await GetDayGroups(query, cursor, limit),
+            "month" => await GetMonthGroups(query, cursor, limit),
+            _ => await GetFlatList(query, cursor, limit),
+        };
     }
 
-    private async Task<IActionResult> GetDayGroups(IQueryable<Core.Entities.Photo> query, string? cursor, int limit)
+    private async Task<IActionResult> GetDayGroups(IOrderedQueryable<Core.Entities.Photo> query, string? cursor, int limit)
     {
         var groups = new List<object>();
         DateTime? cursorDate = null;
-        string? nextCursor = null;
 
         if (!string.IsNullOrEmpty(cursor) && DateTime.TryParse(cursor, out var cdt))
-            cursorDate = cdt;
+            cursorDate = cdt.Date;
 
-        // Fetch photos until we have enough groups or run out
+        var batchSize = 500;
         var offset = 0;
-        var batchSize = 200;
-        var currentDay = string.Empty;
+        var currentDay = "";
         var dayPhotos = new List<object>();
-        var reachCursor = cursorDate == null;
+        var pastCursor = cursorDate == null;
 
         while (groups.Count < limit)
         {
@@ -69,13 +64,17 @@ public class TimelineController : ControllerBase
 
             foreach (var p in batch)
             {
-                var day = p.TakenAt?.ToString("yyyy-MM-dd") ?? "unknown";
+                var takenAt = p.TakenAt;
 
-                if (!reachCursor)
+                // Skip until past cursor date (use date comparison, not string match)
+                if (!pastCursor)
                 {
-                    if (day == cursor) reachCursor = true;
-                    continue;
+                    if (takenAt.HasValue && takenAt.Value.Date >= cursorDate!.Value)
+                        continue;
+                    pastCursor = true;
                 }
+
+                var day = takenAt?.ToString("yyyy-MM-dd") ?? "";
 
                 if (day != currentDay)
                 {
@@ -83,59 +82,61 @@ public class TimelineController : ControllerBase
                     {
                         groups.Add(new { label = FormatDayLabel(currentDay), cursor = currentDay, photos = dayPhotos });
                         dayPhotos = new List<object>();
+                        if (groups.Count >= limit) break;
                     }
                     currentDay = day;
                 }
 
                 dayPhotos.Add(p);
-
-                if (groups.Count >= limit) break;
             }
 
+            if (groups.Count >= limit) break;
             offset += batchSize;
-            if (offset > 10000) break; // safety limit
         }
 
-        // Don't forget the last day
+        // Last day
         if (dayPhotos.Count > 0 && groups.Count < limit)
-        {
             groups.Add(new { label = FormatDayLabel(currentDay), cursor = currentDay, photos = dayPhotos });
-        }
 
-        if (groups.Count > 0)
-            nextCursor = ((dynamic)groups[^1]).cursor;
-
-        var hasMore = groups.Count >= limit;
-
-        return Ok(new { groups, nextCursor, hasMore });
-    }
-
-    private async Task<IActionResult> GetMonthGroups(IQueryable<Core.Entities.Photo> query, string? cursor, int limit)
-    {
-        // Simplified: batch by month
-        var photos = await query.Take(5000).Select(p => new
-        {
-            p.Id, p.FileName, p.FileFormat, p.Width, p.Height, p.Orientation,
-            p.TakenAt, p.Latitude, p.Longitude, p.FileSize
-        }).ToListAsync();
-
-        var grouped = photos
-            .GroupBy(p => p.TakenAt?.ToString("yyyy-MM") ?? "unknown")
-            .Select(g => new
-            {
-                label = FormatMonthLabel(g.Key),
-                cursor = g.Key,
-                photos = g.Take(200).ToList()
-            })
-            .ToList();
-
-        var groups = grouped.Take(limit).ToList<object>();
         var nextCursor = groups.Count > 0 ? ((dynamic)groups[^1]).cursor : null;
 
         return Ok(new { groups, nextCursor, hasMore = groups.Count >= limit });
     }
 
-    private async Task<IActionResult> GetFlatList(IQueryable<Core.Entities.Photo> query, string? cursor, int limit)
+    private async Task<IActionResult> GetMonthGroups(IOrderedQueryable<Core.Entities.Photo> query, string? cursor, int limit)
+    {
+        var allPhotos = await query.Select(p => new
+        {
+            p.Id, p.FileName, p.FileFormat, p.Width, p.Height, p.Orientation,
+            p.TakenAt, p.Latitude, p.Longitude, p.FileSize
+        }).ToListAsync();
+
+        var grouped = allPhotos
+            .GroupBy(p => p.TakenAt?.ToString("yyyy-MM") ?? "")
+            .Where(g => !string.IsNullOrEmpty(g.Key))
+            .Select(g => new
+            {
+                label = FormatMonthLabel(g.Key),
+                cursor = g.Key,
+                photos = g.Take(300).Cast<object>().ToList()
+            })
+            .ToList();
+
+        // Apply cursor
+        var startIdx = 0;
+        if (!string.IsNullOrEmpty(cursor))
+        {
+            var idx = grouped.FindIndex(g => g.cursor == cursor);
+            if (idx >= 0) startIdx = idx + 1;
+        }
+
+        var result = grouped.Skip(startIdx).Take(limit).ToList<object>();
+        var nextCursor = result.Count > 0 ? ((dynamic)result[^1]).cursor : null;
+
+        return Ok(new { groups = result, nextCursor, hasMore = startIdx + limit < grouped.Count });
+    }
+
+    private async Task<IActionResult> GetFlatList(IOrderedQueryable<Core.Entities.Photo> query, string? cursor, int limit)
     {
         int offsetNum = 0;
         if (!string.IsNullOrEmpty(cursor) && int.TryParse(cursor, out var c)) offsetNum = c;
@@ -147,9 +148,12 @@ public class TimelineController : ControllerBase
         }).ToListAsync();
 
         var hasMore = photos.Count >= limit;
-        var groups = new List<object> { new { photos } };
-
-        return Ok(new { groups, nextCursor = hasMore ? (offsetNum + limit).ToString() : null, hasMore });
+        return Ok(new
+        {
+            groups = new[] { new { photos = photos.Cast<object>().ToList() } },
+            nextCursor = hasMore ? (offsetNum + limit).ToString() : null,
+            hasMore
+        });
     }
 
     [HttpGet("years")]
@@ -179,7 +183,6 @@ public class TimelineController : ControllerBase
             .OrderBy(x => x.year).ThenBy(x => x.month)
             .ToListAsync();
 
-        // Pivot to { year, monthCounts: [12] }
         var result = density.GroupBy(d => d.year).Select(g => new
         {
             year = g.Key,
@@ -190,17 +193,9 @@ public class TimelineController : ControllerBase
         return Ok(result);
     }
 
-    private static string FormatDayLabel(string day)
-    {
-        if (DateTime.TryParse(day, out var dt))
-            return $"{dt.Month}月{dt.Day}日";
-        return day;
-    }
+    private static string FormatDayLabel(string d)
+        => DateTime.TryParse(d, out var dt) ? $"{dt.Month}月{dt.Day}日" : d;
 
-    private static string FormatMonthLabel(string month)
-    {
-        if (DateTime.TryParse(month + "-01", out var dt))
-            return $"{dt.Year}年{dt.Month}月";
-        return month;
-    }
+    private static string FormatMonthLabel(string m)
+        => DateTime.TryParse(m + "-01", out var dt) ? $"{dt.Year}年{dt.Month}月" : m;
 }

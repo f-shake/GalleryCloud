@@ -5,10 +5,12 @@ import { usePhotoGrid } from '../composables/usePhotoGrid'
 import client from '../api/client'
 import { thumbUrl } from '../composables/useThumbnailUrl'
 import { usePhotoViewStore } from '../stores/photoViewStore'
+import { useScanStatus } from '../composables/useScanStatus'
 
 const router = useRouter()
 const viewStore = usePhotoViewStore()
 const { columns, zoomIn, zoomOut } = usePhotoGrid()
+const { isScanning } = useScanStatus()
 const photos = ref<any[]>([])
 const total = ref(0)
 const loading = ref(false)
@@ -34,7 +36,7 @@ async function search() {
 </script>
 
 <template>
-  <div style="height:100%;overflow-y:auto;padding:16px">
+  <div style="padding:16px">
     <el-card style="margin-bottom:16px">
       <el-form :model="form" @submit.prevent="search" inline>
         <el-form-item><el-input v-model="form.q" placeholder="文件名" clearable style="width:180px" /></el-form-item>
@@ -64,6 +66,6 @@ async function search() {
       </div>
     </div>
 
-    <el-empty v-if="!loading && photos.length === 0" description="输入条件搜索" />
+    <el-empty v-if="!loading && photos.length === 0 && !isScanning" description="输入条件搜索" />
   </div>
 </template>

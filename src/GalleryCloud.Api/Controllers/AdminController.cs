@@ -153,6 +153,13 @@ public class AdminController : ControllerBase
         return Ok(new { message = "Incremental scan started" });
     }
 
+    [HttpPost("scan/cancel")]
+    public IActionResult CancelScan()
+    {
+        _scanService.Cancel();
+        return Ok(new { message = "Cancelling..." });
+    }
+
     [HttpGet("scan/status")]
     public IActionResult GetScanStatus()
     {

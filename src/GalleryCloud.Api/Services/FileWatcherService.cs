@@ -184,9 +184,6 @@ public class FileWatcherService : BackgroundService
 
             if (photo == null)
             {
-                string? md5 = null;
-                try { md5 = await HashService.ComputeMd5Async(fullPath); } catch { }
-
                 photo = new Photo
                 {
                     UserId = userId,
@@ -201,7 +198,6 @@ public class FileWatcherService : BackgroundService
                     DeviceModel = exif.DeviceModel,
                     Latitude = exif.Latitude,
                     Longitude = exif.Longitude,
-                    Md5Hash = md5,
                     IsDeleted = false,
                 };
                 db.Photos.Add(photo);
