@@ -1,0 +1,6 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/GalleryCloud.Api/GalleryCloud.Api.csproj" />
+    <Project Path="src/GalleryCloud.Core/GalleryCloud.Core.csproj" />
+  </Folder>
+</Solution>

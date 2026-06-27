@@ -1,0 +1,30 @@
+# .NET
+bin/
+obj/
+*.user
+*.suo
+*.DotSettings.user
+launchSettings.json
+
+# Node
+node_modules/
+dist/
+
+# IDE
+.vs/
+.vscode/
+.idea/
+*.swp
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Data (runtime)
+*.db
+*.db-shm
+*.db-wal
+**/Data/thumbnails/
+
+# Publish
+publish/
