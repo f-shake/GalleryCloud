@@ -15,7 +15,6 @@ const showBar = ref(false)
 const gridSrc = ref('')
 const previewSrc = ref('')
 const previewReady = ref(false)
-const gridError = ref(false)
 
 // Zoom & pan
 const scale = ref(1)
@@ -28,36 +27,38 @@ let dragStartX = 0, dragStartY = 0
 let startOffsetX = 0, startOffsetY = 0
 let lastPinchDist = 0
 
-// Carousel slide navigation
+// ── Carousel navigation (only during show/done, zero impact on FLIP) ──
 const slideOffset = ref(0)
 const slideSnapping = ref(false)
 const prevSrc = ref('')
 const nextSrc = ref('')
+const gridError = ref(false)
 const CAROUSEL_BASE = -1
-
 function preloadAdjacent() {
-  const idx = store.currentIndex
-  const items = store.allItems
-  if (idx > 0) prevSrc.value = thumbUrl(items[idx - 1].id, 'grid', 400)
-  else prevSrc.value = ''
-  if (idx >= 0 && idx < items.length - 1) nextSrc.value = thumbUrl(items[idx + 1].id, 'grid', 400)
-  else nextSrc.value = ''
+  const idx = store.currentIndex; const items = store.allItems
+  if (idx > 0) prevSrc.value = thumbUrl(items[idx - 1].id, 'grid', 400); else prevSrc.value = ''
+  if (idx >= 0 && idx < items.length - 1) nextSrc.value = thumbUrl(items[idx + 1].id, 'grid', 400); else nextSrc.value = ''
 }
-
 function commitSlide(direction: number) {
   const target = direction > 0 ? 0 : -2 * vw
-  slideSnapping.value = true
-  slideOffset.value = target
+  slideSnapping.value = true; slideOffset.value = target
   setTimeout(() => {
-    if (direction < 0) store.navigateNext()
-    else store.navigatePrev()
-    slideSnapping.value = false
-    slideOffset.value = CAROUSEL_BASE * vw
-    preloadAdjacent()
+    if (direction < 0) store.navigateNext(); else store.navigatePrev()
+    slideSnapping.value = false; slideOffset.value = CAROUSEL_BASE * vw; preloadAdjacent()
   }, 300)
 }
+const carouselStyle = computed(() => {
+  if (phase.value === 'start' || phase.value === 'exit') return {}
+  return { transform: `translate(${slideOffset.value}px, ${dismissY.value}px)`, transition: slideSnapping.value ? 'transform .3s ease' : 'none' }
+})
 
-// Swipe-down to dismiss & swipe navigation
+// ── Info panel swipe ──
+const infoDragY = ref(0); const infoSnapping = ref(false); let _infoTouchStartY = 0
+function onInfoTouchStart(e: TouchEvent) { _infoTouchStartY = e.touches[0].clientY; infoDragY.value = 0; infoSnapping.value = false }
+function onInfoTouchMove(e: TouchEvent) { const dy = e.touches[0].clientY - _infoTouchStartY; if (dy > 0) { infoDragY.value = dy; e.preventDefault() } }
+function onInfoTouchEnd() { if (infoDragY.value > 60) { infoDragY.value = 0; showInfo.value = false } else { infoSnapping.value = true; infoDragY.value = 0; setTimeout(() => { infoSnapping.value = false }, 250) } }
+
+// Swan-down to dismiss + swipe nav
 const dismissY = ref(0)
 const dismissing = ref(false)
 let isSwipingDown = false
@@ -78,17 +79,6 @@ const startTransform = computed(() => {
   const ecx = vw / 2
   const ecy = vh / 2
   return `translate(${scx - ecx}px, ${scy - ecy}px) scale(${sx}, ${sy})`
-})
-
-const carouselStyle = computed(() => {
-  if (phase.value === 'start' || phase.value === 'exit') return {}
-  const x = slideOffset.value
-  const y = dismissY.value
-  const tr = `translate(${x}px, ${y}px)`
-  return {
-    transform: tr,
-    transition: slideSnapping.value ? 'transform .3s ease' : 'none',
-  }
 })
 
 const imgStyle = computed(() => {
@@ -129,6 +119,7 @@ function clampOffset() {
 }
 
 const src = computed(() => previewReady.value ? previewSrc.value : gridSrc.value)
+const originalUrl = computed(() => `/api/photos/${store.photoId}/file?token=${localStorage.getItem('token') || ''}`)
 
 watch(() => store.open, async (val) => {
   if (!val || !store.photoId) return
@@ -138,9 +129,6 @@ watch(() => store.open, async (val) => {
   scale.value = 1
   offsetX.value = 0
   offsetY.value = 0
-  slideOffset.value = CAROUSEL_BASE * vw; slideSnapping.value = false
-  preloadAdjacent()
-  gridError.value = false
 
   gridSrc.value = store.startImgSrc || thumbUrl(id, 'grid', 400)
   previewReady.value = false
@@ -160,7 +148,7 @@ watch(() => store.open, async (val) => {
       // Load preview AFTER animation completes
       const previewImg = new Image()
       previewImg.onload = () => {
-        if (sid === store.session) { previewSrc.value = previewImg.src; previewReady.value = true; gridError.value = false; phase.value = 'done' }
+        if (sid === store.session) { previewSrc.value = previewImg.src; previewReady.value = true; phase.value = 'done' }
       }
       previewImg.onerror = () => { if (sid === store.session) phase.value = 'done' }
       previewImg.src = thumbUrl(id, 'preview', 2560)
@@ -171,27 +159,23 @@ watch(() => store.open, async (val) => {
   try { const r = await client.get(`/favorites/check/${id}`); if (sid === store.session) favorited.value = r.data.isFavorited } catch { /* */ }
 })
 
-// Navigation (photoId changes without close)
+// Navigation: photoId changes without close → load new photo immediately
 watch(() => store.photoId, async (newId, oldId) => {
   if (!newId || newId === oldId || !store.open) return
-  gridError.value = false
-  scale.value = 1; offsetX.value = 0; offsetY.value = 0
+  // Only allow nav when photo is fully displayed (show/done), not during FLIP or exit
+  if (phase.value !== 'show' && phase.value !== 'done') return
+  gridError.value = false; scale.value = 1; offsetX.value = 0; offsetY.value = 0
   dismissY.value = 0; dismissing.value = false
   const sid = store.session
   gridSrc.value = thumbUrl(newId, 'grid', 400)
-  previewReady.value = false
-  photo.value = null; favorited.value = false; showInfo.value = false
+  previewReady.value = false; photo.value = null; favorited.value = false; showInfo.value = false
   phase.value = 'show'; showBar.value = true
   slideOffset.value = CAROUSEL_BASE * vw; slideSnapping.value = false
   preloadAdjacent()
-
   const previewImg = new Image()
-  previewImg.onload = () => {
-    if (sid === store.session) { previewSrc.value = previewImg.src; previewReady.value = true; gridError.value = false; phase.value = 'done' }
-  }
+  previewImg.onload = () => { if (sid === store.session) { previewSrc.value = previewImg.src; previewReady.value = true; gridError.value = false; phase.value = 'done' } }
   previewImg.onerror = () => { if (sid === store.session) phase.value = 'done' }
   previewImg.src = thumbUrl(newId, 'preview', 2560)
-
   try { const res = await client.get(`/photos/${newId}`); if (sid === store.session) photo.value = res.data } catch { /* */ }
   try { const r = await client.get(`/favorites/check/${newId}`); if (sid === store.session) favorited.value = r.data.isFavorited } catch { /* */ }
 })
@@ -204,26 +188,14 @@ function toggleFav() {
 
 function doClose() {
   if (phase.value === 'start') return
-  dismissY.value = 0; dismissing.value = false
+  dismissY.value = 0; dismissing.value = false; gridError.value = false
   showBar.value = false; showInfo.value = false
+  slideSnapping.value = false; slideOffset.value = CAROUSEL_BASE * vw
   phase.value = 'exit'
   setTimeout(() => store.close(), 350)
 }
 
-function onKeydown(e: KeyboardEvent) {
-  if (e.key === 'Escape') doClose()
-}
-
-// Info panel swipe-down
-const infoDragY = ref(0)
-const infoSnapping = ref(false)
-let _infoTouchStartY = 0
-function onInfoTouchStart(e: TouchEvent) { _infoTouchStartY = e.touches[0].clientY; infoDragY.value = 0; infoSnapping.value = false }
-function onInfoTouchMove(e: TouchEvent) { const dy = e.touches[0].clientY - _infoTouchStartY; if (dy > 0) { infoDragY.value = dy; e.preventDefault() } }
-function onInfoTouchEnd() {
-  if (infoDragY.value > 60) { infoDragY.value = 0; showInfo.value = false }
-  else { infoSnapping.value = true; infoDragY.value = 0; setTimeout(() => { infoSnapping.value = false }, 250) }
-}
+function onKeydown(e: KeyboardEvent) { if (e.key === 'Escape') doClose() }
 
 onMounted(() => window.addEventListener('keydown', onKeydown))
 onUnmounted(() => window.removeEventListener('keydown', onKeydown))
@@ -238,6 +210,7 @@ function onWheel(e: WheelEvent) {
   zoomAnimating.value = true
   clearTimeout(zoomTimer)
   zoomTimer = setTimeout(() => { zoomAnimating.value = false }, 200)
+  // Zoom toward cursor: keep the same image point under the mouse
   const mx = e.clientX
   const my = e.clientY
   offsetX.value = mx - (mx - offsetX.value) * ratio
@@ -249,8 +222,11 @@ function onWheel(e: WheelEvent) {
 // ── Mouse drag ──────────────────────────────────────────────
 function onMouseDown(e: MouseEvent) {
   if (!zoomable.value || scale.value <= 1) return
-  isDragging = true; dragStartX = e.clientX; dragStartY = e.clientY
-  startOffsetX = offsetX.value; startOffsetY = offsetY.value
+  isDragging = true
+  dragStartX = e.clientX
+  dragStartY = e.clientY
+  startOffsetX = offsetX.value
+  startOffsetY = offsetY.value
 }
 function onMouseMove(e: MouseEvent) {
   if (!isDragging) return
@@ -260,19 +236,26 @@ function onMouseMove(e: MouseEvent) {
 }
 function onMouseUp() { isDragging = false }
 
-// ── Touch (pinch + drag + swipe-down + swipe-left/right) ────
+// ── Touch (pinch + drag + swipe-down dismiss) ────────────────
 function onTouchStart(e: TouchEvent) {
+  // Skip if any touch point is on a button/UI element
   for (let i = 0; i < e.touches.length; i++) {
     const el = document.elementFromPoint(e.touches[i].clientX, e.touches[i].clientY)
     if (el && el.closest('.pv-topbar, .pv-info, .glass-btn')) return
   }
   if (e.touches.length === 2) {
     if (!zoomable.value) return
-    lastPinchDist = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY)
+    lastPinchDist = Math.hypot(
+      e.touches[0].clientX - e.touches[1].clientX,
+      e.touches[0].clientY - e.touches[1].clientY
+    )
   } else if (e.touches.length === 1 && scale.value > 1) {
     if (!zoomable.value) return
-    isDragging = true; dragStartX = e.touches[0].clientX; dragStartY = e.touches[0].clientY
-    startOffsetX = offsetX.value; startOffsetY = offsetY.value
+    isDragging = true
+    dragStartX = e.touches[0].clientX
+    dragStartY = e.touches[0].clientY
+    startOffsetX = offsetX.value
+    startOffsetY = offsetY.value
   } else if (e.touches.length === 1 && scale.value === 1 && (phase.value === 'show' || phase.value === 'done')) {
     isSwipingDown = true
     swipeStartY = e.touches[0].clientY; swipeStartX = e.touches[0].clientX
@@ -284,7 +267,10 @@ function onTouchMove(e: TouchEvent) {
   if (e.touches.length === 2) {
     if (!zoomable.value) return
     e.preventDefault()
-    const dist = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY)
+    const dist = Math.hypot(
+      e.touches[0].clientX - e.touches[1].clientX,
+      e.touches[0].clientY - e.touches[1].clientY
+    )
     if (lastPinchDist > 0) {
       const ratio = dist / lastPinchDist
       const newScale = Math.max(1, Math.min(8, scale.value * ratio))
@@ -292,7 +278,8 @@ function onTouchMove(e: TouchEvent) {
       const my = (e.touches[0].clientY + e.touches[1].clientY) / 2
       offsetX.value = mx - (mx - offsetX.value) * (newScale / scale.value)
       offsetY.value = my - (my - offsetY.value) * (newScale / scale.value)
-      scale.value = newScale; clampOffset()
+      scale.value = newScale
+      clampOffset()
     }
     lastPinchDist = dist
   } else if (e.touches.length === 1 && isDragging) {
@@ -304,14 +291,9 @@ function onTouchMove(e: TouchEvent) {
     const dx = e.touches[0].clientX - swipeStartX
     const dy = e.touches[0].clientY - swipeStartY
     if (!swipeHandled && Math.abs(dx) > 10 && Math.abs(dx) > Math.abs(dy)) { isSwipingHorizontal = true; swipeHandled = true }
-    if (isSwipingHorizontal) {
-      e.preventDefault(); dismissY.value = 0
-      slideOffset.value = CAROUSEL_BASE * vw + dx
-    } else if (dy > 0) {
-      e.preventDefault(); dismissY.value = dy * 0.8
-    } else if (dy < -10 && !swipeHandled) {
-      showInfo.value = true; swipeHandled = true
-    }
+    if (isSwipingHorizontal) { e.preventDefault(); dismissY.value = 0; slideOffset.value = CAROUSEL_BASE * vw + dx }
+    else if (dy > 0) { e.preventDefault(); dismissY.value = dy * 0.8 }
+    else if (dy < -10 && !swipeHandled) { showInfo.value = true; swipeHandled = true }
   }
 }
 function onTouchEnd() {
@@ -320,11 +302,9 @@ function onTouchEnd() {
     isSwipingDown = false
     if (isSwipingHorizontal) {
       dismissing.value = false
-      const currentOffset = slideOffset.value
-      const baseOffset = CAROUSEL_BASE * vw
-      const delta = currentOffset - baseOffset
+      const delta = slideOffset.value - CAROUSEL_BASE * vw
       if (Math.abs(delta) > vw * 0.15) { commitSlide(delta > 0 ? 1 : -1) }
-      else { slideSnapping.value = true; slideOffset.value = baseOffset; setTimeout(() => { slideSnapping.value = false }, 300) }
+      else { slideSnapping.value = true; slideOffset.value = CAROUSEL_BASE * vw; setTimeout(() => { slideSnapping.value = false }, 300) }
     } else if (dismissY.value > 100) {
       doClose()
     } else {
@@ -335,20 +315,26 @@ function onTouchEnd() {
 }
 
 // ── Double-click to reset zoom ──────────────────────────────
-function onDblClick() { scale.value = 1; offsetX.value = 0; offsetY.value = 0; clampOffset() }
+function onDblClick() {
+  scale.value = 1; offsetX.value = 0; offsetY.value = 0; clampOffset()
+}
 
 async function downloadOriginal() {
   const id = store.photoId
   if (!id) return
   const token = localStorage.getItem('token') || ''
   try {
-    const res = await fetch(`/api/photos/${id}/file`, { headers: { Authorization: `Bearer ${token}` } })
+    const res = await fetch(`/api/photos/${id}/file`, {
+      headers: { Authorization: `Bearer ${token}` }
+    })
     if (res.status === 404) { ElMessage.error('文件不存在或已被删除'); return }
     if (!res.ok) throw new Error('Download failed')
     const blob = await res.blob()
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
-    a.href = url; a.download = photo.value?.fileName || `${id}${getExt(blob.type)}`; a.click()
+    a.href = url
+    a.download = photo.value?.fileName || `${id}${getExt(blob.type)}`
+    a.click()
     URL.revokeObjectURL(url)
   } catch { /* */ }
 }
@@ -362,7 +348,7 @@ function getExt(mime: string): string {
   <Teleport to="body">
     <div v-if="store.photoId" :class="['pv-bg', backdropOn ? 'pv-bg--on' : '']" @click="doClose" />
 
-    <!-- Image area with zoom/pan + carousel -->
+    <!-- Image area with zoom/pan -->
     <div
       v-if="store.photoId"
       class="pv-img-wrap"
@@ -377,21 +363,17 @@ function getExt(mime: string): string {
       @touchend="onTouchEnd"
       @dblclick="onDblClick"
     >
-      <!-- FLIP image: direct child, active during start/expand/exit -->
       <div v-if="!src || gridError" class="pv-placeholder" />
-      <img v-else-if="phase !== 'show' && phase !== 'done'" :src="src" :class="imgClass" :style="imgStyle" draggable="false" @error="gridError = true" />
-      <!-- Carousel overlay: active during show/done for swipe nav -->
+      <img v-else :src="src" :class="imgClass" :style="imgStyle" draggable="false" @error="gridError = true" />
+      <!-- Carousel overlay: only during show/done, does not affect FLIP img above -->
       <div v-if="phase === 'show' || phase === 'done'" class="pv-carousel" :style="carouselStyle">
         <div v-if="prevSrc" class="pv-carousel-cell" :style="{ left: 0 }"><img :src="prevSrc" class="pv-carousel-img" /></div>
-        <div class="pv-carousel-cell" :style="{ left: vw + 'px' }">
-          <img v-if="src && !gridError" :src="src" :class="imgClass" :style="imgStyle" draggable="false" @error="gridError = true" />
-          <div v-else class="pv-placeholder" />
-        </div>
+        <div class="pv-carousel-cell" :style="{ left: vw + 'px' }"><img v-if="src && !gridError" :src="src" :class="imgClass" :style="imgStyle" draggable="false" @error="gridError = true" /><div v-else class="pv-placeholder" /></div>
         <div v-if="nextSrc" class="pv-carousel-cell" :style="{ left: (vw * 2) + 'px' }"><img :src="nextSrc" class="pv-carousel-img" /></div>
       </div>
     </div>
 
-    <!-- Desktop prev/next arrows -->
+    <!-- Desktop nav arrows -->
     <div v-if="showBar && store.hasPrev && slideOffset === 0" class="pv-nav pv-nav--prev" @click.stop="commitSlide(1)"><el-icon :size="28"><ArrowLeft /></el-icon></div>
     <div v-if="showBar && store.hasNext && slideOffset === 0" class="pv-nav pv-nav--next" @click.stop="commitSlide(-1)"><el-icon :size="28"><ArrowRight /></el-icon></div>
 
@@ -483,12 +465,10 @@ function getExt(mime: string): string {
 .pv-info {
   position: fixed; bottom: 0; left: 0; right: 0; z-index: 10000;
   background: var(--el-bg-color); backdrop-filter: blur(20px);
-  padding: 12px 24px 20px; border-radius: 16px 16px 0 0;
+  padding: 20px 24px; border-radius: 16px 16px 0 0;
   color: var(--el-text-color-primary); max-height: 60vh; overflow-y: auto;
   border-top: 1px solid var(--el-border-color-light);
-  touch-action: pan-y;
 }
-.pv-info-handle { width: 36px; height: 5px; border-radius: 3px; background: var(--el-border-color); margin: 0 auto; }
 .info-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; font-size: 12px; }
 .info-grid div { display: flex; flex-direction: column; gap: 2px; }
 .info-grid span { color: var(--el-text-color-secondary); font-size: 11px; }
@@ -499,6 +479,11 @@ function getExt(mime: string): string {
 .info-slide-enter-from,
 .info-slide-leave-to { transform: translateY(100%); opacity: 0; }
 
+/* Info panel */
+.pv-info { padding-top: 12px !important; touch-action: pan-y; }
+.pv-info-handle { width: 36px; height: 5px; border-radius: 3px; background: var(--el-border-color); margin: 0 auto; }
+
+/* Desktop nav arrows */
 .pv-nav {
   position: fixed; top: 50%; transform: translateY(-50%);
   z-index: 10000; width: 48px; height: 64px;
@@ -512,19 +497,8 @@ function getExt(mime: string): string {
 .pv-nav--next { right: 12px; }
 @media (max-width: 767px) { .pv-nav { display: none; } }
 
-.pv-carousel {
-  position: absolute; top: 0; left: 0;
-  width: calc(300vw); height: 100%;
-  will-change: transform;
-}
-.pv-carousel-cell {
-  position: absolute; top: 0;
-  width: 100vw; height: 100%;
-  display: flex; align-items: center; justify-content: center;
-}
-.pv-carousel-img {
-  width: 100%; height: 100%;
-  object-fit: contain; border-radius: 0;
-  user-select: none; -webkit-user-select: none;
-}
+/* Carousel overlay */
+.pv-carousel { position: absolute; top: 0; left: 0; width: calc(300vw); height: 100%; will-change: transform; pointer-events: none; }
+.pv-carousel-cell { position: absolute; top: 0; width: 100vw; height: 100%; display: flex; align-items: center; justify-content: center; }
+.pv-carousel-img { width: 100%; height: 100%; object-fit: contain; user-select: none; -webkit-user-select: none; }
 </style>
