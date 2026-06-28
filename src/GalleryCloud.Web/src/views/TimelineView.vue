@@ -73,7 +73,7 @@ function onScroll() {
 </script>
 
 <template>
-  <div style="touch-action:pan-y;padding:16px" @touchstart="onTouchStart" @touchmove="onTouchMove" @touchend="onTouchEnd">
+  <div class="tl-wrap" style="touch-action:pan-y" @touchstart="onTouchStart" @touchmove="onTouchMove" @touchend="onTouchEnd">
     <div style="display:flex;align-items:center;gap:8px;margin-bottom:16px">
       <span style="font-size:13px;color:var(--el-text-color-secondary)">{{ columns }}列 · {{ groupLevel === 'day' ? '按天' : groupLevel === 'month' ? '按月' : '平铺' }}</span>
       <div style="flex:1" />
@@ -109,4 +109,7 @@ function onScroll() {
 <style>
 .grid-fade { animation: gridFade .25s ease; }
 @keyframes gridFade { from { opacity: .4; } to { opacity: 1; } }
+@media (max-width: 767px) {
+  .tl-wrap { padding: 0 !important; }
+}
 </style>
