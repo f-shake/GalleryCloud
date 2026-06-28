@@ -17,9 +17,14 @@ const containerRef = ref<HTMLElement | null>(null)
 const rows = ref<RowItem[]>([])
 const ready = ref(false)
 
+const CELL_GAP = 4 // horizontal gap between cells in the grid
+const ROW_GAP = 4  // vertical gap between rows (padding-bottom on each grid)
+
 function estimateRowSize() {
   if (!containerRef.value || columns.value < 1) return 100
-  return Math.floor(containerRef.value.clientWidth / columns.value)
+  const w = containerRef.value.clientWidth
+  // Cell width accounts for horizontal gaps, then add vertical spacing
+  return Math.floor((w - (columns.value - 1) * CELL_GAP) / columns.value) + ROW_GAP
 }
 
 const currentHeader = ref('')
@@ -183,13 +188,13 @@ function onTouchEnd() {
       </el-button-group>
     </div>
 
+    <!-- Date header overlay (outside scroll area, doesn't affect virtualizer) -->
+    <div v-if="currentHeader" class="tl-overlay-header">
+      <el-tag type="info" size="large">{{ currentHeader }}</el-tag>
+    </div>
+
     <!-- Virtual scroller -->
     <div ref="containerRef" class="tl-virt" @scroll="updateHeader">
-      <!-- Sticky current-group header -->
-      <div v-if="currentHeader" class="tl-sticky-header">
-        <el-tag type="info" size="large">{{ currentHeader }}</el-tag>
-      </div>
-
       <!-- Virtualized rows -->
       <div :style="{ height: virtualizer.getTotalSize() + 'px', position: 'relative' }">
         <div
@@ -203,7 +208,7 @@ function onTouchEnd() {
             </div>
           </template>
           <template v-else>
-            <div :style="{ display:'grid', gridTemplateColumns:`repeat(${columns}, 1fr)` }">
+            <div :style="{ display:'grid', gridTemplateColumns:`repeat(${columns}, 1fr)`, gap:'4px', paddingBottom:'4px' }">
               <div
                 v-for="p in (rows[vItem.index] as any).photos"
                 :key="p.id"
@@ -218,10 +223,10 @@ function onTouchEnd() {
       </div>
     </div>
 
-    <!-- Loading / empty states (overlay inside tl-virt area) -->
-    <div v-if="!ready && tl.loading" style="text-align:center;padding:48px"><el-icon class="is-loading" :size="24"><Loading /></el-icon></div>
-    <div v-else-if="isScanning && rows.length === 0" style="text-align:center;padding:48px;color:var(--el-text-color-secondary)">扫描进行中...</div>
-    <div v-else-if="tl.error" style="text-align:center;padding:48px;color:var(--el-color-danger)">{{ tl.error }}</div>
+    <!-- States: absolute overlay, not in flex flow -->
+    <div v-if="!ready && tl.loading" class="tl-state-overlay"><el-icon class="is-loading" :size="24"><Loading /></el-icon></div>
+    <div v-else-if="isScanning && rows.length === 0" class="tl-state-overlay" style="color:var(--el-text-color-secondary)">扫描进行中...</div>
+    <div v-else-if="tl.error" class="tl-state-overlay" style="color:var(--el-color-danger)">{{ tl.error }}</div>
   </div>
 
   <TimeScrubber
@@ -238,12 +243,12 @@ function onTouchEnd() {
 
 <style>
 @media (max-width: 767px) {
-  .tl-wrap { padding: 0 !important; }
+  .tl-wrap { padding: 0 36px 0 0 !important; }
 }
 @media (min-width: 768px) {
   .tl-wrap { padding-right: 52px !important; }
 }
-.tl-wrap { height: 100%; display: flex; flex-direction: column; position: relative; }
+.tl-wrap { position: absolute; inset: 0; display: flex; flex-direction: column; }
 
 /* Toolbar */
 .tl-toolbar {
@@ -259,10 +264,21 @@ function onTouchEnd() {
 .tl-virt::-webkit-scrollbar { display: none; }
 .tl-virt { scrollbar-width: none; }
 
-/* Sticky header inside scroller */
-.tl-sticky-header {
-  position: sticky; top: 0; z-index: 20;
+/* Loading / error / empty states — absolute overlay, never in flex flow */
+.tl-state-overlay {
+  position: absolute; inset: 0;
+  display: flex; align-items: center; justify-content: center;
+  z-index: 5; pointer-events: none;
+}
+
+/* Date header overlay — outside scroll area, absolute positioned */
+.tl-overlay-header {
+  position: absolute;
+  top: 34px; /* below toolbar */
+  left: 0; right: 0;
+  z-index: 20;
   padding: 4px 16px;
   background: var(--el-bg-color-page);
+  pointer-events: none;
 }
 </style>

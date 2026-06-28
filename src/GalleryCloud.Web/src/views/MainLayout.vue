@@ -138,7 +138,7 @@ const currentTitle = computed(() => navItems.value.find(n => route.path.startsWi
 
 <style>
 html, body, #app { margin:0; height:100%; }
-.app-shell { height:100vh; touch-action: pan-y; }
+.app-shell { height:100%; touch-action: pan-y; }
 .app-sidebar {
   background: var(--el-bg-color);
   border-right: 1px solid var(--el-border-color-light);
@@ -171,10 +171,8 @@ html, body, #app { margin:0; height:100%; }
   background: var(--el-bg-color-page);
   overflow-y: auto;
   scrollbar-width: none;
-  display: flex; flex-direction: column;
+  position: relative; /* anchor for absolute children */
 }
-.app-main > .scan-alert { flex-shrink: 0; }
-.app-main > :not(.scan-alert) { flex: 1; min-height: 0; }
 .app-main::-webkit-scrollbar { display: none; }
 .scan-alert { margin: 8px 16px 0; border-radius: 8px; }
 </style>

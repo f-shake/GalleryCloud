@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, watch } from 'vue'
+import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import client from '../api/client'
 import { ElMessage } from 'element-plus'
 import { thumbUrl } from '../composables/useThumbnailUrl'
@@ -126,6 +126,13 @@ function doClose() {
   phase.value = 'exit'
   setTimeout(() => store.close(), 350)
 }
+
+function onKeydown(e: KeyboardEvent) {
+  if (e.key === 'Escape') doClose()
+}
+
+onMounted(() => window.addEventListener('keydown', onKeydown))
+onUnmounted(() => window.removeEventListener('keydown', onKeydown))
 
 // ── Zoom (mouse wheel) ──────────────────────────────────────
 function onWheel(e: WheelEvent) {

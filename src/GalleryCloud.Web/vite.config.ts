@@ -6,6 +6,7 @@ export default defineConfig({
   plugins: [vue(), UnoCSS()],
   server: {
     port: 5175,
+    allowedHosts: ['fshake.com'],
     proxy: {
       '/api': {
         target: 'http://localhost:5000',

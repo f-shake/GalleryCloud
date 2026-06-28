@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { ref, computed, onUnmounted } from 'vue'
 
 const props = defineProps<{
   totalItems: number
@@ -12,11 +12,9 @@ const props = defineProps<{
   onJumpToDate: (date: string) => void
 }>()
 
-const isMobile = ref(window.innerWidth < 768)
-const visible = ref(!isMobile.value)
+const visible = ref(true)
 const hoverY = ref(-1)
 const hoverDate = ref('')
-let hideTimer: any = null
 const scrubberEl = ref<HTMLElement | null>(null)
 
 // Use density-based year positions from parent, fall back to equal spacing
@@ -46,13 +44,6 @@ const sections = computed(() => {
     }
   })
 })
-
-function show() {
-  if (!isMobile.value) return
-  visible.value = true
-  if (hideTimer) clearTimeout(hideTimer)
-  hideTimer = setTimeout(() => { visible.value = false }, 1500)
-}
 
 function onHover(e: MouseEvent) {
   const el = scrubberEl.value; if (!el) return
@@ -90,7 +81,8 @@ function onTouchEnd() {
 function doJump(clientY: number) {
   const el = scrubberEl.value; if (!el) return
   const rect = el.getBoundingClientRect()
-  const ratio = Math.max(0, Math.min(1, (clientY - rect.top) / rect.height))
+  hoverY.value = clientY - rect.top
+  const ratio = Math.max(0, Math.min(1, hoverY.value / rect.height))
   const targetScrollTop = ratio * props.getTotalHeight()
   const date = props.getDateAt(targetScrollTop)
   hoverDate.value = date
@@ -105,17 +97,11 @@ const thumbStyle = computed(() => {
   return { top: `${ratio * 100}%` }
 })
 
-onMounted(() => {
-  if (isMobile.value) window.addEventListener('scroll', show, { passive: true })
-})
-
 onUnmounted(() => {
-  if (hideTimer) clearTimeout(hideTimer)
   window.removeEventListener('mousemove', onMove)
   window.removeEventListener('mouseup', onEnd)
   window.removeEventListener('touchmove', onTouchMove)
   window.removeEventListener('touchend', onTouchEnd)
-  if (isMobile.value) window.removeEventListener('scroll', show)
 })
 </script>
 
