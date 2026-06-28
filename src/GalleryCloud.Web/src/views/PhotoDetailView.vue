@@ -30,23 +30,23 @@ let lastPinchDist = 0
 // ── Carousel navigation (only during show/done, zero impact on FLIP) ──
 const slideOffset = ref(0)
 const slideSnapping = ref(false)
-const prevSrc = ref('')
-const nextSrc = ref('')
-const gridError = ref(false)
 const CAROUSEL_BASE = -1
-function preloadAdjacent() {
-  const idx = store.currentIndex; const items = store.allItems
-  if (idx > 0) prevSrc.value = thumbUrl(items[idx - 1].id, 'grid', 400); else prevSrc.value = ''
-  if (idx >= 0 && idx < items.length - 1) nextSrc.value = thumbUrl(items[idx + 1].id, 'grid', 400); else nextSrc.value = ''
-}
+const gridError = ref(false)
+
 function commitSlide(direction: number) {
+  if (slideSnapping.value) return // guard against double-tap
   const target = direction > 0 ? 0 : -2 * vw
   slideSnapping.value = true; slideOffset.value = target
   setTimeout(() => {
     if (direction < 0) store.navigateNext(); else store.navigatePrev()
-    slideSnapping.value = false; slideOffset.value = CAROUSEL_BASE * vw; preloadAdjacent()
+    // Reset carousel instantly after navigation (no animation on reset)
+    requestAnimationFrame(() => {
+      slideSnapping.value = false
+      slideOffset.value = CAROUSEL_BASE * vw
+    })
   }, 300)
 }
+
 const carouselStyle = computed(() => {
   if (phase.value === 'start' || phase.value === 'exit') return {}
   return { transform: `translate(${slideOffset.value}px, ${dismissY.value}px)`, transition: slideSnapping.value ? 'transform .3s ease' : 'none' }
@@ -66,6 +66,7 @@ let swipeStartY = 0
 let swipeStartX = 0
 let isSwipingHorizontal = false
 let swipeHandled = false
+let swipeDx = 0
 
 const vw = window.innerWidth
 const vh = window.innerHeight
@@ -106,7 +107,7 @@ const imgClass = computed(() => {
 })
 
 const backdropOn = computed(() => phase.value !== 'start' && phase.value !== 'exit')
-const zoomable = computed(() => phase.value === 'done' || phase.value === 'show')
+const zoomable = computed(() => (phase.value === 'done' || phase.value === 'show') && !slideSnapping.value)
 
 function clampOffset() {
   if (scale.value <= 1) { offsetX.value = 0; offsetY.value = 0; return }
@@ -157,6 +158,7 @@ watch(() => store.open, async (val) => {
 
   try { const res = await client.get(`/photos/${id}`); if (sid === store.session) photo.value = res.data } catch { /* */ }
   try { const r = await client.get(`/favorites/check/${id}`); if (sid === store.session) favorited.value = r.data.isFavorited } catch { /* */ }
+  slideOffset.value = CAROUSEL_BASE * vw
 })
 
 // Navigation: photoId changes without close → load new photo immediately
@@ -168,10 +170,8 @@ watch(() => store.photoId, async (newId, oldId) => {
   dismissY.value = 0; dismissing.value = false
   const sid = store.session
   gridSrc.value = thumbUrl(newId, 'grid', 400)
-  previewReady.value = false; photo.value = null; favorited.value = false; showInfo.value = false
-  phase.value = 'show'; showBar.value = true
-  slideOffset.value = CAROUSEL_BASE * vw; slideSnapping.value = false
-  preloadAdjacent()
+  previewReady.value = false; favorited.value = false
+  phase.value = 'show'; showBar.value = true; slideOffset.value = CAROUSEL_BASE * vw
   const previewImg = new Image()
   previewImg.onload = () => { if (sid === store.session) { previewSrc.value = previewImg.src; previewReady.value = true; gridError.value = false; phase.value = 'done' } }
   previewImg.onerror = () => { if (sid === store.session) phase.value = 'done' }
@@ -187,10 +187,11 @@ function toggleFav() {
 }
 
 function doClose() {
-  if (phase.value === 'start') return
+  if (phase.value === 'start' || slideSnapping.value) return
   dismissY.value = 0; dismissing.value = false; gridError.value = false
   showBar.value = false; showInfo.value = false
-  slideSnapping.value = false; slideOffset.value = CAROUSEL_BASE * vw
+  // Reset zoom to full-screen before exit animation
+  scale.value = 1; offsetX.value = 0; offsetY.value = 0
   phase.value = 'exit'
   setTimeout(() => store.close(), 350)
 }
@@ -291,7 +292,7 @@ function onTouchMove(e: TouchEvent) {
     const dx = e.touches[0].clientX - swipeStartX
     const dy = e.touches[0].clientY - swipeStartY
     if (!swipeHandled && Math.abs(dx) > 10 && Math.abs(dx) > Math.abs(dy)) { isSwipingHorizontal = true; swipeHandled = true }
-    if (isSwipingHorizontal) { e.preventDefault(); dismissY.value = 0; slideOffset.value = CAROUSEL_BASE * vw + dx }
+    if (isSwipingHorizontal) { e.preventDefault(); dismissY.value = 0; slideOffset.value = CAROUSEL_BASE * vw + dx; swipeDx = dx }
     else if (dy > 0) { e.preventDefault(); dismissY.value = dy * 0.8 }
     else if (dy < -10 && !swipeHandled) { showInfo.value = true; swipeHandled = true }
   }
@@ -302,8 +303,7 @@ function onTouchEnd() {
     isSwipingDown = false
     if (isSwipingHorizontal) {
       dismissing.value = false
-      const delta = slideOffset.value - CAROUSEL_BASE * vw
-      if (Math.abs(delta) > vw * 0.15) { commitSlide(delta > 0 ? 1 : -1) }
+      if (Math.abs(swipeDx) > vw * 0.15) { commitSlide(swipeDx > 0 ? 1 : -1) }
       else { slideSnapping.value = true; slideOffset.value = CAROUSEL_BASE * vw; setTimeout(() => { slideSnapping.value = false }, 300) }
     } else if (dismissY.value > 100) {
       doClose()
@@ -364,18 +364,18 @@ function getExt(mime: string): string {
       @dblclick="onDblClick"
     >
       <div v-if="!src || gridError" class="pv-placeholder" />
-      <img v-else :src="src" :class="imgClass" :style="imgStyle" draggable="false" @error="gridError = true" />
-      <!-- Carousel overlay: only during show/done, does not affect FLIP img above -->
+      <img v-else :src="src" :class="[imgClass, slideSnapping ? 'pv-img--fade-out' : '']" :style="imgStyle" draggable="false" @error="gridError = true" />
+      <!-- Carousel overlay: sibling div, only during show/done for swipe animation -->
       <div v-if="phase === 'show' || phase === 'done'" class="pv-carousel" :style="carouselStyle">
-        <div v-if="prevSrc" class="pv-carousel-cell" :style="{ left: 0 }"><img :src="prevSrc" class="pv-carousel-img" /></div>
-        <div class="pv-carousel-cell" :style="{ left: vw + 'px' }"><img v-if="src && !gridError" :src="src" :class="imgClass" :style="imgStyle" draggable="false" @error="gridError = true" /><div v-else class="pv-placeholder" /></div>
-        <div v-if="nextSrc" class="pv-carousel-cell" :style="{ left: (vw * 2) + 'px' }"><img :src="nextSrc" class="pv-carousel-img" /></div>
+        <div class="pv-carousel-cell" :style="{ left: 0 }"><img v-if="store.hasPrev" :src="thumbUrl(store.allItems[store.currentIndex-1]?.id || '', 'grid', 400)" class="pv-carousel-img" /></div>
+        <div class="pv-carousel-cell" :style="{ left: vw + 'px' }" />
+        <div class="pv-carousel-cell" :style="{ left: (vw * 2) + 'px' }"><img v-if="store.hasNext" :src="thumbUrl(store.allItems[store.currentIndex+1]?.id || '', 'grid', 400)" class="pv-carousel-img" /></div>
       </div>
     </div>
 
     <!-- Desktop nav arrows -->
-    <div v-if="showBar && store.hasPrev && slideOffset === 0" class="pv-nav pv-nav--prev" @click.stop="commitSlide(1)"><el-icon :size="28"><ArrowLeft /></el-icon></div>
-    <div v-if="showBar && store.hasNext && slideOffset === 0" class="pv-nav pv-nav--next" @click.stop="commitSlide(-1)"><el-icon :size="28"><ArrowRight /></el-icon></div>
+    <div v-if="showBar && store.hasPrev" class="pv-nav pv-nav--prev" @click.stop="commitSlide(1)"><el-icon :size="28"><ArrowLeft /></el-icon></div>
+    <div v-if="showBar && store.hasNext" class="pv-nav pv-nav--next" @click.stop="commitSlide(-1)"><el-icon :size="28"><ArrowRight /></el-icon></div>
 
     <!-- Top bar -->
     <div v-if="showBar" class="pv-topbar">
@@ -448,6 +448,7 @@ function getExt(mime: string): string {
   opacity: 0;
   transition: transform .35s cubic-bezier(.25,.46,.45,.94), border-radius .35s ease, opacity .15s ease .25s;
 }
+.pv-img--fade-out { opacity: 0 !important; transition: opacity .2s ease !important; }
 
 .pv-topbar {
   position: fixed; top: 0; left: 0; right: 0; z-index: 10000;
@@ -496,8 +497,6 @@ function getExt(mime: string): string {
 .pv-nav--prev { left: 12px; }
 .pv-nav--next { right: 12px; }
 @media (max-width: 767px) { .pv-nav { display: none; } }
-
-/* Carousel overlay */
 .pv-carousel { position: absolute; top: 0; left: 0; width: calc(300vw); height: 100%; will-change: transform; pointer-events: none; }
 .pv-carousel-cell { position: absolute; top: 0; width: 100vw; height: 100%; display: flex; align-items: center; justify-content: center; }
 .pv-carousel-img { width: 100%; height: 100%; object-fit: contain; user-select: none; -webkit-user-select: none; }
