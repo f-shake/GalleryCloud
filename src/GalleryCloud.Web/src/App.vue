@@ -10,7 +10,7 @@ useDark()
 <style>
 /* Global thumbnail styles — prevent broken image icons */
 .thumb-cell {
-  cursor: pointer; overflow: hidden; border-radius: 4px;
+  cursor: pointer; overflow: hidden;
   background: var(--el-fill-color-light); aspect-ratio: 1;
 }
 .thumb-img {

@@ -57,9 +57,9 @@ async function search() {
       </el-button-group>
     </div>
 
-    <div v-if="photos.length" :style="{ display:'grid', gridTemplateColumns:`repeat(${columns}, 1fr)`, gap:'4px' }">
+    <div v-if="photos.length" :style="{ display:'grid', gridTemplateColumns:`repeat(${columns}, 1fr)`, gap:'0' }">
       <div v-for="p in photos" :key="p.id" class="thumb-cell" @click="onPhotoClick(p.id, $event)">
-        <img v-lazy-img="thumbUrl(p.id, 'grid', Math.ceil(400/columns*3))" class="thumb-img" />
+        <img v-lazy-img="thumbUrl(p.id, 'grid', 400)" class="thumb-img" />
       </div>
     </div>
 

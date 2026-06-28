@@ -138,7 +138,7 @@ const currentTitle = computed(() => navItems.value.find(n => route.path.startsWi
 
 <style>
 html, body, #app { margin:0; height:100%; }
-.app-shell { height:100vh; }
+.app-shell { height:100vh; touch-action: pan-y; }
 .app-sidebar {
   background: var(--el-bg-color);
   border-right: 1px solid var(--el-border-color-light);

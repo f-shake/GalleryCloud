@@ -76,9 +76,9 @@ const defaultExpanded = computed(() => tree.value.slice(0, 10).map(n => n.path))
       </div>
       <el-empty v-if="!selPath && !isScanning" description="选择左侧文件夹" />
       <div v-else-if="loading" style="text-align:center;padding:32px"><el-icon class="is-loading" :size="24"><Loading /></el-icon></div>
-      <div v-else-if="photos.length" :style="{ display:'grid', gridTemplateColumns:`repeat(${columns}, 1fr)`, gap:'4px' }">
+      <div v-else-if="photos.length" :style="{ display:'grid', gridTemplateColumns:`repeat(${columns}, 1fr)`, gap:'0' }">
         <div v-for="p in photos" :key="p.id" class="thumb-cell" @click="onPhotoClick(p.id, $event)">
-          <img v-lazy-img="thumbUrl(p.id, 'grid', Math.ceil(400/columns*3))" class="thumb-img" />
+          <img v-lazy-img="thumbUrl(p.id, 'grid', 400)" class="thumb-img" />
         </div>
       </div>
     </div>
