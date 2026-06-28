@@ -89,10 +89,13 @@ public class PhotosController : ControllerBase
         if (photo == null)
             return NotFound();
 
-        var fullPath = Path.GetFullPath(Path.Combine(_userContext.RootPath, photo.FilePath));
+        // Use user's root path from DB (not JWT claim) for accuracy
+        var user = await _db.Users.FindAsync(photo.UserId);
+        if (user == null) return NotFound();
+        var rootPath = user.RootPath;
 
-        // Path traversal check
-        if (!fullPath.StartsWith(Path.GetFullPath(_userContext.RootPath), StringComparison.OrdinalIgnoreCase))
+        var fullPath = Path.GetFullPath(Path.Combine(rootPath, photo.FilePath));
+        if (!fullPath.StartsWith(Path.GetFullPath(rootPath), StringComparison.OrdinalIgnoreCase))
             return Forbid();
 
         if (!System.IO.File.Exists(fullPath))

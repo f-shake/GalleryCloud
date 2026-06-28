@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, computed, watch } from 'vue'
 import client from '../api/client'
+import { ElMessage } from 'element-plus'
 import { thumbUrl } from '../composables/useThumbnailUrl'
 import { usePhotoViewStore } from '../stores/photoViewStore'
 
@@ -14,6 +15,17 @@ const showBar = ref(false)
 const gridSrc = ref('')
 const previewSrc = ref('')
 const previewReady = ref(false)
+
+// Zoom & pan
+const scale = ref(1)
+const offsetX = ref(0)
+const offsetY = ref(0)
+const zoomAnimating = ref(false)
+let zoomTimer: any = null
+let isDragging = false
+let dragStartX = 0, dragStartY = 0
+let startOffsetX = 0, startOffsetY = 0
+let lastPinchDist = 0
 
 const vw = window.innerWidth
 const vh = window.innerHeight
@@ -33,6 +45,8 @@ const imgStyle = computed(() => {
   const base = { width: vw + 'px', height: vh + 'px' }
   if (phase.value === 'start' || phase.value === 'exit')
     return { ...base, transform: startTransform.value }
+  if (scale.value !== 1 || offsetX.value !== 0 || offsetY.value !== 0)
+    return { ...base, transform: `translate(${offsetX.value}px, ${offsetY.value}px) scale(${scale.value})` }
   return base
 })
 
@@ -41,10 +55,25 @@ const imgClass = computed(() => {
   if (phase.value !== 'start') c.push('pv-img--anim')
   if (phase.value === 'start') c.push('pv-img--cover')
   if (phase.value === 'exit') c.push('pv-img--fade')
+  if (phase.value === 'done' || phase.value === 'show') {
+    c.push('pv-img--zoom')
+    if (zoomAnimating.value) c.push('pv-img--zoom-anim')
+  }
   return c
 })
 
 const backdropOn = computed(() => phase.value !== 'start' && phase.value !== 'exit')
+const zoomable = computed(() => phase.value === 'done' || phase.value === 'show')
+
+function clampOffset() {
+  if (scale.value <= 1) { offsetX.value = 0; offsetY.value = 0; return }
+  const maxX = 0
+  const minX = vw * (1 - scale.value)
+  const maxY = 0
+  const minY = vh * (1 - scale.value)
+  offsetX.value = Math.max(minX, Math.min(maxX, offsetX.value))
+  offsetY.value = Math.max(minY, Math.min(maxY, offsetY.value))
+}
 
 const src = computed(() => previewReady.value ? previewSrc.value : gridSrc.value)
 const originalUrl = computed(() => `/api/photos/${store.photoId}/file?token=${localStorage.getItem('token') || ''}`)
@@ -53,16 +82,11 @@ watch(() => store.open, async (val) => {
   if (!val || !store.photoId) return
   const id = store.photoId
   const sid = store.session
-  // Use the grid's thumbnail (blob URL or API URL) directly
-  gridSrc.value = store.startImgSrc || thumbUrl(id, 'grid', 400)
+  scale.value = 1
+  offsetX.value = 0
+  offsetY.value = 0
 
-  // Preload preview image (backend generates synchronously for preview)
-  const previewImg = new Image()
-  previewImg.onload = () => {
-    if (sid === store.session) { previewSrc.value = previewImg.src; previewReady.value = true; phase.value = 'done' }
-  }
-  previewImg.onerror = () => { if (sid === store.session) phase.value = 'done' }
-  previewImg.src = thumbUrl(id, 'preview', 2560)
+  gridSrc.value = store.startImgSrc || thumbUrl(id, 'grid', 400)
   previewReady.value = false
   photo.value = null
   favorited.value = false
@@ -70,15 +94,23 @@ watch(() => store.open, async (val) => {
   phase.value = 'start'
   showBar.value = false
 
-  // One frame to paint start position, then expand
   requestAnimationFrame(() => {
     if (sid !== store.session) return
     phase.value = 'expand'
-    // Show buttons after animation completes (350ms)
-    setTimeout(() => { if (sid === store.session) { showBar.value = true; phase.value = 'show' } }, 380)
+    setTimeout(() => {
+      if (sid !== store.session) return
+      showBar.value = true
+      phase.value = 'show'
+      // Load preview AFTER animation completes
+      const previewImg = new Image()
+      previewImg.onload = () => {
+        if (sid === store.session) { previewSrc.value = previewImg.src; previewReady.value = true; phase.value = 'done' }
+      }
+      previewImg.onerror = () => { if (sid === store.session) phase.value = 'done' }
+      previewImg.src = thumbUrl(id, 'preview', 2560)
+    }, 380)
   })
 
-  // Load metadata in background
   try { const res = await client.get(`/photos/${id}`); if (sid === store.session) photo.value = res.data } catch { /* */ }
 })
 
@@ -95,15 +127,141 @@ function doClose() {
   setTimeout(() => store.close(), 350)
 }
 
+// ── Zoom (mouse wheel) ──────────────────────────────────────
+function onWheel(e: WheelEvent) {
+  if (!zoomable.value) return
+  e.preventDefault()
+  const delta = e.deltaY > 0 ? -0.1 : 0.1
+  const newScale = Math.max(1, Math.min(8, scale.value + delta))
+  const ratio = newScale / scale.value
+  zoomAnimating.value = true
+  clearTimeout(zoomTimer)
+  zoomTimer = setTimeout(() => { zoomAnimating.value = false }, 200)
+  // Zoom toward cursor: keep the same image point under the mouse
+  const mx = e.clientX
+  const my = e.clientY
+  offsetX.value = mx - (mx - offsetX.value) * ratio
+  offsetY.value = my - (my - offsetY.value) * ratio
+  scale.value = newScale
+  clampOffset()
+}
 
+// ── Mouse drag ──────────────────────────────────────────────
+function onMouseDown(e: MouseEvent) {
+  if (!zoomable.value || scale.value <= 1) return
+  isDragging = true
+  dragStartX = e.clientX
+  dragStartY = e.clientY
+  startOffsetX = offsetX.value
+  startOffsetY = offsetY.value
+}
+function onMouseMove(e: MouseEvent) {
+  if (!isDragging) return
+  offsetX.value = startOffsetX + (e.clientX - dragStartX)
+  offsetY.value = startOffsetY + (e.clientY - dragStartY)
+  clampOffset()
+}
+function onMouseUp() { isDragging = false }
+
+// ── Touch (pinch + drag) ────────────────────────────────────
+function onTouchStart(e: TouchEvent) {
+  if (!zoomable.value) return
+  // Skip if any touch point is on a button/UI element
+  for (let i = 0; i < e.touches.length; i++) {
+    const el = document.elementFromPoint(e.touches[i].clientX, e.touches[i].clientY)
+    if (el && el.closest('.pv-topbar, .pv-info, .glass-btn')) return
+  }
+  if (e.touches.length === 2) {
+    lastPinchDist = Math.hypot(
+      e.touches[0].clientX - e.touches[1].clientX,
+      e.touches[0].clientY - e.touches[1].clientY
+    )
+  } else if (e.touches.length === 1 && scale.value > 1) {
+    isDragging = true
+    dragStartX = e.touches[0].clientX
+    dragStartY = e.touches[0].clientY
+    startOffsetX = offsetX.value
+    startOffsetY = offsetY.value
+  }
+}
+function onTouchMove(e: TouchEvent) {
+  if (!zoomable.value) return
+  if (e.touches.length === 2) {
+    e.preventDefault()
+    const dist = Math.hypot(
+      e.touches[0].clientX - e.touches[1].clientX,
+      e.touches[0].clientY - e.touches[1].clientY
+    )
+    if (lastPinchDist > 0) {
+      const ratio = dist / lastPinchDist
+      const newScale = Math.max(1, Math.min(8, scale.value * ratio))
+      const mx = (e.touches[0].clientX + e.touches[1].clientX) / 2
+      const my = (e.touches[0].clientY + e.touches[1].clientY) / 2
+      offsetX.value = mx - (mx - offsetX.value) * (newScale / scale.value)
+      offsetY.value = my - (my - offsetY.value) * (newScale / scale.value)
+      scale.value = newScale
+      clampOffset()
+    }
+    lastPinchDist = dist
+  } else if (e.touches.length === 1 && isDragging) {
+    offsetX.value = startOffsetX + (e.touches[0].clientX - dragStartX)
+    offsetY.value = startOffsetY + (e.touches[0].clientY - dragStartY)
+    clampOffset()
+  }
+}
+function onTouchEnd() { isDragging = false; lastPinchDist = 0 }
+
+// ── Double-click to reset zoom ──────────────────────────────
+function onDblClick() {
+  scale.value = 1; offsetX.value = 0; offsetY.value = 0; clampOffset()
+}
+
+async function downloadOriginal() {
+  const id = store.photoId
+  if (!id) return
+  const token = localStorage.getItem('token') || ''
+  try {
+    const res = await fetch(`/api/photos/${id}/file`, {
+      headers: { Authorization: `Bearer ${token}` }
+    })
+    if (res.status === 404) { ElMessage.error('文件不存在或已被删除'); return }
+    if (!res.ok) throw new Error('Download failed')
+    const blob = await res.blob()
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = photo.value?.fileName || `${id}${getExt(blob.type)}`
+    a.click()
+    URL.revokeObjectURL(url)
+  } catch { /* */ }
+}
+function getExt(mime: string): string {
+  const map: Record<string, string> = { 'image/jpeg': '.jpg', 'image/png': '.png', 'image/webp': '.webp', 'image/heic': '.heic', 'image/avif': '.avif' }
+  return map[mime] || ''
+}
 </script>
 
 <template>
   <Teleport to="body">
     <div v-if="store.photoId" :class="['pv-bg', backdropOn ? 'pv-bg--on' : '']" @click="doClose" />
-    <div v-if="store.photoId" class="pv-img-wrap">
+
+    <!-- Image area with zoom/pan -->
+    <div
+      v-if="store.photoId"
+      class="pv-img-wrap"
+      :class="{ 'pv-img-wrap--zoomable': zoomable }"
+      @wheel="onWheel"
+      @mousedown="onMouseDown"
+      @mousemove="onMouseMove"
+      @mouseup="onMouseUp"
+      @mouseleave="onMouseUp"
+      @touchstart.passive="onTouchStart"
+      @touchmove="onTouchMove"
+      @touchend="onTouchEnd"
+      @dblclick="onDblClick"
+    >
       <div v-if="!src" class="pv-placeholder" />
-      <img v-else :src="src" :class="imgClass" :style="imgStyle" @click.stop="showInfo = !showInfo" />
+      <img v-else :src="src" :class="imgClass" :style="imgStyle" draggable="false" />
     </div>
 
     <!-- Top bar -->
@@ -113,9 +271,7 @@ function doClose() {
       <div style="flex:1" />
       <el-button circle :icon="favorited ? 'StarFilled' : 'Star'" @click="toggleFav"
         :class="['glass-btn', favorited ? 'fav-active' : '']" />
-      <a :href="originalUrl" download>
-        <el-button circle :icon="'Download'" class="glass-btn" />
-      </a>
+      <el-button circle :icon="'Download'" class="glass-btn" @click="downloadOriginal" />
       <el-button circle :icon="'InfoFilled'" @click="showInfo = !showInfo" class="glass-btn" />
     </div>
 
@@ -149,14 +305,20 @@ function doClose() {
 .pv-img-wrap {
   position: fixed; inset: 0; z-index: 9999;
   display: flex; align-items: center; justify-content: center;
+  overflow: hidden;
   pointer-events: none;
+  cursor: grab;
 }
+.pv-img-wrap--zoomable { pointer-events: auto; }
+.pv-img-wrap--zoomable:active { cursor: grabbing; }
+
 .pv-placeholder {
   width: 100%; height: 100%;
   background: var(--el-bg-color);
 }
 .pv-img {
   object-fit: contain; border-radius: 0; will-change: transform;
+  user-select: none; -webkit-user-select: none;
 }
 .pv-img:not(.pv-img--anim) { transition: none; border-radius: 4px; }
 .pv-img--anim {
@@ -164,6 +326,8 @@ function doClose() {
   border-radius: 0;
 }
 .pv-img--cover { object-fit: cover; }
+.pv-img--zoom { transform-origin: 0 0; transition: none !important; }
+.pv-img--zoom-anim { transition: transform .2s ease !important; }
 .pv-img--fade {
   opacity: 0;
   transition: transform .35s cubic-bezier(.25,.46,.45,.94), border-radius .35s ease, opacity .15s ease .25s;
