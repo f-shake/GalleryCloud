@@ -15,6 +15,7 @@ const showBar = ref(false)
 const gridSrc = ref('')
 const previewSrc = ref('')
 const previewReady = ref(false)
+const gridError = ref(false)
 
 // Zoom & pan
 const scale = ref(1)
@@ -27,11 +28,47 @@ let dragStartX = 0, dragStartY = 0
 let startOffsetX = 0, startOffsetY = 0
 let lastPinchDist = 0
 
-// Swipe-down to dismiss
+// Carousel slide navigation
+// Cells: prev at left 0, current at left vw, next at left 2*vw
+// Initial offset = -vw (shows current). 0 = prev, -2*vw = next.
+const CAROUSEL_BASE = -1 // multiplier for vw (shows current cell at left:vw)
+const slideOffset = ref(0)
+const slideSnapping = ref(false)
+const prevSrc = ref('')
+const nextSrc = ref('')
+
+function preloadAdjacent() {
+  const idx = store.currentIndex
+  const items = store.allItems
+  if (idx > 0) prevSrc.value = thumbUrl(items[idx - 1].id, 'grid', 400)
+  else prevSrc.value = ''
+  if (idx >= 0 && idx < items.length - 1) nextSrc.value = thumbUrl(items[idx + 1].id, 'grid', 400)
+  else nextSrc.value = ''
+}
+
+function commitSlide(direction: number) {
+  // direction: -1 = next, 1 = prev
+  // prev cell at 0 → target = 0. next cell at -2*vw → target = -2*vw.
+  const target = direction > 0 ? 0 : -2 * vw
+  slideSnapping.value = true
+  slideOffset.value = target
+  setTimeout(() => {
+    if (direction < 0) store.navigateNext()
+    else store.navigatePrev()
+    slideSnapping.value = false
+    slideOffset.value = CAROUSEL_BASE * vw
+    preloadAdjacent()
+  }, 300)
+}
+
+// Swipe-down to dismiss & swipe navigation
 const dismissY = ref(0)
 const dismissing = ref(false)
 let isSwipingDown = false
 let swipeStartY = 0
+let swipeStartX = 0
+let isSwipingHorizontal = false
+let swipeHandled = false
 
 const vw = window.innerWidth
 const vh = window.innerHeight
@@ -47,15 +84,23 @@ const startTransform = computed(() => {
   return `translate(${scx - ecx}px, ${scy - ecy}px) scale(${sx}, ${sy})`
 })
 
+const carouselStyle = computed(() => {
+  if (phase.value === 'start' || phase.value === 'exit') return {}
+  const x = slideOffset.value
+  const y = dismissY.value
+  const tr = `translate(${x}px, ${y}px)`
+  return {
+    transform: tr,
+    transition: slideSnapping.value ? 'transform .3s ease' : 'none',
+  }
+})
+
 const imgStyle = computed(() => {
   const base = { width: vw + 'px', height: vh + 'px' }
   if (phase.value === 'start' || phase.value === 'exit')
     return { ...base, transform: startTransform.value }
-  const parts: string[] = []
-  if (dismissY.value !== 0) parts.push(`translateY(${dismissY.value}px)`)
   if (scale.value !== 1 || offsetX.value !== 0 || offsetY.value !== 0)
-    parts.push(`translate(${offsetX.value}px, ${offsetY.value}px) scale(${scale.value})`)
-  if (parts.length > 0) return { ...base, transform: parts.join(' ') }
+    return { ...base, transform: `translate(${offsetX.value}px, ${offsetY.value}px) scale(${scale.value})` }
   return base
 })
 
@@ -87,6 +132,51 @@ function clampOffset() {
 const src = computed(() => previewReady.value ? previewSrc.value : gridSrc.value)
 const originalUrl = computed(() => `/api/photos/${store.photoId}/file?token=${localStorage.getItem('token') || ''}`)
 
+// Load photo data (called both for initial open and prev/next navigation)
+async function loadPhoto(id: string, sid: number, animate: boolean) {
+  // Always use stable API URL — blob URLs from lazy-img can be revoked
+  gridSrc.value = thumbUrl(id, 'grid', 400)
+  gridError.value = false
+  previewReady.value = false
+  photo.value = null
+  favorited.value = false
+  showInfo.value = false
+  phase.value = animate ? 'start' : 'show'
+  showBar.value = !animate
+
+  if (animate) {
+    requestAnimationFrame(() => {
+      if (sid !== store.session) return
+      phase.value = 'expand'
+      setTimeout(() => {
+        if (sid !== store.session) return
+        phase.value = 'show'
+        showBar.value = true
+      }, 350)
+    })
+  } else {
+    showBar.value = true
+  }
+
+  // Load preview
+  const previewImg = new Image()
+  previewImg.onload = () => {
+    if (sid === store.session) { previewSrc.value = previewImg.src; previewReady.value = true; gridError.value = false; phase.value = 'done' }
+  }
+  previewImg.onerror = () => { if (sid === store.session) phase.value = 'done' }
+  previewImg.src = thumbUrl(id, 'preview', 2560)
+
+  // Load photo info
+  try {
+    const token = localStorage.getItem('token') || ''
+    const { data } = await client.get(`/photos/${id}`, { headers: { Authorization: `Bearer ${token}` } })
+    if (sid === store.session) {
+      photo.value = data
+      try { const r = await client.get(`/favorites/check/${id}`); if (sid === store.session) favorited.value = r.data.isFavorited } catch { /* */ }
+    }
+  } catch { /* */ }
+}
+
 watch(() => store.open, async (val) => {
   if (!val || !store.photoId) return
   dismissY.value = 0; dismissing.value = false
@@ -95,33 +185,19 @@ watch(() => store.open, async (val) => {
   scale.value = 1
   offsetX.value = 0
   offsetY.value = 0
+  slideOffset.value = CAROUSEL_BASE * vw; slideSnapping.value = false
+  preloadAdjacent()
+  await loadPhoto(id, sid, true)
+})
 
-  gridSrc.value = store.startImgSrc || thumbUrl(id, 'grid', 400)
-  previewReady.value = false
-  photo.value = null
-  favorited.value = false
-  showInfo.value = false
-  phase.value = 'start'
-  showBar.value = false
-
-  requestAnimationFrame(() => {
-    if (sid !== store.session) return
-    phase.value = 'expand'
-    setTimeout(() => {
-      if (sid !== store.session) return
-      showBar.value = true
-      phase.value = 'show'
-      // Load preview AFTER animation completes
-      const previewImg = new Image()
-      previewImg.onload = () => {
-        if (sid === store.session) { previewSrc.value = previewImg.src; previewReady.value = true; phase.value = 'done' }
-      }
-      previewImg.onerror = () => { if (sid === store.session) phase.value = 'done' }
-      previewImg.src = thumbUrl(id, 'preview', 2560)
-    }, 380)
-  })
-
-  try { const res = await client.get(`/photos/${id}`); if (sid === store.session) photo.value = res.data } catch { /* */ }
+// Watch for navigation (photoId changes without close/open)
+watch(() => store.photoId, async (newId, oldId) => {
+  if (!newId || newId === oldId || !store.open) return
+  gridError.value = false
+  scale.value = 1; offsetX.value = 0; offsetY.value = 0
+  dismissY.value = 0; dismissing.value = false
+  const sid = store.session
+  await loadPhoto(newId, sid, false)
 })
 
 function toggleFav() {
@@ -140,6 +216,35 @@ function doClose() {
 
 function onKeydown(e: KeyboardEvent) {
   if (e.key === 'Escape') doClose()
+}
+
+// ── Info panel swipe-down to close ──────────────────────────
+const infoDragY = ref(0)
+const infoSnapping = ref(false)
+let _infoTouchStartY = 0
+function onInfoTouchStart(e: TouchEvent) {
+  _infoTouchStartY = e.touches[0].clientY
+  infoDragY.value = 0; infoSnapping.value = false
+}
+function onInfoTouchMove(e: TouchEvent) {
+  const dy = e.touches[0].clientY - _infoTouchStartY
+  if (dy > 0) { infoDragY.value = dy; e.preventDefault() }
+}
+function onInfoTouchEnd() {
+  if (infoDragY.value > 60) {
+    // Animate down and close
+    infoSnapping.value = true
+    infoDragY.value = window.innerHeight
+    setTimeout(() => {
+      showInfo.value = false
+      infoDragY.value = 0
+      infoSnapping.value = false
+    }, 250)
+  } else {
+    infoSnapping.value = true
+    infoDragY.value = 0
+    setTimeout(() => { infoSnapping.value = false }, 250)
+  }
 }
 
 onMounted(() => window.addEventListener('keydown', onKeydown))
@@ -202,9 +307,12 @@ function onTouchStart(e: TouchEvent) {
     startOffsetX = offsetX.value
     startOffsetY = offsetY.value
   } else if (e.touches.length === 1 && scale.value === 1 && (phase.value === 'show' || phase.value === 'done')) {
-    // Swipe down to dismiss
+    // Track swipe direction
     isSwipingDown = true
     swipeStartY = e.touches[0].clientY
+    swipeStartX = e.touches[0].clientX
+    isSwipingHorizontal = false
+    swipeHandled = false
     dismissing.value = true
   }
 }
@@ -233,15 +341,42 @@ function onTouchMove(e: TouchEvent) {
     offsetY.value = startOffsetY + (e.touches[0].clientY - dragStartY)
     clampOffset()
   } else if (e.touches.length === 1 && isSwipingDown) {
+    const dx = e.touches[0].clientX - swipeStartX
     const dy = e.touches[0].clientY - swipeStartY
-    if (dy > 0) { e.preventDefault(); dismissY.value = dy * 0.8 } // damped
+    if (!swipeHandled && Math.abs(dx) > 10 && Math.abs(dx) > Math.abs(dy)) {
+      isSwipingHorizontal = true
+      swipeHandled = true
+    }
+    if (isSwipingHorizontal) {
+      e.preventDefault()
+      dismissY.value = 0
+      slideOffset.value = CAROUSEL_BASE * vw + dx
+    } else if (dy > 0) {
+      e.preventDefault(); dismissY.value = dy * 0.8
+    } else if (dy < -10 && !isSwipingHorizontal && !swipeHandled) {
+      // Swipe up → show info (once per gesture)
+      showInfo.value = true
+      swipeHandled = true
+    }
   }
 }
 function onTouchEnd() {
   isDragging = false; lastPinchDist = 0
   if (isSwipingDown) {
     isSwipingDown = false
-    if (dismissY.value > 100) {
+    if (isSwipingHorizontal) {
+      dismissing.value = false
+      const currentOffset = slideOffset.value
+      const baseOffset = CAROUSEL_BASE * vw
+      const delta = currentOffset - baseOffset
+      if (Math.abs(delta) > vw * 0.15) {
+        commitSlide(delta > 0 ? 1 : -1)
+      } else {
+        slideSnapping.value = true
+        slideOffset.value = baseOffset
+        setTimeout(() => { slideSnapping.value = false }, 300)
+      }
+    } else if (dismissY.value > 100) {
       doClose()
     } else {
       dismissY.value = 0
@@ -284,7 +419,7 @@ function getExt(mime: string): string {
   <Teleport to="body">
     <div v-if="store.photoId" :class="['pv-bg', backdropOn ? 'pv-bg--on' : '']" @click="doClose" />
 
-    <!-- Image area with zoom/pan -->
+    <!-- Image area with zoom/pan + carousel -->
     <div
       v-if="store.photoId"
       class="pv-img-wrap"
@@ -299,8 +434,24 @@ function getExt(mime: string): string {
       @touchend="onTouchEnd"
       @dblclick="onDblClick"
     >
-      <div v-if="!src" class="pv-placeholder" />
-      <img v-else :src="src" :class="imgClass" :style="imgStyle" draggable="false" />
+      <!-- Carousel track: 3 images side by side, translated by slideOffset -->
+      <div v-if="phase !== 'start' && phase !== 'exit'" class="pv-carousel" :style="carouselStyle">
+        <div v-if="prevSrc" class="pv-carousel-cell" :style="{ left: 0 }">
+          <img :src="prevSrc" class="pv-carousel-img" />
+        </div>
+        <div class="pv-carousel-cell" :style="{ left: vw + 'px' }">
+          <img v-if="src && !gridError" :src="src" :class="imgClass" :style="imgStyle" draggable="false" @error="gridError = true" />
+          <div v-else class="pv-placeholder" />
+        </div>
+        <div v-if="nextSrc" class="pv-carousel-cell" :style="{ left: (vw * 2) + 'px' }">
+          <img :src="nextSrc" class="pv-carousel-img" />
+        </div>
+      </div>
+      <!-- Single image during FLIP start/exit -->
+      <div v-else>
+        <div v-if="!src || gridError" class="pv-placeholder" />
+        <img v-else :src="src" :class="imgClass" :style="imgStyle" draggable="false" @error="gridError = true" />
+      </div>
     </div>
 
     <!-- Top bar -->
@@ -308,15 +459,31 @@ function getExt(mime: string): string {
       <el-button circle :icon="'ArrowLeft'" @click="doClose" class="glass-btn" />
       <el-icon v-if="!previewReady" class="is-loading" :size="20" style="color:var(--el-text-color-secondary);margin-left:4px"><Loading /></el-icon>
       <div style="flex:1" />
+      <span v-if="store.hasPrev || store.hasNext" style="font-size:12px;color:var(--el-text-color-secondary)">
+        {{ store.currentIndex + 1 }} / {{ store.allItems.length }}
+      </span>
       <el-button circle :icon="favorited ? 'StarFilled' : 'Star'" @click="toggleFav"
         :class="['glass-btn', favorited ? 'fav-active' : '']" />
       <el-button circle :icon="'Download'" class="glass-btn" @click="downloadOriginal" />
       <el-button circle :icon="'InfoFilled'" @click="showInfo = !showInfo" class="glass-btn" />
     </div>
 
+    <!-- Desktop prev/next arrows -->
+    <div v-if="showBar && store.hasPrev && slideOffset === 0" class="pv-nav pv-nav--prev" @click.stop="commitSlide(1)">
+      <el-icon :size="28"><ArrowLeft /></el-icon>
+    </div>
+    <div v-if="showBar && store.hasNext && slideOffset === 0" class="pv-nav pv-nav--next" @click.stop="commitSlide(-1)">
+      <el-icon :size="28"><ArrowRight /></el-icon>
+    </div>
+
     <!-- Info -->
     <Transition name="info-slide">
-      <div v-if="showInfo && photo" class="pv-info" @click.stop>
+      <div v-if="showInfo && photo" class="pv-info" @click.stop
+        @touchstart.passive="onInfoTouchStart"
+        @touchmove="onInfoTouchMove"
+        @touchend="onInfoTouchEnd"
+        :style="infoDragY > 0 || infoSnapping ? { transform: `translateY(${infoDragY}px)`, transition: infoSnapping ? 'transform .25s ease' : 'none' } : {}">
+        <div class="pv-info-handle" /><div style="height:8px" />
         <h4 style="margin:0 0 12px;font-size:15px">照片信息</h4>
         <div class="info-grid">
           <div><span>文件名</span><b>{{ photo.fileName }}</b></div>
@@ -388,9 +555,15 @@ function getExt(mime: string): string {
 .pv-info {
   position: fixed; bottom: 0; left: 0; right: 0; z-index: 10000;
   background: var(--el-bg-color); backdrop-filter: blur(20px);
-  padding: 20px 24px; border-radius: 16px 16px 0 0;
+  padding: 12px 24px 20px; border-radius: 16px 16px 0 0;
   color: var(--el-text-color-primary); max-height: 60vh; overflow-y: auto;
   border-top: 1px solid var(--el-border-color-light);
+  touch-action: pan-y;
+}
+.pv-info-handle {
+  width: 36px; height: 5px; border-radius: 3px;
+  background: var(--el-border-color);
+  margin: 0 auto;
 }
 .info-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; font-size: 12px; }
 .info-grid div { display: flex; flex-direction: column; gap: 2px; }
@@ -401,4 +574,39 @@ function getExt(mime: string): string {
 .info-slide-leave-active { transition: transform .2s ease, opacity .2s ease; }
 .info-slide-enter-from,
 .info-slide-leave-to { transform: translateY(100%); opacity: 0; }
+
+/* Desktop prev/next nav arrows */
+.pv-nav {
+  position: fixed; top: 50%; transform: translateY(-50%);
+  z-index: 10000; width: 48px; height: 64px;
+  display: flex; align-items: center; justify-content: center;
+  cursor: pointer; color: var(--el-text-color-primary);
+  background: var(--el-fill-color-light);
+  backdrop-filter: blur(8px);
+  border-radius: 8px;
+  opacity: .6; transition: opacity .2s ease;
+}
+.pv-nav:hover { opacity: 1; background: var(--el-fill-color); }
+.pv-nav--prev { left: 12px; }
+.pv-nav--next { right: 12px; }
+@media (max-width: 767px) {
+  .pv-nav { display: none; }
+}
+
+/* Carousel */
+.pv-carousel {
+  position: absolute; top: 0; left: 0;
+  width: calc(300vw); height: 100%;
+  will-change: transform;
+}
+.pv-carousel-cell {
+  position: absolute; top: 0;
+  width: 100vw; height: 100%;
+  display: flex; align-items: center; justify-content: center;
+}
+.pv-carousel-img {
+  width: 100%; height: 100%;
+  object-fit: contain; border-radius: 0;
+  user-select: none; -webkit-user-select: none;
+}
 </style>

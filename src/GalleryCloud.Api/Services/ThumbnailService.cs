@@ -225,8 +225,8 @@ public class ThumbnailService : IThumbnailService
 
         CacheInMemory($"thumb:{photoId}:{sizeKey}", resultBytes);
         var remaining = Interlocked.Decrement(ref _queueCount);
-        _logger.LogInformation("缩略图完成 [{Size}] {PhotoId} 原图{W}x{H} 解码:{Decode}ms 编码:{Encode}ms DB:{Db}ms 并行:{Parallel}",
-            sizeKey, photoId[..8], srcW, srcH, decodeMs, encodeMs, dbMs, Math.Max(0, _inProgressCount));
+        _logger.LogInformation("缩略图完成 [{Size}] {PhotoId} 原图{W}x{H} 解码:{Decode}ms 编码:{Encode}ms DB:{Db}ms 排队:{Queue} 并行:{Parallel}",
+            sizeKey, photoId[..8], srcW, srcH, decodeMs, encodeMs, dbMs, Math.Max(0, remaining), Math.Max(0, _inProgressCount));
 
         return new MemoryStream(resultBytes);
     }

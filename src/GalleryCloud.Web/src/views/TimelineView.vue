@@ -64,7 +64,7 @@ const virtualizer = useVirtualizer({
     const r = rows.value[i]
     return r?.type === 'header' ? 46 : estimateRowSize()
   },
-  overscan: 5,
+  overscan: 2,
 })
 
 // Year positions for the scrubber: year → ratio of total scroll height
@@ -122,7 +122,7 @@ onMounted(async () => {
 function onPhotoClick(photoId: string, e: MouseEvent) {
   const img = (e.currentTarget as HTMLElement).querySelector('img')
   const r = img ? img.getBoundingClientRect() : (e.currentTarget as HTMLElement).getBoundingClientRect()
-  viewStore.show(photoId, { x: r.x, y: r.y, width: r.width, height: r.height }, img?.src)
+  viewStore.show(photoId, { x: r.x, y: r.y, width: r.width, height: r.height }, img?.src, tl.allItems.value)
 }
 
 function onJumpToDate(dateStr: string) {
