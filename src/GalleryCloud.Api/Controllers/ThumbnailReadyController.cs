@@ -11,24 +11,19 @@ namespace GalleryCloud.Api.Controllers;
 [Route("api/thumbnails")]
 public class ThumbnailReadyController : ControllerBase
 {
-    private readonly AppDbContext _db;
+    private readonly ThumbnailDbContext _thumbDb;
     private readonly IThumbnailService _thumbnailService;
     private readonly UserContext _userContext;
 
-    public ThumbnailReadyController(AppDbContext db, IThumbnailService thumbnailService, UserContext userContext)
+    public ThumbnailReadyController(ThumbnailDbContext thumbDb, IThumbnailService thumbnailService, UserContext userContext)
     {
-        _db = db;
+        _thumbDb = thumbDb;
         _thumbnailService = thumbnailService;
         _userContext = userContext;
     }
 
     public record IdsRequest(List<string> Ids, string Size = "grid", int Width = 400);
 
-    /// <summary>
-    /// POST /api/thumbnails/ready
-    /// Given a list of photo IDs, returns which ones have cached thumbnails ready.
-    /// Pure read — no writes.
-    /// </summary>
     [HttpPost("ready")]
     public async Task<IActionResult> CheckReady([FromBody] IdsRequest request)
     {
@@ -39,7 +34,7 @@ public class ThumbnailReadyController : ControllerBase
 
         var size = request.Size.ToLowerInvariant();
 
-        var cachedIds = await _db.ThumbnailCaches
+        var cachedIds = await _thumbDb.ThumbnailCaches
             .Where(t => t.Size == size && request.Ids.Contains(t.PhotoId))
             .Select(t => t.PhotoId)
             .ToListAsync();
@@ -51,10 +46,6 @@ public class ThumbnailReadyController : ControllerBase
         return Ok(new { ready, pending });
     }
 
-    /// <summary>
-    /// POST /api/thumbnails/enqueue
-    /// Enqueue a batch of photos for thumbnail generation. Returns immediately.
-    /// </summary>
     [HttpPost("enqueue")]
     public async Task<IActionResult> Enqueue([FromBody] IdsRequest request)
     {
@@ -67,7 +58,7 @@ public class ThumbnailReadyController : ControllerBase
         };
 
         var sizeKey = request.Size?.ToLowerInvariant() ?? "grid";
-        var alreadyCached = await _db.ThumbnailCaches
+        var alreadyCached = await _thumbDb.ThumbnailCaches
             .Where(t => t.Size == sizeKey && request.Ids!.Contains(t.PhotoId))
             .Select(t => t.PhotoId)
             .ToListAsync();

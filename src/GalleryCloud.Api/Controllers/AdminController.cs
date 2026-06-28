@@ -15,16 +15,19 @@ namespace GalleryCloud.Api.Controllers;
 public class AdminController : ControllerBase
 {
     private readonly AppDbContext _db;
+    private readonly ThumbnailDbContext _thumbDb;
     private readonly IScanService _scanService;
     private readonly ISettingService _settingService;
     private readonly IThumbnailService _thumbnailService;
     private readonly IAuthService _authService;
     private readonly UserContext _userContext;
 
-    public AdminController(AppDbContext db, IScanService scanService, ISettingService settingService,
-        IThumbnailService thumbnailService, IAuthService authService, UserContext userContext)
+    public AdminController(AppDbContext db, ThumbnailDbContext thumbDb, IScanService scanService,
+        ISettingService settingService, IThumbnailService thumbnailService, IAuthService authService,
+        UserContext userContext)
     {
         _db = db;
+        _thumbDb = thumbDb;
         _scanService = scanService;
         _settingService = settingService;
         _thumbnailService = thumbnailService;
@@ -234,18 +237,9 @@ public class AdminController : ControllerBase
             return Conflict(new { error = "Thumbnail regeneration is running, wait for it to finish" });
 
         // Clear DB records
-        var count = await _db.ThumbnailCaches.CountAsync();
-        _db.ThumbnailCaches.RemoveRange(_db.ThumbnailCaches);
-        await _db.SaveChangesAsync();
-
-        // Clear disk cache
-        var cacheDir = await _settingService.GetAsync(SettingKeys.ThumbnailCacheDir, "data/thumbnails");
-        var path = Path.GetFullPath(Path.Combine(Directory.GetCurrentDirectory(), cacheDir));
-        if (Directory.Exists(path))
-        {
-            Directory.Delete(path, true);
-            Directory.CreateDirectory(path);
-        }
+        var count = await _thumbDb.ThumbnailCaches.CountAsync();
+        _thumbDb.ThumbnailCaches.RemoveRange(_thumbDb.ThumbnailCaches);
+        await _thumbDb.SaveChangesAsync();
 
         return Ok(new { message = "Cache cleared", deletedRecords = count });
     }

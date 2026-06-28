@@ -12,9 +12,12 @@ builder.Configuration.AddJsonFile("appsettings.json", optional: false, reloadOnC
 
 var connectionString = builder.Configuration.GetConnectionString("Default")
     ?? "Data Source=App_Data/gallerycloud.db";
+var thumbConnectionString = builder.Configuration.GetConnectionString("Thumbnails")
+    ?? "Data Source=App_Data/thumbnails.db";
 
 builder.Services.Configure<AuthOptions>(builder.Configuration.GetSection("Auth"));
 builder.Services.AddDbContext<AppDbContext>(options => options.UseSqlite(connectionString));
+builder.Services.AddDbContext<ThumbnailDbContext>(options => options.UseSqlite(thumbConnectionString));
 builder.Services.AddMemoryCache();
 
 // Core services

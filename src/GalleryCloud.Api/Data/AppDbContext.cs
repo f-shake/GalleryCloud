@@ -13,7 +13,6 @@ public class AppDbContext : DbContext
     public DbSet<PhotoTag> PhotoTags => Set<PhotoTag>();
     public DbSet<Favorite> Favorites => Set<Favorite>();
     public DbSet<ScanLog> ScanLogs => Set<ScanLog>();
-    public DbSet<ThumbnailCache> ThumbnailCaches => Set<ThumbnailCache>();
     public DbSet<SystemSetting> SystemSettings => Set<SystemSetting>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
@@ -102,18 +101,6 @@ public class AppDbContext : DbContext
             e.Property(x => x.UserId).HasMaxLength(32).IsRequired();
             e.Property(x => x.Mode).HasMaxLength(16).IsRequired();
             e.HasOne(x => x.User).WithMany().HasForeignKey(x => x.UserId).OnDelete(DeleteBehavior.Cascade);
-        });
-
-        // --- ThumbnailCache ---
-        modelBuilder.Entity<ThumbnailCache>(e =>
-        {
-            e.ToTable("ThumbnailCache");
-            e.HasKey(x => new { x.PhotoId, x.Size });
-            e.Property(x => x.PhotoId).HasMaxLength(32);
-            e.Property(x => x.Size).HasMaxLength(16);
-            e.Property(x => x.Format).HasMaxLength(8);
-            e.Property(x => x.FilePath).HasMaxLength(1024).IsRequired();
-            e.HasOne(x => x.Photo).WithMany().HasForeignKey(x => x.PhotoId).OnDelete(DeleteBehavior.Cascade);
         });
 
         // --- SystemSetting ---

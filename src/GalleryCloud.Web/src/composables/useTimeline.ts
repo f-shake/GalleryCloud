@@ -77,7 +77,7 @@ export function useTimeline() {
         ? `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
         : `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 
-      if (key !== currentKey && currentKey !== '') {
+      if (key !== currentKey && currentKey !== '' && groupLevel !== 'none') {
         flushBatch()
       }
       currentKey = key

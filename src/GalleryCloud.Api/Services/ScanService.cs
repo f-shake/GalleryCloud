@@ -252,8 +252,10 @@ public class ScanService : IScanService
                 // Invalidate thumbnails if file content changed
                 if (existing.FileSize != photo.FileSize || existing.FileModifiedAt != photo.FileModifiedAt)
                 {
-                    var oldThumbs = await db.ThumbnailCaches.Where(t => t.PhotoId == existing.Id).ToListAsync(ct);
-                    db.ThumbnailCaches.RemoveRange(oldThumbs);
+                    var thumbDb = scope.ServiceProvider.GetRequiredService<ThumbnailDbContext>();
+                    var oldThumbs = await thumbDb.ThumbnailCaches.Where(t => t.PhotoId == existing.Id).ToListAsync(ct);
+                    thumbDb.ThumbnailCaches.RemoveRange(oldThumbs);
+                    await thumbDb.SaveChangesAsync(ct);
                 }
 
                 existing.FileSize = photo.FileSize;

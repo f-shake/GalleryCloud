@@ -8,27 +8,34 @@ public static class DbMigrator
     public static async Task MigrateAsync(IServiceProvider services)
     {
         using var scope = services.CreateScope();
-        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
 
-        // Ensure data directory exists
-        var dbPath = Path.GetDirectoryName(db.Database.GetConnectionString()?.Replace("Data Source=", ""));
-        if (!string.IsNullOrEmpty(dbPath) && !Directory.Exists(dbPath))
+        var mainDb = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        var thumbDb = scope.ServiceProvider.GetRequiredService<ThumbnailDbContext>();
+
+        await MigrateDbAsync(mainDb, -8000);
+        await MigrateDbAsync(thumbDb, -64000);
+
+        await SeedAdminAsync(scope.ServiceProvider);
+    }
+
+    private static async Task MigrateDbAsync(DbContext db, int cacheSizeKb)
+    {
+        var connStr = db.Database.GetConnectionString();
+        var dbPath = connStr?.Replace("Data Source=", "").Trim();
+        if (!string.IsNullOrEmpty(dbPath))
         {
-            Directory.CreateDirectory(dbPath);
+            var dir = Path.GetDirectoryName(dbPath);
+            if (!string.IsNullOrEmpty(dir) && !Directory.Exists(dir))
+                Directory.CreateDirectory(dir);
         }
 
-        // Apply pending EF Core migrations
         await db.Database.MigrateAsync();
 
-        // Set SQLite pragmas
         await db.Database.ExecuteSqlRawAsync("PRAGMA journal_mode = WAL;");
         await db.Database.ExecuteSqlRawAsync("PRAGMA synchronous = NORMAL;");
-        await db.Database.ExecuteSqlRawAsync("PRAGMA cache_size = -8000;");
+        await db.Database.ExecuteSqlRawAsync($"PRAGMA cache_size = {cacheSizeKb};");
         await db.Database.ExecuteSqlRawAsync("PRAGMA foreign_keys = ON;");
         await db.Database.ExecuteSqlRawAsync("PRAGMA busy_timeout = 5000;");
-
-        // Seed admin account if no users exist
-        await SeedAdminAsync(scope.ServiceProvider);
     }
 
     private static async Task SeedAdminAsync(IServiceProvider services)
@@ -52,11 +59,8 @@ public static class DbMigrator
         db.Users.Add(admin);
         await db.SaveChangesAsync();
 
-        // Ensure admin's photo directory exists
         if (!Directory.Exists(admin.RootPath))
-        {
             Directory.CreateDirectory(admin.RootPath);
-        }
     }
 
     private static string HashPassword(string password)

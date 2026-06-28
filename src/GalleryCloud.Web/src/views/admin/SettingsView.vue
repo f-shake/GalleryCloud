@@ -8,7 +8,7 @@ const loading = ref(true)
 
 interface FieldConfig {
   key: string; label: string; hint?: string
-  type?: 'switch' | 'number' | 'select'
+  type?: 'switch' | 'number' | 'select' | 'slider'
   placeholder?: string
   options?: { v: string; l: string }[]
 }
@@ -32,17 +32,18 @@ const sections: { title: string; fields: FieldConfig[] }[] = [
   {
     title: '缩略图',
     fields: [
-      { key: 'thumbnail.quality', label: '质量', type: 'number', hint: '10-100，数值越高文件越大', placeholder: '80' },
-      { key: 'thumbnail.parallelThreads', label: '并行线程', type: 'number', hint: '1 ~ CPU 核心数，默认 2', placeholder: '2' },
-      { key: 'thumbnail.cacheDir', label: '缓存目录', placeholder: 'data/thumbnails' },
+      { key: 'thumbnail.format', label: '格式', type: 'select', options: [{ v: 'jpeg', l: 'JPEG' }, { v: 'webp', l: 'WebP' }], hint: '切换后已有缩略图仍可用，新生成使用新格式' },
+      { key: 'thumbnail.quality', label: '质量', type: 'slider', hint: '10-100，数值越高文件越大' },
+      { key: 'thumbnail.parallelThreads', label: '并行线程', type: 'number', hint: '1 ~ CPU 核心数', placeholder: '4' },
       { key: 'thumbnail.maxMemoryCacheMb', label: '内存缓存 (MB)', type: 'number', placeholder: '512' },
     ],
   },
   {
     title: '预览',
     fields: [
-      { key: 'preview.quality', label: '质量', type: 'number', hint: '10-100', placeholder: '85' },
-      { key: 'preview.maxResolution', label: '最大分辨率 (px)', type: 'number', hint: '任意一边不超过此值', placeholder: '6000' },
+      { key: 'preview.format', label: '格式', type: 'select', options: [{ v: 'jpeg', l: 'JPEG' }, { v: 'webp', l: 'WebP' }], hint: '切换后已有预览仍可用，新生成使用新格式' },
+      { key: 'preview.quality', label: '质量', type: 'slider', hint: '10-100，数值越高文件越大' },
+      { key: 'preview.maxResolution', label: '最大分辨率 (px)', type: 'number', hint: '任意一边不超过此值', placeholder: '5000' },
     ],
   },
   {
@@ -90,6 +91,14 @@ async function save() {
               <el-select v-else-if="f.type === 'select'" v-model="settings[f.key]" style="width:200px">
                 <el-option v-for="o in f.options" :key="o.v" :label="o.l" :value="o.v" />
               </el-select>
+              <div v-else-if="f.type === 'slider'" style="display:flex;align-items:center;gap:12px;width:100%">
+                <el-slider
+                  :model-value="Number(settings[f.key]) || (f.key.includes('preview') ? 70 : 60)"
+                  @update:model-value="settings[f.key] = String($event)"
+                  :min="10" :max="100" style="flex:1"
+                />
+                <span style="min-width:32px;text-align:right;font-size:13px;color:var(--el-text-color-secondary)">{{ settings[f.key] || (f.key.includes('preview') ? '70' : '60') }}</span>
+              </div>
               <el-input-number
                 v-else-if="f.type === 'number'"
                 :model-value="Number(settings[f.key]) || 0"

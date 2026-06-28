@@ -54,24 +54,17 @@ public class ThumbnailService : IThumbnailService
             return new MemoryStream(cached);
 
         using var scope = _scopeFactory.CreateScope();
-        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        var thumbDb = scope.ServiceProvider.GetRequiredService<ThumbnailDbContext>();
         var sizeKey = size.ToString().ToLowerInvariant();
 
-        var cacheRecord = await db.ThumbnailCaches
+        var cacheRecord = await thumbDb.ThumbnailCaches
             .FirstOrDefaultAsync(t => t.PhotoId == photoId && t.Size == sizeKey);
 
-        if (cacheRecord == null || !File.Exists(cacheRecord.FilePath))
+        if (cacheRecord?.Data == null || cacheRecord.Data.Length == 0)
             return null;
 
-        var bytes = await File.ReadAllBytesAsync(cacheRecord.FilePath);
-        if (bytes.Length == 0)
-        {
-            // Corrupted cache — clean it up and treat as not cached
-            File.Delete(cacheRecord.FilePath);
-            return null;
-        }
-        CacheInMemory(memKey, bytes);
-        return new MemoryStream(bytes);
+        CacheInMemory(memKey, cacheRecord.Data);
+        return new MemoryStream(cacheRecord.Data);
     }
 
     // ── Enqueue for background generation ─────────────────────
@@ -110,8 +103,7 @@ public class ThumbnailService : IThumbnailService
     private async Task GenerateOneAsync(string photoId, ThumbnailSize size, int width,
         SemaphoreSlim semaphore, CancellationToken ct)
     {
-        var inFlight = Interlocked.Increment(ref _inProgressCount);
-        // Per-photo lock to prevent concurrent writes to the same file
+        Interlocked.Increment(ref _inProgressCount);
         var perPhotoLock = _photoLocks.GetOrAdd(photoId, _ => new SemaphoreSlim(1, 1));
         await perPhotoLock.WaitAsync(ct);
         try
@@ -139,11 +131,9 @@ public class ThumbnailService : IThumbnailService
     // ── Full generate (used by background worker & regenerate) ──
     public async Task<Stream?> GetThumbnailAsync(string photoId, ThumbnailSize size, int width, CancellationToken ct = default)
     {
-        // Try cache first
         var cached = await TryGetCachedAsync(photoId, size, width);
         if (cached != null) return cached;
 
-        // Fall back to inline generation
         return await InternalGenerateAsync(photoId, size, width, ct);
     }
 
@@ -152,10 +142,11 @@ public class ThumbnailService : IThumbnailService
         ct.ThrowIfCancellationRequested();
         using var scope = _scopeFactory.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        var thumbDb = scope.ServiceProvider.GetRequiredService<ThumbnailDbContext>();
         var sizeKey = size.ToString().ToLowerInvariant();
         var isPreview = sizeKey == "preview";
 
-        // Photo + user
+        // Photo + user (for source file path only)
         var photo = await db.Photos.FirstOrDefaultAsync(p => p.Id == photoId && !p.IsDeleted, ct);
         if (photo == null) return null;
 
@@ -165,66 +156,73 @@ public class ThumbnailService : IThumbnailService
         var fullPath = Path.GetFullPath(Path.Combine(user.RootPath, photo.FilePath));
         if (!File.Exists(fullPath)) return null;
 
-        var format = "webp";
-        var quality = await _settings.GetAsync(isPreview ? SettingKeys.PreviewQuality : SettingKeys.ThumbnailQuality, 80);
-        var cacheDir = await _settings.GetAsync(SettingKeys.ThumbnailCacheDir, "data/thumbnails");
-
-        var cacheAbsoluteDir = Path.GetFullPath(Path.Combine(Directory.GetCurrentDirectory(), cacheDir, user.Id, sizeKey));
-        Directory.CreateDirectory(cacheAbsoluteDir);
+        var quality = await _settings.GetAsync(
+            isPreview ? SettingKeys.PreviewQuality : SettingKeys.ThumbnailQuality,
+            isPreview ? 70 : 60);
+        var fmt = await _settings.GetAsync(isPreview ? SettingKeys.PreviewFormat : SettingKeys.ThumbnailFormat, "jpeg");
 
         // Decode + process
         var sw = System.Diagnostics.Stopwatch.StartNew();
         using var image = await Image.LoadAsync(fullPath, ct);
         var decodeMs = sw.ElapsedMilliseconds;
-        int srcW = image.Width, srcH = image.Height; // original dimensions before any resize
-        var encoder = new WebpEncoder { Quality = quality };
+        int srcW = image.Width, srcH = image.Height;
 
         image.Mutate(x => x.AutoOrient());
 
-        string cachePath;
+        bool isWebp = fmt.Equals("webp", StringComparison.OrdinalIgnoreCase);
+        IImageEncoder encoder = isWebp
+            ? new WebpEncoder { Quality = quality }
+            : new JpegEncoder { Quality = quality };
+        string format = fmt.ToLowerInvariant();
+
         if (isPreview)
         {
-            // Preview: original resolution, cap longer side at maxRes
-            var maxRes = await _settings.GetAsync(SettingKeys.PreviewMaxResolution, 6000);
+            var maxRes = await _settings.GetAsync(SettingKeys.PreviewMaxResolution, 5000);
             var longerSide = Math.Max(image.Width, image.Height);
             if (longerSide > maxRes)
             {
                 var scale = (double)maxRes / longerSide;
                 image.Mutate(x => x.Resize((int)(image.Width * scale), (int)(image.Height * scale)));
             }
-            cachePath = Path.Combine(cacheAbsoluteDir, $"{photoId}_preview.webp");
         }
         else
         {
-            // Grid: resize by width
             var targetW = Math.Min(width, image.Width);
             image.Mutate(x => x.Resize(targetW, 0));
-            cachePath = Path.Combine(cacheAbsoluteDir, $"{photoId}_{width}.webp");
         }
 
+        // Encode to memory
         sw.Restart();
-        await image.SaveAsync(cachePath, encoder, ct);
+        using var ms = new MemoryStream();
+        await image.SaveAsync(ms, encoder, ct);
         var encodeMs = sw.ElapsedMilliseconds;
+        var resultBytes = ms.ToArray();
 
+        // Store in thumbnail DB
         sw.Restart();
-        // Save cache record
-        var record = await db.ThumbnailCaches
+        var record = await thumbDb.ThumbnailCaches
             .FirstOrDefaultAsync(t => t.PhotoId == photoId && t.Size == sizeKey, ct);
         if (record == null)
         {
-            record = new ThumbnailCache { PhotoId = photoId, Size = sizeKey, Format = format, FilePath = cachePath };
-            db.ThumbnailCaches.Add(record);
+            record = new ThumbnailCache
+            {
+                PhotoId = photoId,
+                Size = sizeKey,
+                Format = format,
+                Data = resultBytes
+            };
+            thumbDb.ThumbnailCaches.Add(record);
         }
         else
         {
-            record.FilePath = cachePath;
+            record.Data = resultBytes;
+            record.Format = format;
             record.CreatedAt = DateTime.UtcNow;
         }
 
-        await db.SaveChangesAsync(ct);
+        await thumbDb.SaveChangesAsync(ct);
         var dbMs = sw.ElapsedMilliseconds;
 
-        var resultBytes = await File.ReadAllBytesAsync(cachePath, ct);
         CacheInMemory($"thumb:{photoId}:{sizeKey}", resultBytes);
         var remaining = Interlocked.Decrement(ref _queueCount);
         _logger.LogInformation("缩略图完成 [{Size}] {PhotoId} 原图{W}x{H} 解码:{Decode}ms 编码:{Encode}ms DB:{Db}ms 并行:{Parallel}",
@@ -244,10 +242,11 @@ public class ThumbnailService : IThumbnailService
     {
         using var scope = _scopeFactory.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        var thumbDb = scope.ServiceProvider.GetRequiredService<ThumbnailDbContext>();
 
         var totalPhotos = await db.Photos.CountAsync(p => !p.IsDeleted);
-        var gridCached = await db.ThumbnailCaches.CountAsync(t => t.Size == "grid");
-        var previewCached = await db.ThumbnailCaches.CountAsync(t => t.Size == "preview");
+        var gridCached = await thumbDb.ThumbnailCaches.CountAsync(t => t.Size == "grid");
+        var previewCached = await thumbDb.ThumbnailCaches.CountAsync(t => t.Size == "preview");
 
         return new ThumbnailStats
         {
@@ -265,7 +264,6 @@ public class ThumbnailService : IThumbnailService
         _regenerationCts?.Cancel();
         _regenerationCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
 
-        // Determine which sizes to process
         var allSizes = new[] { ("grid", ThumbnailSize.Grid, 400), ("preview", ThumbnailSize.Preview, 0) };
         var selected = sizes is { Count: > 0 }
             ? allSizes.Where(s => sizes.Contains(s.Item1, StringComparer.OrdinalIgnoreCase)).ToArray()
@@ -274,15 +272,14 @@ public class ThumbnailService : IThumbnailService
 
         using var scope = _scopeFactory.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        var thumbDb = scope.ServiceProvider.GetRequiredService<ThumbnailDbContext>();
 
-        // Collect existing cache keys for quick lookup
         var photoIds = await db.Photos.Where(p => !p.IsDeleted).Select(p => p.Id).ToListAsync(_regenerationCts.Token);
-        var cachedKeys = await db.ThumbnailCaches
+        var cachedKeys = await thumbDb.ThumbnailCaches
             .Select(t => new { t.PhotoId, t.Size })
             .ToListAsync(_regenerationCts.Token);
         var cachedSet = new HashSet<string>(cachedKeys.Select(c => $"{c.PhotoId}:{c.Size}"));
 
-        // Build list of missing thumbnails
         var missing = new List<(string PhotoId, ThumbnailSize Size, int Width)>();
         foreach (var pid in photoIds)
         {
@@ -334,7 +331,6 @@ public class ThumbnailService : IThumbnailService
         _regenerationCts?.Cancel();
         _regenerationCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
 
-        // Determine which sizes to process
         var allSizes = new[] { (ThumbnailSize.Grid, 400, "grid"), (ThumbnailSize.Preview, 0, "preview") };
         var selected = sizes is { Count: > 0 }
             ? allSizes.Where(s => sizes.Contains(s.Item3, StringComparer.OrdinalIgnoreCase)).ToArray()
@@ -343,30 +339,15 @@ public class ThumbnailService : IThumbnailService
 
         using var scope = _scopeFactory.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        var thumbDb = scope.ServiceProvider.GetRequiredService<ThumbnailDbContext>();
 
-        // Only clear cache for selected sizes
+        // Clear cache records for selected sizes
         foreach (var (_, _, sizeKey) in selected)
         {
-            var toRemove = await db.ThumbnailCaches.Where(t => t.Size == sizeKey).ToListAsync(_regenerationCts.Token);
-            db.ThumbnailCaches.RemoveRange(toRemove);
+            var toRemove = await thumbDb.ThumbnailCaches.Where(t => t.Size == sizeKey).ToListAsync(_regenerationCts.Token);
+            thumbDb.ThumbnailCaches.RemoveRange(toRemove);
         }
-        await db.SaveChangesAsync(_regenerationCts.Token);
-
-        // Clean disk cache for selected sizes
-        var cacheDir = await _settings.GetAsync(SettingKeys.ThumbnailCacheDir, "data/thumbnails");
-        var absoluteDir = Path.GetFullPath(Path.Combine(Directory.GetCurrentDirectory(), cacheDir));
-        if (Directory.Exists(absoluteDir))
-        {
-            foreach (var (_, _, sizeKey) in selected)
-            {
-                var sizeDir = Path.Combine(absoluteDir, "*", sizeKey);
-                foreach (var dir in Directory.GetDirectories(absoluteDir))
-                {
-                    var targetDir = Path.Combine(dir, sizeKey);
-                    if (Directory.Exists(targetDir)) { Directory.Delete(targetDir, true); Directory.CreateDirectory(targetDir); }
-                }
-            }
-        }
+        await thumbDb.SaveChangesAsync(_regenerationCts.Token);
 
         var photoIds = await db.Photos.Where(p => !p.IsDeleted).Select(p => p.Id).ToListAsync(_regenerationCts.Token);
         var workItems = new List<(string PhotoId, ThumbnailSize Size, int Width)>();

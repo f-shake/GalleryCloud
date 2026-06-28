@@ -166,23 +166,9 @@ public class PhotosController : ControllerBase
         }
 
         // 1. Try cache — if hit, return bytes directly
-        var sizeKey = size.ToString().ToLowerInvariant();
-        var cacheRecord = await _db.ThumbnailCaches
-            .FirstOrDefaultAsync(t => t.PhotoId == id && t.Size == sizeKey);
-        if (cacheRecord != null && System.IO.File.Exists(cacheRecord.FilePath))
-        {
-            var fileInfo = new System.IO.FileInfo(cacheRecord.FilePath);
-            if (fileInfo.Length > 0)
-            {
-                var bytes = await System.IO.File.ReadAllBytesAsync(cacheRecord.FilePath);
-                if (bytes.Length > 0)
-                    return new FileContentResult(bytes, "image/webp");
-            }
-            // Corrupted — clean up
-            System.IO.File.Delete(cacheRecord.FilePath);
-            _db.ThumbnailCaches.Remove(cacheRecord);
-            await _db.SaveChangesAsync();
-        }
+        var cached = await _thumbnailService.TryGetCachedAsync(id, thumbSize, w);
+        if (cached != null)
+            return new FileContentResult(await ReadFullyAsync(cached), "image/webp");
 
         // 2. Not cached — grid: enqueue background generation, return 202 immediately
         _thumbnailService.EnqueueAsync(id, thumbSize, w);

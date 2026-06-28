@@ -12,12 +12,13 @@ public static class SettingKeys
     public const string FileWatcherDebounceDelayMs = "filewatcher.debounceDelayMs";
 
     // Thumbnail
+    public const string ThumbnailFormat = "thumbnail.format";
     public const string ThumbnailQuality = "thumbnail.quality";
     public const string ThumbnailParallelThreads = "thumbnail.parallelThreads";
-    public const string ThumbnailCacheDir = "thumbnail.cacheDir";
     public const string ThumbnailMaxMemoryCacheMb = "thumbnail.maxMemoryCacheMb";
 
     // Preview
+    public const string PreviewFormat = "preview.format";
     public const string PreviewQuality = "preview.quality";
     public const string PreviewMaxResolution = "preview.maxResolution";
 
