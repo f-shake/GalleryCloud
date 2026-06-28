@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, onMounted, computed } from 'vue'
-import { useRouter } from 'vue-router'
 import { usePhotoGrid } from '../composables/usePhotoGrid'
+import PhotoGridToolbar from '../components/PhotoGridToolbar.vue'
 import client from '../api/client'
 import { thumbUrl } from '../composables/useThumbnailUrl'
 import { usePhotoViewStore } from '../stores/photoViewStore'
@@ -9,9 +9,8 @@ import { useScanStatus } from '../composables/useScanStatus'
 
 interface FolderNode { name: string; path: string; photoCount: number; subFolders: FolderNode[] }
 
-const router = useRouter()
 const viewStore = usePhotoViewStore()
-const { columns, zoomIn, zoomOut } = usePhotoGrid()
+const { columns } = usePhotoGrid()
 const { isScanning } = useScanStatus()
 const tree = ref<FolderNode[]>([])
 const selPath = ref('')
@@ -64,12 +63,12 @@ const defaultExpanded = computed(() => tree.value.slice(0, 10).map(n => n.path))
       </el-tree>
     </div>
     <div style="flex:1;overflow-y:auto;padding:8px">
-      <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px">
-        <span style="font-size:13px;color:var(--el-text-color-secondary)">{{ selPath || '选择文件夹' }}</span>
-        <div style="flex:1" />
-        <el-button text :icon="'Minus'" @click="zoomOut" :disabled="columns >= 12" style="color:var(--el-text-color-secondary)" />
-        <span style="font-size:13px;color:var(--el-text-color-secondary);min-width:24px;text-align:center">{{ columns }}</span>
-        <el-button text :icon="'Plus'" @click="zoomIn" :disabled="columns <= 3" style="color:var(--el-text-color-secondary)" />
+      <div style="margin-bottom:12px">
+        <PhotoGridToolbar :count="photos.length">
+          <template #left>
+            <span style="font-size:13px;color:var(--el-text-color-secondary)">{{ selPath || '选择文件夹' }}</span>
+          </template>
+        </PhotoGridToolbar>
       </div>
       <el-empty v-if="!selPath && !isScanning" description="选择左侧文件夹" />
       <div v-else-if="loading" style="text-align:center;padding:32px"><el-icon class="is-loading" :size="24"><Loading /></el-icon></div>

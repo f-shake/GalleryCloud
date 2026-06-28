@@ -120,7 +120,6 @@ function clampOffset() {
 }
 
 const src = computed(() => previewReady.value ? previewSrc.value : gridSrc.value)
-const originalUrl = computed(() => `/api/photos/${store.photoId}/file?token=${localStorage.getItem('token') || ''}`)
 
 watch(() => store.open, async (val) => {
   if (!val || !store.photoId) return

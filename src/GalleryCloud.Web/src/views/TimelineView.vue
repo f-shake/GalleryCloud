@@ -7,6 +7,7 @@ import { thumbUrl } from '../composables/useThumbnailUrl'
 import { usePhotoViewStore } from '../stores/photoViewStore'
 import { useScanStatus } from '../composables/useScanStatus'
 import TimeScrubber from '../components/timeline/TimeScrubber.vue'
+import PhotoGridToolbar from '../components/PhotoGridToolbar.vue'
 
 const viewStore = usePhotoViewStore()
 const { columns, groupLevel, zoomIn, zoomOut } = usePhotoGrid()
@@ -180,11 +181,7 @@ function onTouchEnd() {
   <div class="tl-wrap" @touchstart="onTouchStart" @touchmove="onTouchMove" @touchend="onTouchEnd">
     <!-- Toolbar: outside scroll, always visible -->
     <div class="tl-toolbar">
-      <span class="tl-toolbar-info">{{ tl.totalPhotos.value }}张</span>
-      <div style="flex:1" />
-      <el-button text :icon="'Minus'" @click="zoomOut" :disabled="columns >= 12" style="color:var(--el-text-color-secondary)" />
-      <span style="font-size:13px;color:var(--el-text-color-secondary);min-width:24px;text-align:center">{{ columns }}</span>
-      <el-button text :icon="'Plus'" @click="zoomIn" :disabled="columns <= 3" style="color:var(--el-text-color-secondary)" />
+      <PhotoGridToolbar :count="tl.totalPhotos.value" />
     </div>
 
     <!-- Date header overlay (outside scroll area, doesn't affect virtualizer) -->

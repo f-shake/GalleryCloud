@@ -64,6 +64,26 @@ public class MapController : ControllerBase
         return Ok(photos);
     }
 
+    [HttpGet("points")]
+    public async Task<IActionResult> GetPoints()
+    {
+        if (!_userContext.IsAuthenticated) return Unauthorized();
+
+        var points = await _db.Photos
+            .Where(p => p.UserId == _userContext.UserId && !p.IsDeleted
+                && p.Latitude != null && p.Longitude != null)
+            .Select(p => new {
+                p.Id,
+                p.Latitude,
+                p.Longitude,
+                p.FileName,
+                p.TakenAt
+            })
+            .ToListAsync();
+
+        return Ok(points);
+    }
+
     [HttpGet("basemap-config")]
     public async Task<IActionResult> GetBasemapConfig([FromServices] ISettingService settings)
     {

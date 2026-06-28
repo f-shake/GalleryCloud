@@ -9,6 +9,7 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@arcgis/core": "^5.0.17",
     "@element-plus/icons-vue": "^2.3.2",
     "@tanstack/vue-virtual": "^3.13.30",
     "@unocss/reset": "^66.7.3",

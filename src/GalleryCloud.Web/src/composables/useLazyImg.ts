@@ -22,7 +22,7 @@ export const vLazyImg: Directive<HTMLImageElement, string> = {
         const q = getQueue()
         for (const entry of entries) {
           if (entry.isIntersecting) {
-            q.register(photoId, el, 'grid', 400)
+            q.register(photoId, el)
           } else {
             q.unregister(photoId)
           }

@@ -1,13 +1,11 @@
 <script setup lang="ts">
 import { onMounted, onUnmounted } from 'vue'
-import { useRouter } from 'vue-router'
 import { usePhotoGrid } from '../composables/usePhotoGrid'
 import { useInfiniteQuery } from '../composables/useInfiniteQuery'
 import { thumbUrl } from '../composables/useThumbnailUrl'
 import { usePhotoViewStore } from '../stores/photoViewStore'
 import { useScanStatus } from '../composables/useScanStatus'
 
-const router = useRouter()
 const viewStore = usePhotoViewStore()
 const { columns, zoomIn, zoomOut } = usePhotoGrid()
 const { isScanning } = useScanStatus()

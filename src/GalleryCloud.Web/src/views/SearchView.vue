@@ -1,13 +1,11 @@
 <script setup lang="ts">
 import { ref } from 'vue'
-import { useRouter } from 'vue-router'
 import { usePhotoGrid } from '../composables/usePhotoGrid'
 import client from '../api/client'
 import { thumbUrl } from '../composables/useThumbnailUrl'
 import { usePhotoViewStore } from '../stores/photoViewStore'
 import { useScanStatus } from '../composables/useScanStatus'
 
-const router = useRouter()
 const viewStore = usePhotoViewStore()
 const { columns, zoomIn, zoomOut } = usePhotoGrid()
 const { isScanning } = useScanStatus()
