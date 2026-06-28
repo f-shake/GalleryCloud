@@ -62,7 +62,7 @@ const virtualizer = useVirtualizer({
   getScrollElement: () => containerRef.value,
   estimateSize: (i: number) => {
     const r = rows.value[i]
-    return r?.type === 'header' ? 32 : estimateRowSize()
+    return r?.type === 'header' ? 46 : estimateRowSize()
   },
   overscan: 5,
 })
@@ -94,7 +94,7 @@ function computeYearPositions() {
         }
       }
     }
-    acc += r.type === 'header' ? 32 : estimateRowSize()
+    acc += r.type === 'header' ? 46 : estimateRowSize()
   }
 
   const totalH = acc || 1
@@ -203,7 +203,7 @@ function onTouchEnd() {
           :style="{ position: 'absolute', top: 0, left: 0, width: '100%', height: vItem.size + 'px', transform: `translateY(${vItem.start}px)` }"
         >
           <template v-if="(rows[vItem.index] as RowItem).type === 'header'">
-            <div style="padding:6px 16px">
+            <div style="padding:6px 16px 4px 16px">
               <el-tag type="info" size="large">{{ (rows[vItem.index] as any).label }}</el-tag>
             </div>
           </template>
@@ -274,7 +274,7 @@ function onTouchEnd() {
 /* Date header overlay — outside scroll area, absolute positioned */
 .tl-overlay-header {
   position: absolute;
-  top: 34px; /* below toolbar */
+  top: 32px; /* below toolbar */
   left: 0; right: 0;
   z-index: 20;
   padding: 4px 16px;

@@ -27,6 +27,12 @@ let dragStartX = 0, dragStartY = 0
 let startOffsetX = 0, startOffsetY = 0
 let lastPinchDist = 0
 
+// Swipe-down to dismiss
+const dismissY = ref(0)
+const dismissing = ref(false)
+let isSwipingDown = false
+let swipeStartY = 0
+
 const vw = window.innerWidth
 const vh = window.innerHeight
 
@@ -45,8 +51,11 @@ const imgStyle = computed(() => {
   const base = { width: vw + 'px', height: vh + 'px' }
   if (phase.value === 'start' || phase.value === 'exit')
     return { ...base, transform: startTransform.value }
+  const parts: string[] = []
+  if (dismissY.value !== 0) parts.push(`translateY(${dismissY.value}px)`)
   if (scale.value !== 1 || offsetX.value !== 0 || offsetY.value !== 0)
-    return { ...base, transform: `translate(${offsetX.value}px, ${offsetY.value}px) scale(${scale.value})` }
+    parts.push(`translate(${offsetX.value}px, ${offsetY.value}px) scale(${scale.value})`)
+  if (parts.length > 0) return { ...base, transform: parts.join(' ') }
   return base
 })
 
@@ -57,7 +66,7 @@ const imgClass = computed(() => {
   if (phase.value === 'exit') c.push('pv-img--fade')
   if (phase.value === 'done' || phase.value === 'show') {
     c.push('pv-img--zoom')
-    if (zoomAnimating.value) c.push('pv-img--zoom-anim')
+    if (zoomAnimating.value || dismissing.value) c.push('pv-img--zoom-anim')
   }
   return c
 })
@@ -80,6 +89,7 @@ const originalUrl = computed(() => `/api/photos/${store.photoId}/file?token=${lo
 
 watch(() => store.open, async (val) => {
   if (!val || !store.photoId) return
+  dismissY.value = 0; dismissing.value = false
   const id = store.photoId
   const sid = store.session
   scale.value = 1
@@ -122,7 +132,8 @@ function toggleFav() {
 
 function doClose() {
   if (phase.value === 'start') return
-  showBar.value = false
+  dismissY.value = 0; dismissing.value = false
+  showBar.value = false; showInfo.value = false
   phase.value = 'exit'
   setTimeout(() => store.close(), 350)
 }
@@ -170,30 +181,36 @@ function onMouseMove(e: MouseEvent) {
 }
 function onMouseUp() { isDragging = false }
 
-// ── Touch (pinch + drag) ────────────────────────────────────
+// ── Touch (pinch + drag + swipe-down dismiss) ────────────────
 function onTouchStart(e: TouchEvent) {
-  if (!zoomable.value) return
   // Skip if any touch point is on a button/UI element
   for (let i = 0; i < e.touches.length; i++) {
     const el = document.elementFromPoint(e.touches[i].clientX, e.touches[i].clientY)
     if (el && el.closest('.pv-topbar, .pv-info, .glass-btn')) return
   }
   if (e.touches.length === 2) {
+    if (!zoomable.value) return
     lastPinchDist = Math.hypot(
       e.touches[0].clientX - e.touches[1].clientX,
       e.touches[0].clientY - e.touches[1].clientY
     )
   } else if (e.touches.length === 1 && scale.value > 1) {
+    if (!zoomable.value) return
     isDragging = true
     dragStartX = e.touches[0].clientX
     dragStartY = e.touches[0].clientY
     startOffsetX = offsetX.value
     startOffsetY = offsetY.value
+  } else if (e.touches.length === 1 && scale.value === 1 && (phase.value === 'show' || phase.value === 'done')) {
+    // Swipe down to dismiss
+    isSwipingDown = true
+    swipeStartY = e.touches[0].clientY
+    dismissing.value = true
   }
 }
 function onTouchMove(e: TouchEvent) {
-  if (!zoomable.value) return
   if (e.touches.length === 2) {
+    if (!zoomable.value) return
     e.preventDefault()
     const dist = Math.hypot(
       e.touches[0].clientX - e.touches[1].clientX,
@@ -211,12 +228,27 @@ function onTouchMove(e: TouchEvent) {
     }
     lastPinchDist = dist
   } else if (e.touches.length === 1 && isDragging) {
+    e.preventDefault()
     offsetX.value = startOffsetX + (e.touches[0].clientX - dragStartX)
     offsetY.value = startOffsetY + (e.touches[0].clientY - dragStartY)
     clampOffset()
+  } else if (e.touches.length === 1 && isSwipingDown) {
+    const dy = e.touches[0].clientY - swipeStartY
+    if (dy > 0) { e.preventDefault(); dismissY.value = dy * 0.8 } // damped
   }
 }
-function onTouchEnd() { isDragging = false; lastPinchDist = 0 }
+function onTouchEnd() {
+  isDragging = false; lastPinchDist = 0
+  if (isSwipingDown) {
+    isSwipingDown = false
+    if (dismissY.value > 100) {
+      doClose()
+    } else {
+      dismissY.value = 0
+      setTimeout(() => { dismissing.value = false }, 250)
+    }
+  }
+}
 
 // ── Double-click to reset zoom ──────────────────────────────
 function onDblClick() {
