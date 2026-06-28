@@ -37,7 +37,8 @@ function arcgisAssets(): Plugin {
   }
 }
 
-export default defineConfig({
+export default defineConfig(({ command }) => ({
+  base: command === 'build' ? '/gallery/' : '/',
   plugins: [
     vue(),
     UnoCSS(),
@@ -53,4 +54,4 @@ export default defineConfig({
       },
     },
   },
-})
+}))

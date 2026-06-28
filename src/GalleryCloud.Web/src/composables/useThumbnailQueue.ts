@@ -1,5 +1,5 @@
 import { ref } from 'vue'
-import client from '../api/client'
+import client, { API_BASE } from '../api/client'
 
 interface PendingItem {
   el: HTMLImageElement
@@ -82,7 +82,7 @@ export function useThumbnailQueue() {
 }
 
 async function fetchThumbnailImage(photoId: string, token: string, signal: AbortSignal): Promise<string> {
-  const url = `/api/photos/${photoId}/thumbnail?size=grid&w=400&token=${token}`
+  const url = `${API_BASE}/photos/${photoId}/thumbnail?size=grid&w=400&token=${token}`
 
   for (let attempt = 0; attempt < 120; attempt++) {
     if (signal.aborted) throw new Error('aborted')

@@ -1,8 +1,10 @@
 import axios from 'axios'
 import type { AxiosInstance } from 'axios'
 
+export const API_BASE = import.meta.env.BASE_URL + 'api'
+
 const client: AxiosInstance = axios.create({
-  baseURL: '/api',
+  baseURL: API_BASE,
   timeout: 30000,
   headers: { 'Content-Type': 'application/json' },
 })

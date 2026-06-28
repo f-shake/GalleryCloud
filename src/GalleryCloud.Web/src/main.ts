@@ -11,7 +11,7 @@ import router from './router'
 import { vLazyImg } from './composables/useLazyImg'
 import App from './App.vue'
 
-esriConfig.assetsPath = '/esri-assets'
+esriConfig.assetsPath = import.meta.env.BASE_URL + 'esri-assets'
 
 const app = createApp(App)
 

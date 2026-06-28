@@ -67,8 +67,8 @@ app.UseMiddleware<AuthMiddleware>();
 app.MapControllers();
 
 // SPA: serve Vue frontend
-app.MapFallbackToFile("index.html");
 app.UseDefaultFiles();
 app.UseStaticFiles();
+app.MapFallbackToFile("index.html");
 
 app.Run();
