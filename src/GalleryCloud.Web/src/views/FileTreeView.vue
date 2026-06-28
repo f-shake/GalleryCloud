@@ -69,14 +69,13 @@ const defaultExpanded = computed(() => tree.value.slice(0, 10).map(n => n.path))
       <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px">
         <span style="font-size:13px;color:var(--el-text-color-secondary)">{{ selPath || '选择文件夹' }}</span>
         <div style="flex:1" />
-        <el-button-group size="small">
-          <el-button icon="Minus" @click="zoomOut" :disabled="columns >= 12" />
-          <el-button icon="Plus" @click="zoomIn" :disabled="columns <= 3" />
-        </el-button-group>
+        <el-button text :icon="'Minus'" @click="zoomOut" :disabled="columns >= 12" style="color:var(--el-text-color-secondary)" />
+        <span style="font-size:13px;color:var(--el-text-color-secondary);min-width:24px;text-align:center">{{ columns }}</span>
+        <el-button text :icon="'Plus'" @click="zoomIn" :disabled="columns <= 3" style="color:var(--el-text-color-secondary)" />
       </div>
       <el-empty v-if="!selPath && !isScanning" description="选择左侧文件夹" />
       <div v-else-if="loading" style="text-align:center;padding:32px"><el-icon class="is-loading" :size="24"><Loading /></el-icon></div>
-      <div v-else-if="photos.length" :style="{ display:'grid', gridTemplateColumns:`repeat(${columns}, 1fr)`, gap:'0' }">
+      <div v-else-if="photos.length" :style="{ display:'grid', gridTemplateColumns:`repeat(${columns}, 1fr)`, gap:'4px' }">
         <div v-for="p in photos" :key="p.id" class="thumb-cell" @click="onPhotoClick(p.id, $event)">
           <img v-lazy-img="thumbUrl(p.id, 'grid', 400)" class="thumb-img" />
         </div>
