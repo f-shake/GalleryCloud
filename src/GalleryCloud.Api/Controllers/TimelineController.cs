@@ -156,6 +156,56 @@ public class TimelineController : ControllerBase
         });
     }
 
+    [HttpGet("range")]
+    public async Task<IActionResult> GetRange(
+        [FromQuery] string? from,
+        [FromQuery] string? to,
+        [FromQuery] string groupLevel = "day",
+        [FromQuery] int limit = 200)
+    {
+        if (!_userContext.IsAuthenticated) return Unauthorized();
+
+        var baseQuery = _db.Photos
+            .Where(p => p.UserId == _userContext.UserId && !p.IsDeleted && p.TakenAt != null);
+
+        DateTime? fromDate = null, toDate = null;
+        if (!string.IsNullOrEmpty(from) && DateTime.TryParse(from, out var fd)) fromDate = fd;
+        if (!string.IsNullOrEmpty(to) && DateTime.TryParse(to, out var td)) toDate = td;
+
+        if (fromDate.HasValue) baseQuery = baseQuery.Where(p => p.TakenAt >= fromDate.Value);
+        if (toDate.HasValue) baseQuery = baseQuery.Where(p => p.TakenAt <= toDate.Value);
+
+        var query = baseQuery.OrderByDescending(p => p.TakenAt);
+
+        return groupLevel switch
+        {
+            "day" => await GetDayGroups(query, null, limit),
+            "month" => await GetMonthGroups(query, null, limit),
+            _ => await GetFlatList(query, null, limit),
+        };
+    }
+
+    [HttpGet("daily-density")]
+    public async Task<IActionResult> GetDailyDensity()
+    {
+        if (!_userContext.IsAuthenticated) return Unauthorized();
+
+        var raw = await _db.Photos
+            .Where(p => p.UserId == _userContext.UserId && !p.IsDeleted && p.TakenAt != null)
+            .GroupBy(p => new { p.TakenAt!.Value.Year, p.TakenAt!.Value.Month, p.TakenAt!.Value.Day })
+            .Select(g => new { g.Key.Year, g.Key.Month, g.Key.Day, count = g.Count() })
+            .OrderBy(x => x.Year).ThenBy(x => x.Month).ThenBy(x => x.Day)
+            .ToListAsync();
+
+        var daily = raw.Select(x => new
+        {
+            date = $"{x.Year}-{x.Month:D2}-{x.Day:D2}",
+            count = x.count
+        }).ToList();
+
+        return Ok(daily);
+    }
+
     [HttpGet("years")]
     public async Task<IActionResult> GetYears()
     {
@@ -180,7 +230,7 @@ public class TimelineController : ControllerBase
             .Where(p => p.UserId == _userContext.UserId && !p.IsDeleted && p.TakenAt != null)
             .GroupBy(p => new { p.TakenAt!.Value.Year, p.TakenAt!.Value.Month })
             .Select(g => new { year = g.Key.Year, month = g.Key.Month, count = g.Count() })
-            .OrderBy(x => x.year).ThenBy(x => x.month)
+            .OrderByDescending(x => x.year).ThenByDescending(x => x.month)
             .ToListAsync();
 
         var result = density.GroupBy(d => d.year).Select(g => new
@@ -194,7 +244,7 @@ public class TimelineController : ControllerBase
     }
 
     private static string FormatDayLabel(string d)
-        => DateTime.TryParse(d, out var dt) ? $"{dt.Month}月{dt.Day}日" : d;
+        => DateTime.TryParse(d, out var dt) ? $"{dt.Year}年{dt.Month}月{dt.Day}日" : d;
 
     private static string FormatMonthLabel(string m)
         => DateTime.TryParse(m + "-01", out var dt) ? $"{dt.Year}年{dt.Month}月" : m;

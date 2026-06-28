@@ -77,6 +77,29 @@ public class PhotosController : ControllerBase
         });
     }
 
+    [HttpGet("ids")]
+    public async Task<IActionResult> GetIds(
+        [FromQuery] int? fromYear = null,
+        [FromQuery] int? toYear = null)
+    {
+        if (!_userContext.IsAuthenticated) return Unauthorized();
+
+        var query = _db.Photos
+            .Where(p => p.UserId == _userContext.UserId && !p.IsDeleted)
+            .OrderByDescending(p => p.TakenAt);
+
+        if (fromYear.HasValue) query = (IOrderedQueryable<Core.Entities.Photo>)query.Where(p => p.TakenAt!.Value.Year >= fromYear.Value);
+        if (toYear.HasValue) query = (IOrderedQueryable<Core.Entities.Photo>)query.Where(p => p.TakenAt!.Value.Year <= toYear.Value);
+
+        var items = await query.Select(p => new
+        {
+            p.Id,
+            p.TakenAt
+        }).ToListAsync();
+
+        return Ok(items);
+    }
+
     [HttpGet("{id}/file")]
     public async Task<IActionResult> GetFile(string id)
     {

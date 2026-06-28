@@ -60,6 +60,11 @@ export interface ScanLog {
   mode: string
 }
 
+export interface PhotoIdItem {
+  id: string
+  takenAt: string | null
+}
+
 export interface SystemSettingsMap {
   [key: string]: string
 }

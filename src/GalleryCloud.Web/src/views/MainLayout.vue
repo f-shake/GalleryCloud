@@ -170,6 +170,11 @@ html, body, #app { margin:0; height:100%; }
 .app-main {
   background: var(--el-bg-color-page);
   overflow-y: auto;
+  scrollbar-width: none;
+  display: flex; flex-direction: column;
 }
+.app-main > .scan-alert { flex-shrink: 0; }
+.app-main > :not(.scan-alert) { flex: 1; min-height: 0; }
+.app-main::-webkit-scrollbar { display: none; }
 .scan-alert { margin: 8px 16px 0; border-radius: 8px; }
 </style>
