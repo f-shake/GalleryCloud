@@ -1,6 +1,7 @@
 using GalleryCloud.Api.Data;
 using GalleryCloud.Api.Services;
 using GalleryCloud.Core.Interfaces;
+using GalleryCloud.Core.Settings;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 
@@ -67,11 +68,11 @@ public class MapController : ControllerBase
     public async Task<IActionResult> GetBasemapConfig([FromServices] ISettingService settings)
     {
         return Ok(new {
-            tileUrlNormal = await settings.GetAsync("map.tileUrlNormal",
+            tileUrlNormal = await settings.GetAsync(SettingKeys.MapTileUrlNormal,
                 "https://tile.openstreetmap.org/{z}/{x}/{y}.png"),
-            tileUrlSatellite = await settings.GetAsync("map.tileUrlSatellite",
+            tileUrlSatellite = await settings.GetAsync(SettingKeys.MapTileUrlSatellite,
                 "https://mt1.google.com/vt/lyrs=s&x={x}&y={y}&z={z}"),
-            defaultBasemap = await settings.GetAsync("map.defaultBasemap", "normal")
+            defaultBasemap = await settings.GetAsync(SettingKeys.MapDefaultBasemap, "normal")
         });
     }
 

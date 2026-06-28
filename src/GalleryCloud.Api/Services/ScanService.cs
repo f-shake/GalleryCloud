@@ -3,6 +3,7 @@ using GalleryCloud.Api.Data;
 using GalleryCloud.Core.Entities;
 using GalleryCloud.Core.Enums;
 using GalleryCloud.Core.Interfaces;
+using GalleryCloud.Core.Settings;
 using Microsoft.EntityFrameworkCore;
 
 namespace GalleryCloud.Api.Services;
@@ -114,16 +115,16 @@ public class ScanService : IScanService
         using var scope = _scopeFactory.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
 
-        var formatsStr = await _settings.GetAsync("scan.supportedFormats") ?? ".jpg,.jpeg,.heic,.avif,.png,.webp";
+        var formatsStr = await _settings.GetAsync(SettingKeys.ScanSupportedFormats) ?? ".jpg,.jpeg,.heic,.avif,.png,.webp";
         var supportedFormats = formatsStr.Split(',', StringSplitOptions.RemoveEmptyEntries)
             .Select(f => f.Trim().ToLowerInvariant())
             .ToHashSet();
 
-        var excludeStr = await _settings.GetAsync("scan.excludePatterns") ?? "**/thumbnails/**";
+        var excludeStr = await _settings.GetAsync(SettingKeys.ScanExcludePatterns) ?? "**/thumbnails/**";
         var excludeGlobs = excludeStr.Split(',', StringSplitOptions.RemoveEmptyEntries)
             .Select(p => p.Trim()).ToList();
 
-        var parallelThreads = await _settings.GetAsync("thumbnail.parallelThreads", 2);
+        var parallelThreads = await _settings.GetAsync(SettingKeys.ThumbnailParallelThreads, 2);
         var semaphore = new SemaphoreSlim(Math.Max(1, parallelThreads));
 
         var rootPath = Path.GetFullPath(user.RootPath);

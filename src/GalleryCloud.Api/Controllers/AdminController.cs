@@ -3,6 +3,7 @@ using GalleryCloud.Api.Middleware;
 using GalleryCloud.Api.Services;
 using GalleryCloud.Core.Entities;
 using GalleryCloud.Core.Interfaces;
+using GalleryCloud.Core.Settings;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 
@@ -212,7 +213,7 @@ public class AdminController : ControllerBase
         await _db.SaveChangesAsync();
 
         // Clear disk cache
-        var cacheDir = await _settingService.GetAsync("thumbnail.cacheDir", "data/thumbnails");
+        var cacheDir = await _settingService.GetAsync(SettingKeys.ThumbnailCacheDir, "data/thumbnails");
         var path = Path.GetFullPath(Path.Combine(Directory.GetCurrentDirectory(), cacheDir));
         if (Directory.Exists(path))
         {

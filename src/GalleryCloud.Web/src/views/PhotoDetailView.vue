@@ -53,14 +53,16 @@ watch(() => store.open, async (val) => {
   if (!val || !store.photoId) return
   const id = store.photoId
   const sid = store.session
-  // Start preview preload IMMEDIATELY — before any animation work
-  previewSrc.value = thumbUrl(id, 'preview', 2560)
-  const img = new Image()
-  img.onload = () => { if (sid === store.session) { previewReady.value = true; phase.value = 'done' } }
-  img.onerror = () => { if (sid === store.session) { phase.value = 'done' } } // also show buttons even if preview fails
-  img.src = previewSrc.value
+  // Use the grid's thumbnail (blob URL or API URL) directly
+  gridSrc.value = store.startImgSrc || thumbUrl(id, 'grid', 400)
 
-  gridSrc.value = thumbUrl(id, 'grid', 320)
+  // Preload preview image (backend generates synchronously for preview)
+  const previewImg = new Image()
+  previewImg.onload = () => {
+    if (sid === store.session) { previewSrc.value = previewImg.src; previewReady.value = true; phase.value = 'done' }
+  }
+  previewImg.onerror = () => { if (sid === store.session) phase.value = 'done' }
+  previewImg.src = thumbUrl(id, 'preview', 2560)
   previewReady.value = false
   photo.value = null
   favorited.value = false
@@ -100,12 +102,14 @@ function doClose() {
   <Teleport to="body">
     <div v-if="store.photoId" :class="['pv-bg', backdropOn ? 'pv-bg--on' : '']" @click="doClose" />
     <div v-if="store.photoId" class="pv-img-wrap">
-      <img :src="src" :class="imgClass" :style="imgStyle" @click.stop="showInfo = !showInfo" />
+      <div v-if="!src" class="pv-placeholder" />
+      <img v-else :src="src" :class="imgClass" :style="imgStyle" @click.stop="showInfo = !showInfo" />
     </div>
 
     <!-- Top bar -->
     <div v-if="showBar" class="pv-topbar">
       <el-button circle :icon="'ArrowLeft'" @click="doClose" class="glass-btn" />
+      <el-icon v-if="!previewReady" class="is-loading" :size="20" style="color:var(--el-text-color-secondary);margin-left:4px"><Loading /></el-icon>
       <div style="flex:1" />
       <el-button circle :icon="favorited ? 'StarFilled' : 'Star'" @click="toggleFav"
         :class="['glass-btn', favorited ? 'fav-active' : '']" />
@@ -146,6 +150,10 @@ function doClose() {
   position: fixed; inset: 0; z-index: 9999;
   display: flex; align-items: center; justify-content: center;
   pointer-events: none;
+}
+.pv-placeholder {
+  width: 100%; height: 100%;
+  background: var(--el-bg-color);
 }
 .pv-img {
   object-fit: contain; border-radius: 0; will-change: transform;

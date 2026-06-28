@@ -25,7 +25,6 @@ const sections = [
   {
     title: '缩略图',
     fields: [
-      { key: 'thumbnail.format', label: '编码格式', type: 'select', options: [{ v: 'webp', l: 'WebP' }, { v: 'jpg', l: 'JPG' }], hint: 'WebP 体积更小，JPG 兼容性更好' },
       { key: 'thumbnail.quality', label: '质量', type: 'number', hint: '10-100，数值越高文件越大', placeholder: '80' },
       { key: 'thumbnail.parallelThreads', label: '并行线程', type: 'number', hint: '1 ~ CPU 核心数，默认 2', placeholder: '2' },
       { key: 'thumbnail.cacheDir', label: '缓存目录', placeholder: 'data/thumbnails' },
@@ -35,7 +34,6 @@ const sections = [
   {
     title: '预览',
     fields: [
-      { key: 'preview.format', label: '编码格式', type: 'select', options: [{ v: 'webp', l: 'WebP' }, { v: 'jpg', l: 'JPG' }], hint: '查看大图时的格式' },
       { key: 'preview.quality', label: '质量', type: 'number', hint: '10-100', placeholder: '85' },
       { key: 'preview.maxResolution', label: '最大分辨率 (px)', type: 'number', hint: '任意一边不超过此值', placeholder: '2560' },
     ],

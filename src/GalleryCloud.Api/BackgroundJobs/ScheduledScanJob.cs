@@ -1,5 +1,6 @@
 using Cronos;
 using GalleryCloud.Core.Interfaces;
+using GalleryCloud.Core.Settings;
 
 namespace GalleryCloud.Api.BackgroundJobs;
 
@@ -74,7 +75,7 @@ public class ScheduledScanJob : BackgroundService
         {
             using var scope = _scopeFactory.CreateScope();
             var settings = scope.ServiceProvider.GetRequiredService<ISettingService>();
-            return await settings.GetAsync("scan.cronExpression", "0 3 * * *");
+            return await settings.GetAsync(SettingKeys.ScanCronExpression, "0 3 * * *");
         }
         catch
         {

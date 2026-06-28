@@ -19,7 +19,7 @@ const form = ref({ q: '', from: '', to: '', format: '', device: '' })
 function onPhotoClick(id: string, e: MouseEvent) {
   const img = (e.currentTarget as HTMLElement).querySelector('img')
   const r = img ? img.getBoundingClientRect() : (e.currentTarget as HTMLElement).getBoundingClientRect()
-  viewStore.show(id, { x: r.x, y: r.y, width: r.width, height: r.height })
+  viewStore.show(id, { x: r.x, y: r.y, width: r.width, height: r.height }, img?.src)
 }
 
 async function search() {

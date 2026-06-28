@@ -3,6 +3,7 @@ using System.Threading.Channels;
 using GalleryCloud.Api.Data;
 using GalleryCloud.Core.Entities;
 using GalleryCloud.Core.Interfaces;
+using GalleryCloud.Core.Settings;
 using Microsoft.EntityFrameworkCore;
 
 namespace GalleryCloud.Api.Services;
@@ -24,7 +25,7 @@ public class FileWatcherService : BackgroundService
 
     public async Task InitializeAsync()
     {
-        var enabled = await _settings.GetAsync("filewatcher.enabled", true);
+        var enabled = await _settings.GetAsync(SettingKeys.FileWatcherEnabled, true);
         if (!enabled) return;
 
         using var scope = _scopeFactory.CreateScope();
@@ -86,7 +87,7 @@ public class FileWatcherService : BackgroundService
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        var debounceMs = await _settings.GetAsync("filewatcher.debounceDelayMs", 5000);
+        var debounceMs = await _settings.GetAsync(SettingKeys.FileWatcherDebounceDelayMs, 5000);
         var batch = new Dictionary<string, FileEvent>();
 
         while (!stoppingToken.IsCancellationRequested)
@@ -138,7 +139,7 @@ public class FileWatcherService : BackgroundService
         using var scope = _scopeFactory.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
 
-        var formatsStr = await _settings.GetAsync("scan.supportedFormats") ?? ".jpg,.jpeg,.heic,.avif,.png,.webp";
+        var formatsStr = await _settings.GetAsync(SettingKeys.ScanSupportedFormats) ?? ".jpg,.jpeg,.heic,.avif,.png,.webp";
         var supportedFormats = formatsStr.Split(',').Select(f => f.Trim().ToLowerInvariant()).ToHashSet();
 
         foreach (var evt in events)

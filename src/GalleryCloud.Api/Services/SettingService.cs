@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using GalleryCloud.Core.Settings;
 using GalleryCloud.Api.Data;
 using GalleryCloud.Core.Entities;
 using GalleryCloud.Core.Interfaces;
@@ -14,22 +15,20 @@ public class SettingService : ISettingService
 
     private static readonly Dictionary<string, string> Defaults = new()
     {
-        ["scan.cronExpression"] = "0 3 * * *",
-        ["scan.supportedFormats"] = ".jpg,.jpeg,.heic,.avif,.png,.webp",
-        ["scan.excludePatterns"] = "**/thumbnails/**,**/@eaDir/**",
-        ["filewatcher.enabled"] = "true",
-        ["filewatcher.debounceDelayMs"] = "5000",
-        ["thumbnail.format"] = "webp",
-        ["thumbnail.quality"] = "80",
-        ["thumbnail.parallelThreads"] = "4",
-        ["thumbnail.cacheDir"] = "App_Data/thumbnails",
-        ["thumbnail.maxMemoryCacheMb"] = "512",
-        ["preview.format"] = "webp",
-        ["preview.quality"] = "85",
-        ["preview.maxResolution"] = "2560",
-        ["map.tileUrlNormal"] = "https://tile.openstreetmap.org/{z}/{x}/{y}.png",
-        ["map.tileUrlSatellite"] = "https://mt1.google.com/vt/lyrs=s&x={x}&y={y}&z={z}",
-        ["map.defaultBasemap"] = "normal",
+        [SettingKeys.ScanCronExpression] = "0 3 * * *",
+        [SettingKeys.ScanSupportedFormats] = ".jpg,.jpeg,.heic,.avif,.png,.webp",
+        [SettingKeys.ScanExcludePatterns] = "**/thumbnails/**,**/@eaDir/**",
+        [SettingKeys.FileWatcherEnabled] = "true",
+        [SettingKeys.FileWatcherDebounceDelayMs] = "5000",
+        [SettingKeys.ThumbnailQuality] = "80",
+        [SettingKeys.ThumbnailParallelThreads] = "4",
+        [SettingKeys.ThumbnailCacheDir] = "App_Data/thumbnails",
+        [SettingKeys.ThumbnailMaxMemoryCacheMb] = "512",
+        [SettingKeys.PreviewQuality] = "85",
+        [SettingKeys.PreviewMaxResolution] = "2560",
+        [SettingKeys.MapTileUrlNormal] = "https://tile.openstreetmap.org/{z}/{x}/{y}.png",
+        [SettingKeys.MapTileUrlSatellite] = "https://mt1.google.com/vt/lyrs=s&x={x}&y={y}&z={z}",
+        [SettingKeys.MapDefaultBasemap] = "normal",
     };
 
     public SettingService(IServiceScopeFactory scopeFactory)

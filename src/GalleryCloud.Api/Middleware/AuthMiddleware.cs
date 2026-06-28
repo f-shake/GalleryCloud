@@ -27,8 +27,8 @@ public class AuthMiddleware
             try
             {
                 var secret = authOptions.Value.JwtSecret;
-                _logger.LogInformation("JWT Secret length: {Len}", secret.Length);
-                _logger.LogInformation("Token prefix: {Prefix}", token[..Math.Min(30, token.Length)]);
+                _logger.LogDebug("JWT Secret length: {Len}", secret.Length);
+                _logger.LogDebug("Token prefix: {Prefix}", token[..Math.Min(30, token.Length)]);
 
                 var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(secret));
                 var handler = new JwtSecurityTokenHandler();
@@ -56,7 +56,7 @@ public class AuthMiddleware
                 var rootPath = claims.FirstOrDefault(c => c.Type == "rootPath")?.Value ?? "";
 
                 userContext.SetUser(userId, username, isAdmin, rootPath);
-                _logger.LogInformation("Auth OK: user={User}, admin={Admin}", username, isAdmin);
+                _logger.LogDebug("Auth OK: user={User}, admin={Admin}", username, isAdmin);
             }
             catch (Exception ex)
             {
@@ -66,7 +66,7 @@ public class AuthMiddleware
         }
         else
         {
-            _logger.LogDebug("No token in request to {Path}", context.Request.Path);
+            // no log for unauthenticated requests
         }
 
         await _next(context);

@@ -31,6 +31,7 @@ builder.Services.AddSingleton<IThumbnailService, ThumbnailService>();
 builder.Services.AddSingleton<FileWatcherService>();
 builder.Services.AddHostedService(sp => sp.GetRequiredService<FileWatcherService>());
 builder.Services.AddHostedService<ScheduledScanJob>();
+builder.Services.AddHostedService<ThumbnailWorker>();
 
 builder.Services.AddControllers()
     .AddJsonOptions(options =>

@@ -12,6 +12,13 @@ public record ThumbnailGenerationStatus
 
 public interface IThumbnailService
 {
+    /// <summary>Check cache only — returns null if not cached.</summary>
+    Task<Stream?> TryGetCachedAsync(string photoId, ThumbnailSize size, int width);
+    /// <summary>Enqueue a thumbnail generation request (returns immediately).</summary>
+    void EnqueueAsync(string photoId, ThumbnailSize size, int width);
+    /// <summary>Consume the background generation channel (called by HostedService).</summary>
+    Task ConsumeChannelAsync(CancellationToken ct);
+    /// <summary>Full generate with wait (for legacy / existing callers).</summary>
     Task<Stream?> GetThumbnailAsync(string photoId, ThumbnailSize size, int width, CancellationToken ct = default);
     Task RegenerateAllAsync(CancellationToken ct = default);
     ThumbnailGenerationStatus RegenerationStatus { get; }

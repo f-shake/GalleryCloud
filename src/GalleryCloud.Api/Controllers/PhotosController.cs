@@ -15,11 +15,13 @@ public class PhotosController : ControllerBase
     private readonly AppDbContext _db;
     private readonly UserContext _userContext;
     private readonly IThumbnailService? _thumbnailService;
+    private readonly ISettingService _settingService;
 
-    public PhotosController(AppDbContext db, UserContext userContext, IThumbnailService? thumbnailService = null)
+    public PhotosController(AppDbContext db, UserContext userContext, ISettingService settingService, IThumbnailService? thumbnailService = null)
     {
         _db = db;
         _userContext = userContext;
+        _settingService = settingService;
         _thumbnailService = thumbnailService;
     }
 
@@ -130,11 +132,36 @@ public class PhotosController : ControllerBase
             _ => ThumbnailSize.Grid
         };
 
-        var stream = await _thumbnailService.GetThumbnailAsync(id, thumbSize, w, HttpContext.RequestAborted);
-        if (stream == null)
-            return NotFound(new { error = "Photo not found or unsupported format" });
+        // Preview: always generate synchronously (only one at a time, no queue needed)
+        if (size == "preview")
+        {
+            var result = await _thumbnailService.GetThumbnailAsync(id, thumbSize, w, HttpContext.RequestAborted);
+            if (result == null) return NotFound();
+            return new FileContentResult(await ReadFullyAsync(result), "image/webp");
+        }
 
-        return File(stream, "image/webp");
+        // 1. Try cache — if hit, return bytes directly
+        var sizeKey = size.ToString().ToLowerInvariant();
+        var cacheRecord = await _db.ThumbnailCaches
+            .FirstOrDefaultAsync(t => t.PhotoId == id && t.Size == sizeKey);
+        if (cacheRecord != null && System.IO.File.Exists(cacheRecord.FilePath))
+        {
+            var fileInfo = new System.IO.FileInfo(cacheRecord.FilePath);
+            if (fileInfo.Length > 0)
+            {
+                var bytes = await System.IO.File.ReadAllBytesAsync(cacheRecord.FilePath);
+                if (bytes.Length > 0)
+                    return new FileContentResult(bytes, "image/webp");
+            }
+            // Corrupted — clean up
+            System.IO.File.Delete(cacheRecord.FilePath);
+            _db.ThumbnailCaches.Remove(cacheRecord);
+            await _db.SaveChangesAsync();
+        }
+
+        // 2. Not cached — grid: enqueue background generation, return 202 immediately
+        _thumbnailService.EnqueueAsync(id, thumbSize, w);
+        return Accepted(new { status = "pending", photoId = id });
     }
 
     [HttpDelete("{id}")]
@@ -249,5 +276,12 @@ public class PhotosController : ControllerBase
 
         await _db.SaveChangesAsync();
         return Ok(new { message = "Renamed" });
+    }
+
+    private static async Task<byte[]> ReadFullyAsync(Stream stream)
+    {
+        using var ms = new MemoryStream();
+        await stream.CopyToAsync(ms);
+        return ms.ToArray();
     }
 }

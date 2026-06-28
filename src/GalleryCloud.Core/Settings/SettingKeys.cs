@@ -1,0 +1,28 @@
+namespace GalleryCloud.Core.Settings;
+
+public static class SettingKeys
+{
+    // Scan
+    public const string ScanCronExpression = "scan.cronExpression";
+    public const string ScanSupportedFormats = "scan.supportedFormats";
+    public const string ScanExcludePatterns = "scan.excludePatterns";
+
+    // FileWatcher
+    public const string FileWatcherEnabled = "filewatcher.enabled";
+    public const string FileWatcherDebounceDelayMs = "filewatcher.debounceDelayMs";
+
+    // Thumbnail
+    public const string ThumbnailQuality = "thumbnail.quality";
+    public const string ThumbnailParallelThreads = "thumbnail.parallelThreads";
+    public const string ThumbnailCacheDir = "thumbnail.cacheDir";
+    public const string ThumbnailMaxMemoryCacheMb = "thumbnail.maxMemoryCacheMb";
+
+    // Preview
+    public const string PreviewQuality = "preview.quality";
+    public const string PreviewMaxResolution = "preview.maxResolution";
+
+    // Map
+    public const string MapTileUrlNormal = "map.tileUrlNormal";
+    public const string MapTileUrlSatellite = "map.tileUrlSatellite";
+    public const string MapDefaultBasemap = "map.defaultBasemap";
+}
