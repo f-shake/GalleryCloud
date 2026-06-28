@@ -68,3 +68,18 @@ export interface PhotoIdItem {
 export interface SystemSettingsMap {
   [key: string]: string
 }
+
+export interface ThumbnailGenerationStatus {
+  isRunning: boolean
+  processed: number
+  total: number
+  estimatedPercent: number
+}
+
+export interface ThumbnailStats {
+  totalPhotos: number
+  gridCached: number
+  previewCached: number
+  missingGrid: number
+  missingPreview: number
+}

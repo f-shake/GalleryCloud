@@ -185,14 +185,40 @@ public class AdminController : ControllerBase
 
     // ==================== Thumbnails ====================
 
+    public record ThumbnailGenerationRequest(List<string> Sizes);
+
+    [HttpGet("thumbnails/stats")]
+    public async Task<IActionResult> GetThumbnailStats()
+    {
+        var stats = await _thumbnailService.GetStatsAsync();
+        return Ok(stats);
+    }
+
     [HttpPost("thumbnails/regenerate")]
-    public IActionResult RegenerateThumbnails()
+    public IActionResult RegenerateThumbnails([FromBody] ThumbnailGenerationRequest? request)
     {
         if (_thumbnailService.RegenerationStatus.IsRunning)
             return Conflict(new { error = "Thumbnail regeneration is already running" });
 
-        _ = Task.Run(() => _thumbnailService.RegenerateAllAsync());
+        _ = Task.Run(() => _thumbnailService.RegenerateAllAsync(request?.Sizes));
         return Ok(new { message = "Thumbnail regeneration started" });
+    }
+
+    [HttpPost("thumbnails/fill-missing")]
+    public IActionResult FillMissingThumbnails([FromBody] ThumbnailGenerationRequest? request)
+    {
+        if (_thumbnailService.RegenerationStatus.IsRunning)
+            return Conflict(new { error = "Thumbnail generation is already running" });
+
+        _ = Task.Run(() => _thumbnailService.FillMissingAsync(request?.Sizes));
+        return Ok(new { message = "Fill-missing started" });
+    }
+
+    [HttpPost("thumbnails/cancel")]
+    public IActionResult CancelGeneration()
+    {
+        _thumbnailService.CancelGeneration();
+        return Ok(new { message = "Cancelling..." });
     }
 
     [HttpGet("thumbnails/status")]

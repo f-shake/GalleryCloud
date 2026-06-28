@@ -6,7 +6,14 @@ import client from '../../api/client'
 const settings = ref<Record<string, string>>({})
 const loading = ref(true)
 
-const sections = [
+interface FieldConfig {
+  key: string; label: string; hint?: string
+  type?: 'switch' | 'number' | 'select'
+  placeholder?: string
+  options?: { v: string; l: string }[]
+}
+
+const sections: { title: string; fields: FieldConfig[] }[] = [
   {
     title: '扫描',
     fields: [
@@ -35,7 +42,7 @@ const sections = [
     title: '预览',
     fields: [
       { key: 'preview.quality', label: '质量', type: 'number', hint: '10-100', placeholder: '85' },
-      { key: 'preview.maxResolution', label: '最大分辨率 (px)', type: 'number', hint: '任意一边不超过此值', placeholder: '2560' },
+      { key: 'preview.maxResolution', label: '最大分辨率 (px)', type: 'number', hint: '任意一边不超过此值', placeholder: '6000' },
     ],
   },
   {
@@ -47,8 +54,6 @@ const sections = [
     ],
   },
 ]
-
-const activeNames = ref(sections.map(s => s.title))
 
 onMounted(async () => {
   try { const r = await client.get('/admin/settings'); settings.value = r.data }
@@ -67,37 +72,36 @@ async function save() {
 <template>
   <div style="height:100%;overflow-y:auto">
     <el-skeleton :loading="loading" animated :count="3">
-      <div style="max-width:720px;margin:0 auto;padding:16px">
-        <el-collapse v-model="activeNames" style="margin-bottom:24px">
-          <el-collapse-item v-for="s in sections" :key="s.title" :name="s.title">
-            <template #title>
-              <span style="font-weight:600;font-size:14px">{{ s.title }}</span>
-            </template>
-            <el-form label-width="140px" label-position="left">
-              <el-form-item v-for="f in s.fields" :key="f.key" :label="f.label">
-                <div v-if="f.type === 'switch'">
-                  <el-switch
-                    :model-value="settings[f.key] === 'true'"
-                    @update:model-value="settings[f.key] = $event ? 'true' : 'false'"
-                  />
-                  <div v-if="f.hint" class="field-hint">{{ f.hint }}</div>
-                </div>
-                <el-select v-else-if="f.type === 'select'" v-model="settings[f.key]" style="width:200px">
-                  <el-option v-for="o in f.options" :key="o.v" :label="o.l" :value="o.v" />
-                </el-select>
-                <el-input-number
-                  v-else-if="f.type === 'number'"
-                  :model-value="Number(settings[f.key]) || 0"
-                  @update:model-value="settings[f.key] = String($event)"
-                  :min="f.key.includes('quality') ? 10 : 1"
-                  :max="f.key.includes('quality') ? 100 : 32768"
+      <div style="max-width:720px;margin:0 auto;padding:16px;display:flex;flex-direction:column;gap:16px">
+
+        <el-card v-for="s in sections" :key="s.title">
+          <template #header>
+            <span style="font-weight:600;font-size:14px">{{ s.title }}</span>
+          </template>
+          <el-form label-width="140px" label-position="left">
+            <el-form-item v-for="f in s.fields" :key="f.key" :label="f.label">
+              <div v-if="f.type === 'switch'">
+                <el-switch
+                  :model-value="settings[f.key] === 'true'"
+                  @update:model-value="settings[f.key] = $event ? 'true' : 'false'"
                 />
-                <el-input v-else v-model="settings[f.key]" :placeholder="f.placeholder" />
-                <div v-if="f.hint && f.type !== 'switch'" class="field-hint">{{ f.hint }}</div>
-              </el-form-item>
-            </el-form>
-          </el-collapse-item>
-        </el-collapse>
+                <div v-if="f.hint" class="field-hint">{{ f.hint }}</div>
+              </div>
+              <el-select v-else-if="f.type === 'select'" v-model="settings[f.key]" style="width:200px">
+                <el-option v-for="o in f.options" :key="o.v" :label="o.l" :value="o.v" />
+              </el-select>
+              <el-input-number
+                v-else-if="f.type === 'number'"
+                :model-value="Number(settings[f.key]) || 0"
+                @update:model-value="settings[f.key] = String($event)"
+                :min="f.key.includes('quality') ? 10 : 1"
+                :max="f.key.includes('quality') ? 100 : 32768"
+              />
+              <el-input v-else v-model="settings[f.key]" :placeholder="f.placeholder" />
+              <div v-if="f.hint && f.type !== 'switch'" class="field-hint">{{ f.hint }}</div>
+            </el-form-item>
+          </el-form>
+        </el-card>
 
         <div style="text-align:center;padding:8px 0 32px">
           <el-button type="primary" @click="save" size="large" style="min-width:160px">保存全部</el-button>
@@ -117,14 +121,4 @@ async function save() {
 }
 :deep(.el-form-item__content) { flex-wrap: wrap; }
 :deep(.el-form-item) { margin-bottom: 14px; }
-:deep(.el-collapse),
-:deep(.el-collapse-item__header),
-:deep(.el-collapse-item__wrap) {
-  background: transparent;
-  border-color: var(--el-border-color-lighter);
-}
-:deep(.el-collapse-item__wrap) {
-  padding: 4px 20px 16px !important;
-}
-
 </style>

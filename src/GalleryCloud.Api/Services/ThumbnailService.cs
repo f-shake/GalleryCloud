@@ -172,22 +172,41 @@ public class ThumbnailService : IThumbnailService
         var cacheAbsoluteDir = Path.GetFullPath(Path.Combine(Directory.GetCurrentDirectory(), cacheDir, user.Id, sizeKey));
         Directory.CreateDirectory(cacheAbsoluteDir);
 
-        var cachePath = Path.Combine(cacheAbsoluteDir, $"{photoId}_{width}.webp");
-
         // Decode + process
+        var sw = System.Diagnostics.Stopwatch.StartNew();
         using var image = await Image.LoadAsync(fullPath, ct);
+        var decodeMs = sw.ElapsedMilliseconds;
+        int srcW = image.Width, srcH = image.Height; // original dimensions before any resize
         var encoder = new WebpEncoder { Quality = quality };
 
         image.Mutate(x => x.AutoOrient());
-        var targetW = Math.Min(width, image.Width);
+
+        string cachePath;
         if (isPreview)
         {
-            var maxRes = await _settings.GetAsync(SettingKeys.PreviewMaxResolution, 2560);
-            targetW = Math.Min(targetW, maxRes);
+            // Preview: original resolution, cap longer side at maxRes
+            var maxRes = await _settings.GetAsync(SettingKeys.PreviewMaxResolution, 6000);
+            var longerSide = Math.Max(image.Width, image.Height);
+            if (longerSide > maxRes)
+            {
+                var scale = (double)maxRes / longerSide;
+                image.Mutate(x => x.Resize((int)(image.Width * scale), (int)(image.Height * scale)));
+            }
+            cachePath = Path.Combine(cacheAbsoluteDir, $"{photoId}_preview.webp");
         }
-        image.Mutate(x => x.Resize(Math.Min(targetW, image.Width), 0));
-        await image.SaveAsync(cachePath, encoder, ct);
+        else
+        {
+            // Grid: resize by width
+            var targetW = Math.Min(width, image.Width);
+            image.Mutate(x => x.Resize(targetW, 0));
+            cachePath = Path.Combine(cacheAbsoluteDir, $"{photoId}_{width}.webp");
+        }
 
+        sw.Restart();
+        await image.SaveAsync(cachePath, encoder, ct);
+        var encodeMs = sw.ElapsedMilliseconds;
+
+        sw.Restart();
         // Save cache record
         var record = await db.ThumbnailCaches
             .FirstOrDefaultAsync(t => t.PhotoId == photoId && t.Size == sizeKey, ct);
@@ -203,53 +222,180 @@ public class ThumbnailService : IThumbnailService
         }
 
         await db.SaveChangesAsync(ct);
+        var dbMs = sw.ElapsedMilliseconds;
 
         var resultBytes = await File.ReadAllBytesAsync(cachePath, ct);
         CacheInMemory($"thumb:{photoId}:{sizeKey}", resultBytes);
         var remaining = Interlocked.Decrement(ref _queueCount);
-        _logger.LogInformation("缩略图完成 [{Size}] {PhotoId} 排队:{Queue} 并行:{Parallel}",
-            sizeKey, photoId[..8], Math.Max(0, remaining), Math.Max(0, _inProgressCount));
+        _logger.LogInformation("缩略图完成 [{Size}] {PhotoId} 原图{W}x{H} 解码:{Decode}ms 编码:{Encode}ms DB:{Db}ms 并行:{Parallel}",
+            sizeKey, photoId[..8], srcW, srcH, decodeMs, encodeMs, dbMs, Math.Max(0, _inProgressCount));
 
         return new MemoryStream(resultBytes);
     }
 
-    // ── Regenerate all ─────────────────────────────────────────
-    public async Task RegenerateAllAsync(CancellationToken ct = default)
+    // ── Cancel ──────────────────────────────────────────────────
+    public void CancelGeneration()
+    {
+        _regenerationCts?.Cancel();
+    }
+
+    // ── Stats ───────────────────────────────────────────────────
+    public async Task<ThumbnailStats> GetStatsAsync()
+    {
+        using var scope = _scopeFactory.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+
+        var totalPhotos = await db.Photos.CountAsync(p => !p.IsDeleted);
+        var gridCached = await db.ThumbnailCaches.CountAsync(t => t.Size == "grid");
+        var previewCached = await db.ThumbnailCaches.CountAsync(t => t.Size == "preview");
+
+        return new ThumbnailStats
+        {
+            TotalPhotos = totalPhotos,
+            GridCached = gridCached,
+            PreviewCached = previewCached,
+        };
+    }
+
+    // ── Fill missing ────────────────────────────────────────────
+    public async Task FillMissingAsync(List<string>? sizes = null, CancellationToken ct = default)
     {
         if (RegenerationStatus.IsRunning) return;
 
         _regenerationCts?.Cancel();
         _regenerationCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
 
+        // Determine which sizes to process
+        var allSizes = new[] { ("grid", ThumbnailSize.Grid, 400), ("preview", ThumbnailSize.Preview, 0) };
+        var selected = sizes is { Count: > 0 }
+            ? allSizes.Where(s => sizes.Contains(s.Item1, StringComparer.OrdinalIgnoreCase)).ToArray()
+            : allSizes;
+        if (selected.Length == 0) return;
+
         using var scope = _scopeFactory.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
 
-        var allCache = await db.ThumbnailCaches.ToListAsync(_regenerationCts.Token);
-        db.ThumbnailCaches.RemoveRange(allCache);
-        await db.SaveChangesAsync(_regenerationCts.Token);
-
-        var cacheDir = await _settings.GetAsync(SettingKeys.ThumbnailCacheDir, "data/thumbnails");
-        var absoluteDir = Path.GetFullPath(Path.Combine(Directory.GetCurrentDirectory(), cacheDir));
-        if (Directory.Exists(absoluteDir)) { Directory.Delete(absoluteDir, true); Directory.CreateDirectory(absoluteDir); }
-
+        // Collect existing cache keys for quick lookup
         var photoIds = await db.Photos.Where(p => !p.IsDeleted).Select(p => p.Id).ToListAsync(_regenerationCts.Token);
-        RegenerationStatus = new ThumbnailGenerationStatus { IsRunning = true, Total = photoIds.Count * 3, Processed = 0 };
-        var semaphore = new SemaphoreSlim(2);
-        var sizes = new[] { (ThumbnailSize.Grid, 400), (ThumbnailSize.Preview, 1200), (ThumbnailSize.Full, 2560) };
+        var cachedKeys = await db.ThumbnailCaches
+            .Select(t => new { t.PhotoId, t.Size })
+            .ToListAsync(_regenerationCts.Token);
+        var cachedSet = new HashSet<string>(cachedKeys.Select(c => $"{c.PhotoId}:{c.Size}"));
 
+        // Build list of missing thumbnails
+        var missing = new List<(string PhotoId, ThumbnailSize Size, int Width)>();
         foreach (var pid in photoIds)
         {
-            if (_regenerationCts.Token.IsCancellationRequested) break;
-            foreach (var (sz, w) in sizes)
+            foreach (var (key, sz, w) in selected)
             {
-                if (_regenerationCts.Token.IsCancellationRequested) break;
-                await semaphore.WaitAsync(_regenerationCts.Token);
-                try { await InternalGenerateAsync(pid, sz, w, _regenerationCts.Token); }
-                catch { }
-                finally { semaphore.Release(); }
-                RegenerationStatus = RegenerationStatus with { Processed = RegenerationStatus.Processed + 1 };
+                if (!cachedSet.Contains($"{pid}:{key}"))
+                    missing.Add((pid, sz, w));
             }
         }
+
+        if (missing.Count == 0)
+        {
+            _regenerationCts.Dispose();
+            _regenerationCts = null;
+            RegenerationStatus = new ThumbnailGenerationStatus();
+            return;
+        }
+
+        RegenerationStatus = new ThumbnailGenerationStatus { IsRunning = true, Total = missing.Count, Processed = 0 };
+        var parallel = await _settings.GetAsync(SettingKeys.ThumbnailParallelThreads, 4);
+        var semaphore = new SemaphoreSlim(Math.Max(1, parallel));
+
+        var tasks = missing.Select(async item =>
+        {
+            var (pid, sz, w) = item;
+            try { await semaphore.WaitAsync(_regenerationCts.Token); }
+            catch { return; }
+            try
+            {
+                if (_regenerationCts.Token.IsCancellationRequested) return;
+                Interlocked.Increment(ref _inProgressCount);
+                try { await InternalGenerateAsync(pid, sz, w, _regenerationCts.Token); }
+                catch { }
+                finally { Interlocked.Decrement(ref _inProgressCount); }
+                RegenerationStatus = RegenerationStatus with { Processed = RegenerationStatus.Processed + 1 };
+            }
+            finally { semaphore.Release(); }
+        });
+        await Task.WhenAll(tasks);
+
+        RegenerationStatus = new ThumbnailGenerationStatus();
+    }
+
+    // ── Regenerate all ─────────────────────────────────────────
+    public async Task RegenerateAllAsync(List<string>? sizes = null, CancellationToken ct = default)
+    {
+        if (RegenerationStatus.IsRunning) return;
+
+        _regenerationCts?.Cancel();
+        _regenerationCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+
+        // Determine which sizes to process
+        var allSizes = new[] { (ThumbnailSize.Grid, 400, "grid"), (ThumbnailSize.Preview, 0, "preview") };
+        var selected = sizes is { Count: > 0 }
+            ? allSizes.Where(s => sizes.Contains(s.Item3, StringComparer.OrdinalIgnoreCase)).ToArray()
+            : allSizes;
+        if (selected.Length == 0) return;
+
+        using var scope = _scopeFactory.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+
+        // Only clear cache for selected sizes
+        foreach (var (_, _, sizeKey) in selected)
+        {
+            var toRemove = await db.ThumbnailCaches.Where(t => t.Size == sizeKey).ToListAsync(_regenerationCts.Token);
+            db.ThumbnailCaches.RemoveRange(toRemove);
+        }
+        await db.SaveChangesAsync(_regenerationCts.Token);
+
+        // Clean disk cache for selected sizes
+        var cacheDir = await _settings.GetAsync(SettingKeys.ThumbnailCacheDir, "data/thumbnails");
+        var absoluteDir = Path.GetFullPath(Path.Combine(Directory.GetCurrentDirectory(), cacheDir));
+        if (Directory.Exists(absoluteDir))
+        {
+            foreach (var (_, _, sizeKey) in selected)
+            {
+                var sizeDir = Path.Combine(absoluteDir, "*", sizeKey);
+                foreach (var dir in Directory.GetDirectories(absoluteDir))
+                {
+                    var targetDir = Path.Combine(dir, sizeKey);
+                    if (Directory.Exists(targetDir)) { Directory.Delete(targetDir, true); Directory.CreateDirectory(targetDir); }
+                }
+            }
+        }
+
+        var photoIds = await db.Photos.Where(p => !p.IsDeleted).Select(p => p.Id).ToListAsync(_regenerationCts.Token);
+        var workItems = new List<(string PhotoId, ThumbnailSize Size, int Width)>();
+        foreach (var pid in photoIds)
+            foreach (var (sz, w, _) in selected)
+                workItems.Add((pid, sz, w));
+
+        RegenerationStatus = new ThumbnailGenerationStatus { IsRunning = true, Total = workItems.Count, Processed = 0 };
+        var parallel = await _settings.GetAsync(SettingKeys.ThumbnailParallelThreads, 4);
+        var semaphore = new SemaphoreSlim(Math.Max(1, parallel));
+
+        var tasks = workItems.Select(async item =>
+        {
+            var (pid, sz, w) = item;
+            try { await semaphore.WaitAsync(_regenerationCts.Token); }
+            catch { return; }
+            try
+            {
+                if (_regenerationCts.Token.IsCancellationRequested) return;
+                Interlocked.Increment(ref _inProgressCount);
+                try { await InternalGenerateAsync(pid, sz, w, _regenerationCts.Token); }
+                catch { }
+                finally { Interlocked.Decrement(ref _inProgressCount); }
+                RegenerationStatus = RegenerationStatus with { Processed = RegenerationStatus.Processed + 1 };
+            }
+            finally { semaphore.Release(); }
+        });
+        await Task.WhenAll(tasks);
+
         RegenerationStatus = new ThumbnailGenerationStatus();
     }
 

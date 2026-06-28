@@ -63,7 +63,6 @@ public class ThumbnailReadyController : ControllerBase
         var size = request.Size?.ToLowerInvariant() switch
         {
             "preview" => ThumbnailSize.Preview,
-            "full" => ThumbnailSize.Full,
             _ => ThumbnailSize.Grid
         };
 

@@ -154,7 +154,6 @@ public class PhotosController : ControllerBase
         {
             "grid" => ThumbnailSize.Grid,
             "preview" => ThumbnailSize.Preview,
-            "full" => ThumbnailSize.Full,
             _ => ThumbnailSize.Grid
         };
 
