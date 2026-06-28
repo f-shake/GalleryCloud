@@ -34,7 +34,7 @@ function onPhotoClick(id: string, e: MouseEvent) {
 async function onNodeClick(node: FolderNode) {
   selPath.value = node.path
   loading.value = true
-  try { const r = await client.get(`/folders/${encodeURIComponent(node.path)}`); photos.value = r.data }
+  try { const r = await client.get(`/folders/${encodeURI(node.path)}`); photos.value = r.data }
   catch { /* */ }
   finally { loading.value = false }
 }
@@ -44,7 +44,7 @@ const defaultExpanded = computed(() => tree.value.slice(0, 10).map(n => n.path))
 
 <template>
   <div style="display:flex;height:100%">
-    <div style="width:260px;border-right:1px solid var(--el-border-color-light);overflow-y:auto;padding:8px;flex-shrink:0">
+    <div style="width:260px;border-right:1px solid var(--el-border-color-light);overflow-y:auto;padding:4px 8px;flex-shrink:0">
       <el-tree
         :data="tree"
         :props="{ children: 'subFolders', label: 'name' }"
@@ -55,17 +55,15 @@ const defaultExpanded = computed(() => tree.value.slice(0, 10).map(n => n.path))
         style="background:transparent"
       >
         <template #default="{ data }">
-          <span style="display:flex;align-items:center;justify-content:space-between;width:100%">
-            <span style="display:flex;align-items:center;gap:4px">
-              <el-icon><Folder /></el-icon>
-              <span style="font-size:13px">{{ data.name }}</span>
-            </span>
-            <el-tag size="small" type="info" effect="plain">{{ data.photoCount }}</el-tag>
+          <span style="display:flex;align-items:center;gap:4px;overflow:hidden;width:100%">
+            <el-icon style="flex-shrink:0"><Folder /></el-icon>
+            <span style="font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1;min-width:0">{{ data.name }}</span>
+            <el-tag size="small" type="info" effect="plain" style="flex-shrink:0">{{ data.photoCount }}</el-tag>
           </span>
         </template>
       </el-tree>
     </div>
-    <div style="flex:1;overflow-y:auto;padding:16px">
+    <div style="flex:1;overflow-y:auto;padding:8px">
       <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px">
         <span style="font-size:13px;color:var(--el-text-color-secondary)">{{ selPath || '选择文件夹' }}</span>
         <div style="flex:1" />
@@ -83,3 +81,7 @@ const defaultExpanded = computed(() => tree.value.slice(0, 10).map(n => n.path))
     </div>
   </div>
 </template>
+
+<style>
+.el-tree-node__content { overflow: hidden; }
+</style>

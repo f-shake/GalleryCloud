@@ -39,9 +39,9 @@ public class FoldersController : ControllerBase
 
         path = path?.Trim('/') ?? "";
 
-        var photos = await _db.Photos
-            .Where(p => p.UserId == _userContext.UserId && !p.IsDeleted
-                && (p.FilePath.StartsWith(path + "/") || p.FilePath.StartsWith(path + "\\")))
+        // Load all user photos then filter in memory — normalize separators for cross-platform
+        var allPhotos = await _db.Photos
+            .Where(p => p.UserId == _userContext.UserId && !p.IsDeleted)
             .OrderBy(p => p.FileName)
             .Select(p => new
             {
@@ -50,6 +50,11 @@ public class FoldersController : ControllerBase
                 p.TakenAt, p.FileSize
             })
             .ToListAsync();
+
+        var normalized = path.Replace('\\', '/').TrimEnd('/') + "/";
+        var photos = allPhotos
+            .Where(p => (p.FilePath ?? "").Replace('\\', '/').StartsWith(normalized, StringComparison.OrdinalIgnoreCase))
+            .ToList();
 
         return Ok(photos);
     }

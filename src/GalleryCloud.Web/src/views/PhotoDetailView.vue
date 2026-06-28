@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
+import { ref, computed, watch, onMounted, onUnmounted, nextTick } from 'vue'
 import client from '../api/client'
 import { ElMessage } from 'element-plus'
 import { thumbUrl } from '../composables/useThumbnailUrl'
@@ -107,7 +107,7 @@ const imgStyle = computed(() => {
 const imgClass = computed(() => {
   const c = ['pv-img']
   if (phase.value !== 'start') c.push('pv-img--anim')
-  if (phase.value === 'start') c.push('pv-img--cover')
+  if (phase.value === 'start' || phase.value === 'expand') c.push('pv-img--cover')
   if (phase.value === 'exit') c.push('pv-img--fade')
   if (phase.value === 'done' || phase.value === 'show') {
     c.push('pv-img--zoom')
@@ -134,8 +134,9 @@ const originalUrl = computed(() => `/api/photos/${store.photoId}/file?token=${lo
 
 // Load photo data (called both for initial open and prev/next navigation)
 async function loadPhoto(id: string, sid: number, animate: boolean) {
-  // Always use stable API URL — blob URLs from lazy-img can be revoked
-  gridSrc.value = thumbUrl(id, 'grid', 400)
+  // FLIP animation needs the already-loaded grid thumbnail as start frame
+  // (blob URL is in-memory, instant; API URL would cause load delay and mid-animation pop-in)
+  gridSrc.value = store.startImgSrc || thumbUrl(id, 'grid', 400)
   gridError.value = false
   previewReady.value = false
   photo.value = null
@@ -145,6 +146,7 @@ async function loadPhoto(id: string, sid: number, animate: boolean) {
   showBar.value = !animate
 
   if (animate) {
+    await nextTick() // ensure start frame is painted before animating
     requestAnimationFrame(() => {
       if (sid !== store.session) return
       phase.value = 'expand'
@@ -158,13 +160,30 @@ async function loadPhoto(id: string, sid: number, animate: boolean) {
     showBar.value = true
   }
 
-  // Load preview
+  // Load preview — delay switch until FLIP animation completes
   const previewImg = new Image()
-  previewImg.onload = () => {
-    if (sid === store.session) { previewSrc.value = previewImg.src; previewReady.value = true; gridError.value = false; phase.value = 'done' }
+  if (animate) {
+    let animDone = false
+    setTimeout(() => { animDone = true; applyPreview() }, 380)
+    previewImg.onload = () => { applyPreview() }
+    previewImg.onerror = () => { if (sid === store.session) phase.value = 'done' }
+    previewImg.src = thumbUrl(id, 'preview', 2560)
+    function applyPreview() {
+      if (!animDone || sid !== store.session) return
+      if (previewImg.src && previewImg.complete && previewImg.naturalWidth > 0) {
+        previewSrc.value = previewImg.src
+        previewReady.value = true
+        gridError.value = false
+        phase.value = 'done'
+      }
+    }
+  } else {
+    previewImg.onload = () => {
+      if (sid === store.session) { previewSrc.value = previewImg.src; previewReady.value = true; gridError.value = false; phase.value = 'done' }
+    }
+    previewImg.onerror = () => { if (sid === store.session) phase.value = 'done' }
+    previewImg.src = thumbUrl(id, 'preview', 2560)
   }
-  previewImg.onerror = () => { if (sid === store.session) phase.value = 'done' }
-  previewImg.src = thumbUrl(id, 'preview', 2560)
 
   // Load photo info
   try {
@@ -434,8 +453,13 @@ function getExt(mime: string): string {
       @touchend="onTouchEnd"
       @dblclick="onDblClick"
     >
-      <!-- Carousel track: 3 images side by side, translated by slideOffset -->
-      <div v-if="phase !== 'start' && phase !== 'exit'" class="pv-carousel" :style="carouselStyle">
+      <!-- Single image: always rendered for FLIP transitions (hidden when carousel shows) -->
+      <div v-show="phase !== 'show' && phase !== 'done'" style="position:absolute;inset:0;z-index:0">
+        <div v-if="!src || gridError" class="pv-placeholder" />
+        <img v-else :src="src" :class="imgClass" :style="imgStyle" draggable="false" @error="gridError = true" />
+      </div>
+      <!-- Carousel track: overlays during show/done -->
+      <div v-if="phase === 'show' || phase === 'done'" class="pv-carousel" :style="carouselStyle">
         <div v-if="prevSrc" class="pv-carousel-cell" :style="{ left: 0 }">
           <img :src="prevSrc" class="pv-carousel-img" />
         </div>
@@ -446,11 +470,6 @@ function getExt(mime: string): string {
         <div v-if="nextSrc" class="pv-carousel-cell" :style="{ left: (vw * 2) + 'px' }">
           <img :src="nextSrc" class="pv-carousel-img" />
         </div>
-      </div>
-      <!-- Single image during FLIP start/exit -->
-      <div v-else>
-        <div v-if="!src || gridError" class="pv-placeholder" />
-        <img v-else :src="src" :class="imgClass" :style="imgStyle" draggable="false" @error="gridError = true" />
       </div>
     </div>
 
