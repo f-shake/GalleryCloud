@@ -1,4 +1,5 @@
 using GalleryCloud.Api.Data;
+using GalleryCloud.Api.Dtos;
 using GalleryCloud.Api.Services;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -77,19 +78,19 @@ public class SearchController : ControllerBase
         }
 
         var total = await query.CountAsync();
-        var photos = await query
+        var items = await query
             .OrderByDescending(p => p.TakenAt)
             .Skip((page - 1) * limit)
             .Take(limit)
-            .Select(p => new
-            {
-                p.Id, p.FileName, p.FileFormat, p.FilePath,
+            .Select(p => new PhotoListItem(
+                p.Id, p.FileName, p.FileFormat,
                 p.Width, p.Height, p.Orientation,
-                p.TakenAt, p.DeviceModel, p.Latitude, p.Longitude,
-                p.FileSize, p.IsDeleted
-            })
+                p.TakenAt, p.Latitude, p.Longitude,
+                p.FileSize, p.FilePath, p.IsDeleted,
+                p.DeviceModel
+            ))
             .ToListAsync();
 
-        return Ok(new { total, page, limit, photos });
+        return Ok(new SearchResponse(total, page, limit, items));
     }
 }

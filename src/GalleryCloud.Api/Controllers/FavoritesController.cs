@@ -1,4 +1,5 @@
 using GalleryCloud.Api.Data;
+using GalleryCloud.Api.Dtos;
 using GalleryCloud.Api.Services;
 using GalleryCloud.Core.Entities;
 using Microsoft.AspNetCore.Mvc;
@@ -35,19 +36,18 @@ public class FavoritesController : ControllerBase
 
         var photos = await _db.Photos
             .Where(p => pageIds.Contains(p.Id))
-            .Select(p => new
-            {
+            .Select(p => new PhotoItem(
                 p.Id, p.FileName, p.FileFormat,
                 p.Width, p.Height, p.Orientation,
                 p.TakenAt, p.Latitude, p.Longitude, p.FileSize
-            })
+            ))
             .ToListAsync();
 
         // Preserve order
         var photoMap = photos.ToDictionary(p => p.Id);
         var ordered = pageIds.Where(id => photoMap.ContainsKey(id)).Select(id => photoMap[id]).ToList();
 
-        return Ok(new { total, page, limit, photos = ordered });
+        return Ok(new PhotoListResponse(total, page, limit, ordered));
     }
 
     [HttpPost("{photoId}")]
@@ -61,7 +61,7 @@ public class FavoritesController : ControllerBase
             await _db.SaveChangesAsync();
         }
 
-        return Ok(new { favorited = true });
+        return Ok(new FavoriteResult(true));
     }
 
     [HttpDelete("{photoId}")]
@@ -75,6 +75,6 @@ public class FavoritesController : ControllerBase
             await _db.SaveChangesAsync();
         }
 
-        return Ok(new { favorited = false });
+        return Ok(new FavoriteResult(false));
     }
 }

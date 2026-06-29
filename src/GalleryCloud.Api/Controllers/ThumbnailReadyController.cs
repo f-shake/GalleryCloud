@@ -1,4 +1,5 @@
 using GalleryCloud.Api.Data;
+using GalleryCloud.Api.Dtos;
 using GalleryCloud.Api.Services;
 using GalleryCloud.Core.Enums;
 using GalleryCloud.Core.Interfaces;
@@ -22,15 +23,13 @@ public class ThumbnailReadyController : ControllerBase
         _userContext = userContext;
     }
 
-    public record IdsRequest(List<string> Ids, string Size = "grid", int Width = 400);
-
     [HttpPost("ready")]
     public async Task<IActionResult> CheckReady([FromBody] IdsRequest request)
     {
         if (!_userContext.IsAuthenticated) return Unauthorized();
 
         if (request.Ids == null || request.Ids.Count == 0)
-            return Ok(new { ready = new List<string>(), pending = new List<string>() });
+            return Ok(new ReadyResponse(new List<string>(), new List<string>()));
 
         var size = request.Size.ToLowerInvariant();
 
@@ -43,7 +42,7 @@ public class ThumbnailReadyController : ControllerBase
         var ready = request.Ids.Where(id => readySet.Contains(id)).ToList();
         var pending = request.Ids.Where(id => !readySet.Contains(id)).ToList();
 
-        return Ok(new { ready, pending });
+        return Ok(new ReadyResponse(ready, pending));
     }
 
     [HttpPost("enqueue")]
@@ -76,6 +75,6 @@ public class ThumbnailReadyController : ControllerBase
             }
         }
 
-        return Ok(new { enqueued });
+        return Ok(new EnqueueResponse(enqueued));
     }
 }

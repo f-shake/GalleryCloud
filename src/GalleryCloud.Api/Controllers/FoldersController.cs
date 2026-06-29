@@ -1,4 +1,5 @@
 using GalleryCloud.Api.Data;
+using GalleryCloud.Api.Dtos;
 using GalleryCloud.Api.Services;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -43,12 +44,12 @@ public class FoldersController : ControllerBase
         var allPhotos = await _db.Photos
             .Where(p => p.UserId == _userContext.UserId && !p.IsDeleted)
             .OrderBy(p => p.FileName)
-            .Select(p => new
-            {
-                p.Id, p.FileName, p.FileFormat, p.FilePath,
+            .Select(p => new PhotoListItem(
+                p.Id, p.FileName, p.FileFormat,
                 p.Width, p.Height, p.Orientation,
-                p.TakenAt, p.FileSize
-            })
+                p.TakenAt, null, null,
+                p.FileSize, p.FilePath, null
+            ))
             .ToListAsync();
 
         var normalized = path.Replace('\\', '/').TrimEnd('/') + "/";
@@ -98,13 +99,5 @@ public class FoldersController : ControllerBase
         }
 
         return root.Values.OrderBy(f => f.Name).ToList();
-    }
-
-    public class FolderNode
-    {
-        public string Name { get; set; } = "";
-        public string Path { get; set; } = "";
-        public int PhotoCount { get; set; }
-        public List<FolderNode> SubFolders { get; set; } = new();
     }
 }

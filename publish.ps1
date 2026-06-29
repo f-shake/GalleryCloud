@@ -37,7 +37,8 @@ if (-not $skipBackend) {
         -c $Configuration `
         -r $Runtime `
         --self-contained true `
-        -p:PublishSingleFile=true `
+        -p:PublishAot=true `
+        -p:StripSymbols=true `
         -o "$ScriptDir\$OutputDir"
     if ($LASTEXITCODE -ne 0) { throw "Backend publish failed" }
 } else {

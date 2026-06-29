@@ -1,4 +1,5 @@
 using GalleryCloud.Api.Data;
+using GalleryCloud.Api.Dtos;
 using GalleryCloud.Api.Services;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -40,7 +41,7 @@ public class TimelineController : ControllerBase
 
     private async Task<IActionResult> GetDayGroups(IOrderedQueryable<Core.Entities.Photo> query, string? cursor, int limit)
     {
-        var groups = new List<object>();
+        var groups = new List<TimelineGroup>();
         DateTime? cursorDate = null;
 
         if (!string.IsNullOrEmpty(cursor) && DateTime.TryParse(cursor, out var cdt))
@@ -49,16 +50,17 @@ public class TimelineController : ControllerBase
         var batchSize = 500;
         var offset = 0;
         var currentDay = "";
-        var dayPhotos = new List<object>();
+        var dayPhotos = new List<PhotoItem>();
         var pastCursor = cursorDate == null;
 
         while (groups.Count < limit)
         {
-            var batch = await query.Skip(offset).Take(batchSize).Select(p => new
-            {
-                p.Id, p.FileName, p.FileFormat, p.Width, p.Height, p.Orientation,
-                p.TakenAt, p.Latitude, p.Longitude, p.FileSize
-            }).ToListAsync();
+            var batch = await query.Skip(offset).Take(batchSize)
+                .Select(p => new PhotoItem(
+                    p.Id, p.FileName, p.FileFormat, p.Width, p.Height, p.Orientation,
+                    p.TakenAt, p.Latitude, p.Longitude, p.FileSize
+                ))
+                .ToListAsync();
 
             if (batch.Count == 0) break;
 
@@ -80,8 +82,8 @@ public class TimelineController : ControllerBase
                 {
                     if (dayPhotos.Count > 0)
                     {
-                        groups.Add(new { label = FormatDayLabel(currentDay), cursor = currentDay, photos = dayPhotos });
-                        dayPhotos = new List<object>();
+                        groups.Add(new TimelineGroup(FormatDayLabel(currentDay), currentDay, new List<PhotoItem>(dayPhotos)));
+                        dayPhotos.Clear();
                         if (groups.Count >= limit) break;
                     }
                     currentDay = day;
@@ -96,44 +98,44 @@ public class TimelineController : ControllerBase
 
         // Last day
         if (dayPhotos.Count > 0 && groups.Count < limit)
-            groups.Add(new { label = FormatDayLabel(currentDay), cursor = currentDay, photos = dayPhotos });
+            groups.Add(new TimelineGroup(FormatDayLabel(currentDay), currentDay, dayPhotos));
 
-        var nextCursor = groups.Count > 0 ? ((dynamic)groups[^1]).cursor : null;
+        var nextCursor = groups.Count > 0 ? groups[^1].Cursor : null;
 
-        return Ok(new { groups, nextCursor, hasMore = groups.Count >= limit });
+        return Ok(new TimelineResponse(groups, nextCursor, groups.Count >= limit));
     }
 
     private async Task<IActionResult> GetMonthGroups(IOrderedQueryable<Core.Entities.Photo> query, string? cursor, int limit)
     {
-        var allPhotos = await query.Select(p => new
-        {
-            p.Id, p.FileName, p.FileFormat, p.Width, p.Height, p.Orientation,
-            p.TakenAt, p.Latitude, p.Longitude, p.FileSize
-        }).ToListAsync();
+        var allPhotos = await query
+            .Select(p => new PhotoItem(
+                p.Id, p.FileName, p.FileFormat, p.Width, p.Height, p.Orientation,
+                p.TakenAt, p.Latitude, p.Longitude, p.FileSize
+            ))
+            .ToListAsync();
 
         var grouped = allPhotos
             .GroupBy(p => p.TakenAt?.ToString("yyyy-MM") ?? "")
             .Where(g => !string.IsNullOrEmpty(g.Key))
-            .Select(g => new
-            {
-                label = FormatMonthLabel(g.Key),
-                cursor = g.Key,
-                photos = g.Take(300).Cast<object>().ToList()
-            })
+            .Select(g => new TimelineGroup(
+                FormatMonthLabel(g.Key),
+                g.Key,
+                g.Take(300).ToList()
+            ))
             .ToList();
 
         // Apply cursor
         var startIdx = 0;
         if (!string.IsNullOrEmpty(cursor))
         {
-            var idx = grouped.FindIndex(g => g.cursor == cursor);
+            var idx = grouped.FindIndex(g => g.Cursor == cursor);
             if (idx >= 0) startIdx = idx + 1;
         }
 
-        var result = grouped.Skip(startIdx).Take(limit).ToList<object>();
-        var nextCursor = result.Count > 0 ? ((dynamic)result[^1]).cursor : null;
+        var result = grouped.Skip(startIdx).Take(limit).ToList();
+        var nextCursor = result.Count > 0 ? result[^1].Cursor : null;
 
-        return Ok(new { groups = result, nextCursor, hasMore = startIdx + limit < grouped.Count });
+        return Ok(new TimelineResponse(result, nextCursor, startIdx + limit < grouped.Count));
     }
 
     private async Task<IActionResult> GetFlatList(IOrderedQueryable<Core.Entities.Photo> query, string? cursor, int limit)
@@ -141,19 +143,17 @@ public class TimelineController : ControllerBase
         int offsetNum = 0;
         if (!string.IsNullOrEmpty(cursor) && int.TryParse(cursor, out var c)) offsetNum = c;
 
-        var photos = await query.Skip(offsetNum).Take(limit).Select(p => new
-        {
-            p.Id, p.FileName, p.FileFormat, p.Width, p.Height, p.Orientation,
-            p.TakenAt, p.Latitude, p.Longitude, p.FileSize
-        }).ToListAsync();
+        var photos = await query.Skip(offsetNum).Take(limit)
+            .Select(p => new PhotoItem(
+                p.Id, p.FileName, p.FileFormat, p.Width, p.Height, p.Orientation,
+                p.TakenAt, p.Latitude, p.Longitude, p.FileSize
+            ))
+            .ToListAsync();
 
         var hasMore = photos.Count >= limit;
-        return Ok(new
-        {
-            groups = new[] { new { photos = photos.Cast<object>().ToList() } },
-            nextCursor = hasMore ? (offsetNum + limit).ToString() : null,
-            hasMore
-        });
+        var groups = new List<TimelineGroup> { new(null, null, photos) };
+
+        return Ok(new TimelineResponse(groups, hasMore ? (offsetNum + limit).ToString() : null, hasMore));
     }
 
     [HttpGet("range")]
@@ -197,11 +197,9 @@ public class TimelineController : ControllerBase
             .OrderBy(x => x.Year).ThenBy(x => x.Month).ThenBy(x => x.Day)
             .ToListAsync();
 
-        var daily = raw.Select(x => new
-        {
-            date = $"{x.Year}-{x.Month:D2}-{x.Day:D2}",
-            count = x.count
-        }).ToList();
+        var daily = raw.Select(x => new DailyDensityItem(
+            $"{x.Year}-{x.Month:D2}-{x.Day:D2}", x.count
+        )).ToList();
 
         return Ok(daily);
     }
@@ -214,8 +212,8 @@ public class TimelineController : ControllerBase
         var years = await _db.Photos
             .Where(p => p.UserId == _userContext.UserId && !p.IsDeleted && p.TakenAt != null)
             .GroupBy(p => p.TakenAt!.Value.Year)
-            .Select(g => new { year = g.Key, count = g.Count() })
-            .OrderByDescending(x => x.year)
+            .Select(g => new YearCountItem(g.Key, g.Count()))
+            .OrderByDescending(x => x.Year)
             .ToListAsync();
 
         return Ok(years);
@@ -226,19 +224,22 @@ public class TimelineController : ControllerBase
     {
         if (!_userContext.IsAuthenticated) return Unauthorized();
 
-        var density = await _db.Photos
+        var raw = await _db.Photos
             .Where(p => p.UserId == _userContext.UserId && !p.IsDeleted && p.TakenAt != null)
             .GroupBy(p => new { p.TakenAt!.Value.Year, p.TakenAt!.Value.Month })
             .Select(g => new { year = g.Key.Year, month = g.Key.Month, count = g.Count() })
             .OrderByDescending(x => x.year).ThenByDescending(x => x.month)
             .ToListAsync();
 
-        var result = density.GroupBy(d => d.year).Select(g => new
-        {
-            year = g.Key,
-            monthCounts = Enumerable.Range(1, 12).Select(m =>
-                g.FirstOrDefault(x => x.month == m)?.count ?? 0).ToArray()
-        }).ToList();
+        var result = raw
+            .GroupBy(d => d.year)
+            .Select(g => new MonthlyDensityItem(
+                g.Key,
+                Enumerable.Range(1, 12).Select(m =>
+                    g.FirstOrDefault(x => x.month == m)?.count ?? 0
+                ).ToArray()
+            ))
+            .ToList();
 
         return Ok(result);
     }

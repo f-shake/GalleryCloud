@@ -1,3 +1,4 @@
+using GalleryCloud.Api.Dtos;
 using GalleryCloud.Api.Services;
 using GalleryCloud.Core.Interfaces;
 using Microsoft.AspNetCore.Mvc;
@@ -17,37 +18,30 @@ public class AuthController : ControllerBase
         _userContext = userContext;
     }
 
-    public record LoginRequest(string Username, string Password);
-    public record UserResponse(string Id, string Username, string? DisplayName, bool IsAdmin, string RootPath);
-
     [HttpPost("login")]
     public async Task<IActionResult> Login([FromBody] LoginRequest request)
     {
         var result = await _authService.LoginAsync(request.Username, request.Password);
 
         if (result == null)
-            return Unauthorized(new { error = "Invalid username or password" });
+            return Unauthorized(new ErrorResult("Invalid username or password"));
 
         var (token, user) = result.Value;
 
-        return Ok(new
-        {
-            token,
-            user = new UserResponse(user.Id, user.Username, user.DisplayName, user.IsAdmin, user.RootPath)
-        });
+        return Ok(new AuthResult(token, new UserResponse(user.Id, user.Username, user.DisplayName, user.IsAdmin, user.RootPath)));
     }
 
     [HttpPost("logout")]
     public IActionResult Logout()
     {
-        return Ok(new { message = "Logged out" });
+        return Ok(new MessageResult("Logged out"));
     }
 
     [HttpGet("me")]
     public IActionResult Me()
     {
         if (!_userContext.IsAuthenticated)
-            return Unauthorized(new { error = "Not authenticated" });
+            return Unauthorized(new ErrorResult("Not authenticated"));
 
         return Ok(new UserResponse(
             _userContext.UserId,

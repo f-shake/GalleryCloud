@@ -1,4 +1,5 @@
 using GalleryCloud.Api.Data;
+using GalleryCloud.Api.Dtos;
 using GalleryCloud.Api.Services;
 using GalleryCloud.Core.Entities;
 using GalleryCloud.Core.Enums;
@@ -41,17 +42,15 @@ public class PhotosController : ControllerBase
         var photos = await query
             .Skip((page - 1) * limit)
             .Take(limit)
-            .Select(p => new
-            {
+            .Select(p => new PhotoItem(
                 p.Id, p.FileName, p.FileFormat,
                 p.Width, p.Height, p.Orientation,
-                p.TakenAt, p.DeviceModel,
-                p.Latitude, p.Longitude,
-                p.FileSize, p.CreatedAt
-            })
+                p.TakenAt, p.Latitude, p.Longitude,
+                p.FileSize, p.DeviceModel, p.CreatedAt
+            ))
             .ToListAsync();
 
-        return Ok(new { total, page, limit, photos });
+        return Ok(new PhotoListResponse(total, page, limit, photos));
     }
 
     [HttpGet("{id}")]
@@ -66,15 +65,14 @@ public class PhotosController : ControllerBase
         if (photo == null)
             return NotFound();
 
-        return Ok(new
-        {
+        return Ok(new PhotoDetail(
             photo.Id, photo.FileName, photo.FileFormat, photo.FilePath,
             photo.Width, photo.Height, photo.Orientation,
             photo.TakenAt, photo.DeviceModel,
             photo.Latitude, photo.Longitude,
             photo.FileSize, photo.Md5Hash,
             photo.CreatedAt, photo.UpdatedAt
-        });
+        ));
     }
 
     [HttpGet("ids")]
@@ -88,14 +86,14 @@ public class PhotosController : ControllerBase
             .Where(p => p.UserId == _userContext.UserId && !p.IsDeleted)
             .OrderByDescending(p => p.TakenAt);
 
-        if (fromYear.HasValue) query = (IOrderedQueryable<Core.Entities.Photo>)query.Where(p => p.TakenAt!.Value.Year >= fromYear.Value);
-        if (toYear.HasValue) query = (IOrderedQueryable<Core.Entities.Photo>)query.Where(p => p.TakenAt!.Value.Year <= toYear.Value);
+        if (fromYear.HasValue)
+            query = (IOrderedQueryable<Core.Entities.Photo>)query.Where(p => p.TakenAt!.Value.Year >= fromYear.Value);
+        if (toYear.HasValue)
+            query = (IOrderedQueryable<Core.Entities.Photo>)query.Where(p => p.TakenAt!.Value.Year <= toYear.Value);
 
-        var items = await query.Select(p => new
-        {
-            p.Id,
-            p.TakenAt
-        }).ToListAsync();
+        var items = await query
+            .Select(p => new PhotoIdentity(p.Id, p.TakenAt))
+            .ToListAsync();
 
         return Ok(items);
     }
@@ -122,7 +120,7 @@ public class PhotosController : ControllerBase
             return Forbid();
 
         if (!System.IO.File.Exists(fullPath))
-            return NotFound(new { error = "File not found on disk" });
+            return NotFound(new ErrorResult("File not found on disk"));
 
         var stream = System.IO.File.OpenRead(fullPath);
         var contentType = photo.FileFormat.ToLower() switch
@@ -148,7 +146,7 @@ public class PhotosController : ControllerBase
             return Unauthorized();
 
         if (_thumbnailService == null)
-            return StatusCode(500, new { error = "Thumbnail service not available" });
+            return StatusCode(500, new ErrorResult("Thumbnail service not available"));
 
         var thumbSize = size switch
         {
@@ -172,7 +170,7 @@ public class PhotosController : ControllerBase
 
         // 2. Not cached — grid: enqueue background generation, return 202 immediately
         _thumbnailService.EnqueueAsync(id, thumbSize, w);
-        return Accepted(new { status = "pending", photoId = id });
+        return Accepted(new MessageResult("pending"));
     }
 
     [HttpDelete("{id}")]
@@ -193,7 +191,7 @@ public class PhotosController : ControllerBase
         photo.UpdatedAt = DateTime.UtcNow;
 
         await _db.SaveChangesAsync();
-        return Ok(new { message = "Deleted" });
+        return Ok(new MessageResult("Deleted"));
     }
 
     [HttpPatch("{id}/restore")]
@@ -210,17 +208,15 @@ public class PhotosController : ControllerBase
 
         var fullPath = Path.GetFullPath(Path.Combine(_userContext.RootPath, photo.FilePath));
         if (!System.IO.File.Exists(fullPath))
-            return BadRequest(new { error = "Original file no longer exists" });
+            return BadRequest(new ErrorResult("Original file no longer exists"));
 
         photo.IsDeleted = false;
         photo.DeletedAt = null;
         photo.UpdatedAt = DateTime.UtcNow;
 
         await _db.SaveChangesAsync();
-        return Ok(new { message = "Restored" });
+        return Ok(new MessageResult("Restored"));
     }
-
-    public record MoveRequest(string NewRelativePath);
 
     [HttpPut("{id}/move")]
     public async Task<IActionResult> Move(string id, [FromBody] MoveRequest request)
@@ -238,10 +234,10 @@ public class PhotosController : ControllerBase
         var newFullPath = Path.GetFullPath(Path.Combine(_userContext.RootPath, request.NewRelativePath));
 
         if (!newFullPath.StartsWith(Path.GetFullPath(_userContext.RootPath), StringComparison.OrdinalIgnoreCase))
-            return BadRequest(new { error = "Invalid destination path" });
+            return BadRequest(new ErrorResult("Invalid destination path"));
 
         if (!System.IO.File.Exists(oldFullPath))
-            return BadRequest(new { error = "Source file not found" });
+            return BadRequest(new ErrorResult("Source file not found"));
 
         Directory.CreateDirectory(Path.GetDirectoryName(newFullPath)!);
         System.IO.File.Move(oldFullPath, newFullPath);
@@ -251,10 +247,8 @@ public class PhotosController : ControllerBase
         photo.UpdatedAt = DateTime.UtcNow;
 
         await _db.SaveChangesAsync();
-        return Ok(new { message = "Moved" });
+        return Ok(new MessageResult("Moved"));
     }
-
-    public record RenameRequest(string NewFileName);
 
     [HttpPatch("{id}/rename")]
     public async Task<IActionResult> Rename(string id, [FromBody] RenameRequest request)
@@ -274,10 +268,10 @@ public class PhotosController : ControllerBase
         var newFullPath = Path.GetFullPath(Path.Combine(_userContext.RootPath, newRelativePath));
 
         if (!newFullPath.StartsWith(Path.GetFullPath(_userContext.RootPath), StringComparison.OrdinalIgnoreCase))
-            return BadRequest(new { error = "Invalid file name" });
+            return BadRequest(new ErrorResult("Invalid file name"));
 
         if (!System.IO.File.Exists(oldFullPath))
-            return BadRequest(new { error = "Source file not found" });
+            return BadRequest(new ErrorResult("Source file not found"));
 
         System.IO.File.Move(oldFullPath, newFullPath);
 
@@ -286,7 +280,7 @@ public class PhotosController : ControllerBase
         photo.UpdatedAt = DateTime.UtcNow;
 
         await _db.SaveChangesAsync();
-        return Ok(new { message = "Renamed" });
+        return Ok(new MessageResult("Renamed"));
     }
 
     private static async Task<byte[]> ReadFullyAsync(Stream stream)

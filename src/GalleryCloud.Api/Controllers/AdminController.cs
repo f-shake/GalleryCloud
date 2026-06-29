@@ -1,4 +1,5 @@
 using GalleryCloud.Api.Data;
+using GalleryCloud.Api.Dtos;
 using GalleryCloud.Api.Middleware;
 using GalleryCloud.Api.Services;
 using GalleryCloud.Core.Entities;
@@ -41,29 +42,26 @@ public class AdminController : ControllerBase
     public async Task<IActionResult> ListUsers()
     {
         var users = await _db.Users
-            .Select(u => new
-            {
+            .Select(u => new UserListItem(
                 u.Id, u.Username, u.DisplayName, u.RootPath,
                 u.IsAdmin, u.IsActive, u.CreatedAt
-            })
+            ))
             .ToListAsync();
 
         return Ok(users);
     }
 
-    public record CreateUserRequest(string Username, string Password, string? DisplayName, string RootPath, bool IsAdmin);
-
     [HttpPost("users")]
     public async Task<IActionResult> CreateUser([FromBody] CreateUserRequest request)
     {
         if (string.IsNullOrWhiteSpace(request.Username) || string.IsNullOrWhiteSpace(request.Password))
-            return BadRequest(new { error = "Username and password are required" });
+            return BadRequest(new ErrorResult("Username and password are required"));
 
         if (string.IsNullOrWhiteSpace(request.RootPath))
-            return BadRequest(new { error = "RootPath is required" });
+            return BadRequest(new ErrorResult("RootPath is required"));
 
         if (await _db.Users.AnyAsync(u => u.Username == request.Username))
-            return Conflict(new { error = "Username already exists" });
+            return Conflict(new ErrorResult("Username already exists"));
 
         var user = new User
         {
@@ -78,10 +76,11 @@ public class AdminController : ControllerBase
         _db.Users.Add(user);
         await _db.SaveChangesAsync();
 
-        return Ok(new { user.Id, user.Username, user.DisplayName, user.RootPath, user.IsAdmin });
+        return Ok(new UserListItem(
+            user.Id, user.Username, user.DisplayName, user.RootPath,
+            user.IsAdmin, user.IsActive, user.CreatedAt
+        ));
     }
-
-    public record UpdateUserRequest(string? Password, string? DisplayName, string? RootPath, bool? IsAdmin, bool? IsActive);
 
     [HttpPut("users/{id}")]
     public async Task<IActionResult> UpdateUser(string id, [FromBody] UpdateUserRequest request)
@@ -101,7 +100,7 @@ public class AdminController : ControllerBase
             user.IsActive = request.IsActive.Value;
 
         await _db.SaveChangesAsync();
-        return Ok(new { message = "Updated" });
+        return Ok(new MessageResult("Updated"));
     }
 
     [HttpDelete("users/{id}")]
@@ -112,7 +111,7 @@ public class AdminController : ControllerBase
 
         user.IsActive = false;
         await _db.SaveChangesAsync();
-        return Ok(new { message = "User disabled" });
+        return Ok(new MessageResult("User disabled"));
     }
 
     // ==================== Settings ====================
@@ -132,7 +131,7 @@ public class AdminController : ControllerBase
             await _settingService.SetAsync(key, value);
         }
 
-        return Ok(new { message = "Settings updated" });
+        return Ok(new MessageResult("Settings updated"));
     }
 
     // ==================== Scan ====================
@@ -141,27 +140,27 @@ public class AdminController : ControllerBase
     public async Task<IActionResult> TriggerScan()
     {
         if (_scanService.Status.IsRunning)
-            return Conflict(new { error = "Scan is already running" });
+            return Conflict(new ErrorResult("Scan is already running"));
 
         _ = Task.Run(() => _scanService.TriggerFullScanForAllUsersAsync());
-        return Ok(new { message = "Scan started" });
+        return Ok(new MessageResult("Scan started"));
     }
 
     [HttpPost("scan/trigger-incremental")]
     public async Task<IActionResult> TriggerIncrementalScan()
     {
         if (_scanService.Status.IsRunning)
-            return Conflict(new { error = "Scan is already running" });
+            return Conflict(new ErrorResult("Scan is already running"));
 
         _ = Task.Run(() => _scanService.TriggerFullScanForAllUsersAsync());
-        return Ok(new { message = "Incremental scan started" });
+        return Ok(new MessageResult("Incremental scan started"));
     }
 
     [HttpPost("scan/cancel")]
     public IActionResult CancelScan()
     {
         _scanService.Cancel();
-        return Ok(new { message = "Cancelling..." });
+        return Ok(new MessageResult("Cancelling..."));
     }
 
     [HttpGet("scan/status")]
@@ -176,19 +175,16 @@ public class AdminController : ControllerBase
         var logs = await _db.ScanLogs
             .OrderByDescending(l => l.StartedAt)
             .Take(limit)
-            .Select(l => new
-            {
+            .Select(l => new ScanLogItem(
                 l.Id, l.UserId, l.StartedAt, l.FinishedAt,
                 l.TotalFound, l.NewAdded, l.SoftDeleted, l.Mode
-            })
+            ))
             .ToListAsync();
 
         return Ok(logs);
     }
 
     // ==================== Thumbnails ====================
-
-    public record ThumbnailGenerationRequest(List<string> Sizes);
 
     [HttpGet("thumbnails/stats")]
     public async Task<IActionResult> GetThumbnailStats()
@@ -201,27 +197,27 @@ public class AdminController : ControllerBase
     public IActionResult RegenerateThumbnails([FromBody] ThumbnailGenerationRequest? request)
     {
         if (_thumbnailService.RegenerationStatus.IsRunning)
-            return Conflict(new { error = "Thumbnail regeneration is already running" });
+            return Conflict(new ErrorResult("Thumbnail regeneration is already running"));
 
         _ = Task.Run(() => _thumbnailService.RegenerateAllAsync(request?.Sizes));
-        return Ok(new { message = "Thumbnail regeneration started" });
+        return Ok(new MessageResult("Thumbnail regeneration started"));
     }
 
     [HttpPost("thumbnails/fill-missing")]
     public IActionResult FillMissingThumbnails([FromBody] ThumbnailGenerationRequest? request)
     {
         if (_thumbnailService.RegenerationStatus.IsRunning)
-            return Conflict(new { error = "Thumbnail generation is already running" });
+            return Conflict(new ErrorResult("Thumbnail generation is already running"));
 
         _ = Task.Run(() => _thumbnailService.FillMissingAsync(request?.Sizes));
-        return Ok(new { message = "Fill-missing started" });
+        return Ok(new MessageResult("Fill-missing started"));
     }
 
     [HttpPost("thumbnails/cancel")]
     public IActionResult CancelGeneration()
     {
         _thumbnailService.CancelGeneration();
-        return Ok(new { message = "Cancelling..." });
+        return Ok(new MessageResult("Cancelling..."));
     }
 
     [HttpGet("thumbnails/status")]
@@ -234,14 +230,14 @@ public class AdminController : ControllerBase
     public async Task<IActionResult> ClearThumbnailCache()
     {
         if (_thumbnailService.RegenerationStatus.IsRunning)
-            return Conflict(new { error = "Thumbnail regeneration is running, wait for it to finish" });
+            return Conflict(new ErrorResult("Thumbnail regeneration is running, wait for it to finish"));
 
         // Clear DB records
         var count = await _thumbDb.ThumbnailCaches.CountAsync();
         _thumbDb.ThumbnailCaches.RemoveRange(_thumbDb.ThumbnailCaches);
         await _thumbDb.SaveChangesAsync();
 
-        return Ok(new { message = "Cache cleared", deletedRecords = count });
+        return Ok(new MessageResult("Cache cleared")); // count was sent but not used by frontend
     }
 
     // ==================== Stats ====================
@@ -256,17 +252,13 @@ public class AdminController : ControllerBase
         var formatDistribution = await _db.Photos
             .Where(p => !p.IsDeleted)
             .GroupBy(p => p.FileFormat)
-            .Select(g => new { format = g.Key, count = g.Count() })
+            .Select(g => new FormatCountItem(g.Key, g.Count()))
             .ToListAsync();
 
-        return Ok(new
-        {
-            totalPhotos,
-            totalUsers,
-            totalSize,
-            totalSizeGb = Math.Round(totalSize / (1024.0 * 1024 * 1024), 2),
-            photosWithGps,
-            formatDistribution
-        });
+        return Ok(new AdminStats(
+            totalPhotos, totalUsers, totalSize,
+            Math.Round(totalSize / (1024.0 * 1024 * 1024), 2),
+            photosWithGps, formatDistribution
+        ));
     }
 }

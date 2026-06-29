@@ -19,6 +19,12 @@
     <TargetFramework>net10.0</TargetFramework>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
+
+    <!-- AOT + Trimming -->
+    <PublishAot>true</PublishAot>
+    <StripSymbols>true</StripSymbols>
+    <IlcOptimizationPreference>Speed</IlcOptimizationPreference>
+    <IlcTrimMetadata>true</IlcTrimMetadata>
   </PropertyGroup>
 
   <ItemGroup>

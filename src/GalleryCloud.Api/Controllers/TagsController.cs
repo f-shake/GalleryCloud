@@ -1,4 +1,5 @@
 using GalleryCloud.Api.Data;
+using GalleryCloud.Api.Dtos;
 using GalleryCloud.Api.Services;
 using GalleryCloud.Core.Entities;
 using Microsoft.AspNetCore.Mvc;
@@ -23,11 +24,12 @@ public class TagsController : ControllerBase
     public async Task<IActionResult> List()
     {
         if (!_userContext.IsAuthenticated) return Unauthorized();
-        var tags = await _db.Tags.Where(t => t.UserId == _userContext.UserId).ToListAsync();
+        var tags = await _db.Tags
+            .Where(t => t.UserId == _userContext.UserId)
+            .Select(t => new TagItem(t.Id, t.Name, t.Color))
+            .ToListAsync();
         return Ok(tags);
     }
-
-    public record CreateTagRequest(string Name, string? Color);
 
     [HttpPost]
     public async Task<IActionResult> Create([FromBody] CreateTagRequest req)
@@ -36,7 +38,7 @@ public class TagsController : ControllerBase
         var tag = new Tag { UserId = _userContext.UserId, Name = req.Name, Color = req.Color };
         _db.Tags.Add(tag);
         await _db.SaveChangesAsync();
-        return Ok(tag);
+        return Ok(new TagItem(tag.Id, tag.Name, tag.Color));
     }
 
     [HttpPost("photos/{photoId}")]
@@ -57,7 +59,7 @@ public class TagsController : ControllerBase
             await _db.SaveChangesAsync();
         }
 
-        return Ok(tag);
+        return Ok(new TagItem(tag.Id, tag.Name, tag.Color));
     }
 
     [HttpDelete("photos/{photoId}/{tagId}")]

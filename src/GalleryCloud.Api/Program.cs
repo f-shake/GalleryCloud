@@ -1,5 +1,6 @@
 using GalleryCloud.Api.BackgroundJobs;
 using GalleryCloud.Api.Data;
+using GalleryCloud.Api.Dtos;
 using GalleryCloud.Api.Middleware;
 using GalleryCloud.Api.Services;
 using GalleryCloud.Core.Interfaces;
@@ -16,8 +17,10 @@ var thumbConnectionString = builder.Configuration.GetConnectionString("Thumbnail
     ?? "Data Source=App_Data/thumbnails.db";
 
 builder.Services.Configure<AuthOptions>(builder.Configuration.GetSection("Auth"));
-builder.Services.AddDbContext<AppDbContext>(options => options.UseSqlite(connectionString));
-builder.Services.AddDbContext<ThumbnailDbContext>(options => options.UseSqlite(thumbConnectionString));
+builder.Services.AddDbContext<AppDbContext>(options =>
+    options.UseSqlite(connectionString).UseModel(AppDbContextModel.Instance));
+builder.Services.AddDbContext<ThumbnailDbContext>(options =>
+    options.UseSqlite(thumbConnectionString).UseModel(ThumbnailDbContextModel.Instance));
 builder.Services.AddMemoryCache();
 
 // Core services
@@ -40,6 +43,7 @@ builder.Services.AddControllers()
     .AddJsonOptions(options =>
     {
         options.JsonSerializerOptions.PropertyNamingPolicy = System.Text.Json.JsonNamingPolicy.CamelCase;
+        options.JsonSerializerOptions.TypeInfoResolver = GalleryCloudJsonContext.Default;
     });
 
 builder.Services.AddCors(options =>

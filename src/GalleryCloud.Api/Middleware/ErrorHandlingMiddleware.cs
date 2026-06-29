@@ -1,5 +1,6 @@
 using System.Net;
 using System.Text.Json;
+using GalleryCloud.Api.Dtos;
 
 namespace GalleryCloud.Api.Middleware;
 
@@ -24,14 +25,16 @@ public class ErrorHandlingMiddleware
         {
             context.Response.StatusCode = (int)HttpStatusCode.Forbidden;
             context.Response.ContentType = "application/json";
-            await context.Response.WriteAsync(JsonSerializer.Serialize(new { error = "Forbidden" }));
+            await context.Response.WriteAsync(
+                JsonSerializer.Serialize(new ErrorResult("Forbidden"), GalleryCloudJsonContext.Default.ErrorResult));
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Unhandled exception: {Message}", ex.Message);
             context.Response.StatusCode = (int)HttpStatusCode.InternalServerError;
             context.Response.ContentType = "application/json";
-            await context.Response.WriteAsync(JsonSerializer.Serialize(new { error = "Internal server error" }));
+            await context.Response.WriteAsync(
+                JsonSerializer.Serialize(new ErrorResult("Internal server error"), GalleryCloudJsonContext.Default.ErrorResult));
         }
     }
 }
