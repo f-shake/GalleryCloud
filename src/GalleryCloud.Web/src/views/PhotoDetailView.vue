@@ -236,8 +236,25 @@ function onMouseMove(e: MouseEvent) {
 }
 function onMouseUp() { isDragging = false }
 
-// ── Double-tap detection ──────────────────────────────────────
-let lastTapTime = 0, prevTapX = 0, prevTapY = 0
+// ── Double-click / double-tap (unified, works on desktop & mobile) ──
+let lastClickTime = 0, lastClickX = 0, lastClickY = 0
+
+function onImgClick(e: MouseEvent) {
+  if (!zoomable.value || slideSnapping.value) return
+  const now = Date.now()
+  const dist = Math.hypot(e.clientX - lastClickX, e.clientY - lastClickY)
+  if (now - lastClickTime < 300 && dist < 50) {
+    if (scale.value > 1) {
+      animateZoomTo(1, vw / 2, vh / 2)
+    } else {
+      animateZoomTo(2, e.clientX, e.clientY)
+    }
+    lastClickTime = 0
+  } else {
+    lastClickTime = now
+    lastClickX = e.clientX; lastClickY = e.clientY
+  }
+}
 
 function animateZoomTo(targetScale: number, cx: number, cy: number) {
   if (targetScale === scale.value && offsetX.value === 0 && offsetY.value === 0) return
@@ -312,26 +329,6 @@ function onTouchMove(e: TouchEvent) {
   }
 }
 function onTouchEnd() {
-  // Double-tap detection for zoom (skip if pinch happened)
-  if (zoomable.value && !isDragging && !slideSnapping.value && lastPinchDist === 0 && isSwipingDown) {
-    const dy = Math.abs(dismissY.value)
-    const dx = Math.abs(swipeDx)
-    if (dy < 10 && dx < 10) {
-      const now = Date.now()
-      const tapDist = Math.hypot(swipeStartX - prevTapX, swipeStartY - prevTapY)
-      if (now - lastTapTime < 300 && tapDist < 50) {
-        if (scale.value > 1) {
-          animateZoomTo(1, vw / 2, vh / 2)
-        } else {
-          animateZoomTo(2, swipeStartX, swipeStartY)
-        }
-        lastTapTime = 0
-      } else {
-        lastTapTime = now
-        prevTapX = swipeStartX; prevTapY = swipeStartY
-      }
-    }
-  }
   isDragging = false; lastPinchDist = 0
   if (isSwipingDown) {
     isSwipingDown = false
@@ -348,15 +345,6 @@ function onTouchEnd() {
   }
 }
 
-// ── Double-click to toggle zoom ──────────────────────────────
-function onDblClick(e: MouseEvent) {
-  if (!zoomable.value || slideSnapping.value) return
-  if (scale.value > 1) {
-    animateZoomTo(1, vw / 2, vh / 2)
-  } else {
-    animateZoomTo(2, e.clientX, e.clientY)
-  }
-}
 
 async function downloadOriginal() {
   const id = store.photoId
@@ -400,7 +388,7 @@ function getExt(mime: string): string {
       @touchstart.passive="onTouchStart"
       @touchmove="onTouchMove"
       @touchend="onTouchEnd"
-      @dblclick="onDblClick"
+      @click="onImgClick"
     >
       <div v-if="!src || gridError" class="pv-placeholder" />
       <img v-else :src="src" :class="[imgClass, slideSnapping ? 'pv-img--fade-out' : '']" :style="imgStyle" draggable="false" @error="gridError = true" />
@@ -464,7 +452,7 @@ function getExt(mime: string): string {
   pointer-events: none;
   cursor: grab;
 }
-.pv-img-wrap--zoomable { pointer-events: auto; }
+.pv-img-wrap--zoomable { pointer-events: auto; touch-action: manipulation; }
 .pv-img-wrap--zoomable:active { cursor: grabbing; }
 
 .pv-placeholder {
