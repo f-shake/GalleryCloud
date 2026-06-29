@@ -58,25 +58,24 @@ function onLeave() { hoverY.value = -1; hoverDate.value = '' }
 function onStart(e: MouseEvent | TouchEvent) {
   const y = 'touches' in e ? e.touches[0].clientY : e.clientY
   doJump(y)
-  window.addEventListener('mousemove', onMove)
-  window.addEventListener('mouseup', onEnd)
-  window.addEventListener('touchmove', onTouchMove)
-  window.addEventListener('touchend', onTouchEnd)
+  // Mouse: need window-level listeners (mouse events don't track elements)
+  if (!('touches' in e)) {
+    window.addEventListener('mousemove', onMove)
+    window.addEventListener('mouseup', onEnd)
+  }
 }
 
 function onMove(e: MouseEvent) { doJump(e.clientY) }
-
-function onTouchMove(e: TouchEvent) { doJump(e.touches[0].clientY) }
 
 function onEnd() {
   window.removeEventListener('mousemove', onMove)
   window.removeEventListener('mouseup', onEnd)
 }
 
-function onTouchEnd() {
-  window.removeEventListener('touchmove', onTouchMove)
-  window.removeEventListener('touchend', onTouchEnd)
-}
+// Touch: handled via element-level @touchmove / @touchend / @touchcancel
+// (no window listeners — avoids leaking into thumbnail taps)
+function onTouchMove(e: TouchEvent) { doJump(e.touches[0].clientY) }
+function onTouchEnd() { /* cleanup if needed */ }
 
 function doJump(clientY: number) {
   const el = scrubberEl.value; if (!el) return
@@ -100,8 +99,6 @@ const thumbStyle = computed(() => {
 onUnmounted(() => {
   window.removeEventListener('mousemove', onMove)
   window.removeEventListener('mouseup', onEnd)
-  window.removeEventListener('touchmove', onTouchMove)
-  window.removeEventListener('touchend', onTouchEnd)
 })
 </script>
 
@@ -113,6 +110,9 @@ onUnmounted(() => {
     @mousemove="onHover"
     @mouseleave="onLeave"
     @touchstart.prevent="onStart"
+    @touchmove.prevent="onTouchMove"
+    @touchend="onTouchEnd"
+    @touchcancel="onTouchEnd"
   >
     <!-- Year sections positioned by actual scroll density -->
     <div
