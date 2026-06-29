@@ -26,6 +26,7 @@ let isDragging = false
 let dragStartX = 0, dragStartY = 0
 let startOffsetX = 0, startOffsetY = 0
 let lastPinchDist = 0
+let _pinchInitDist = 0, _pinchInitScale = 1, _pinchInitOx = 0, _pinchInitOy = 0, _pinchInitMx = 0, _pinchInitMy = 0
 
 // ── Carousel navigation (only during show/done, zero impact on FLIP) ──
 const slideOffset = ref(0)
@@ -195,7 +196,11 @@ function doClose() {
   setTimeout(() => store.close(), 350)
 }
 
-function onKeydown(e: KeyboardEvent) { if (e.key === 'Escape') doClose() }
+function onKeydown(e: KeyboardEvent) {
+  if (e.key === 'Escape') { doClose(); return }
+  if (e.key === 'ArrowLeft' && store.hasPrev && !slideSnapping.value) { commitSlide(1); return }
+  if (e.key === 'ArrowRight' && store.hasNext && !slideSnapping.value) { commitSlide(-1); return }
+}
 
 onMounted(() => window.addEventListener('keydown', onKeydown))
 onUnmounted(() => window.removeEventListener('keydown', onKeydown))
@@ -204,8 +209,8 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
 function onWheel(e: WheelEvent) {
   if (!zoomable.value) return
   e.preventDefault()
-  const delta = e.deltaY > 0 ? -0.1 : 0.1
-  const newScale = Math.max(1, Math.min(8, scale.value + delta))
+  const factor = e.deltaY > 0 ? 0.9 : 1.1
+  const newScale = Math.max(1, Math.min(16, scale.value * factor))
   const ratio = newScale / scale.value
   zoomAnimating.value = true
   clearTimeout(zoomTimer)
@@ -277,10 +282,19 @@ function onTouchStart(e: TouchEvent) {
   }
   if (e.touches.length === 2) {
     if (!zoomable.value) return
+    dismissing.value = false // kill swipe-dismiss animation
+    isSwipingDown = false; clearTimeout(zoomTimer); zoomAnimating.value = false
     lastPinchDist = Math.hypot(
       e.touches[0].clientX - e.touches[1].clientX,
       e.touches[0].clientY - e.touches[1].clientY
     )
+    // Anchor values — scale from initial state, not previous frame
+    _pinchInitDist = lastPinchDist
+    _pinchInitScale = scale.value
+    _pinchInitOx = offsetX.value
+    _pinchInitOy = offsetY.value
+    _pinchInitMx = (e.touches[0].clientX + e.touches[1].clientX) / 2
+    _pinchInitMy = (e.touches[0].clientY + e.touches[1].clientY) / 2
   } else if (e.touches.length === 1 && scale.value > 1) {
     if (!zoomable.value) return
     isDragging = true
@@ -303,13 +317,13 @@ function onTouchMove(e: TouchEvent) {
       e.touches[0].clientX - e.touches[1].clientX,
       e.touches[0].clientY - e.touches[1].clientY
     )
-    if (lastPinchDist > 0) {
-      const ratio = dist / lastPinchDist
-      const newScale = Math.max(1, Math.min(8, scale.value * ratio))
+    if (_pinchInitDist > 0) {
+      const ratio = dist / _pinchInitDist
+      const newScale = Math.max(1, Math.min(16, _pinchInitScale * ratio))
       const mx = (e.touches[0].clientX + e.touches[1].clientX) / 2
       const my = (e.touches[0].clientY + e.touches[1].clientY) / 2
-      offsetX.value = mx - (mx - offsetX.value) * (newScale / scale.value)
-      offsetY.value = my - (my - offsetY.value) * (newScale / scale.value)
+      const sRatio = newScale / _pinchInitScale; offsetX.value = mx - (_pinchInitMx - _pinchInitOx) * sRatio
+      offsetY.value = my - (_pinchInitMy - _pinchInitOy) * sRatio
       scale.value = newScale
       clampOffset()
     }
