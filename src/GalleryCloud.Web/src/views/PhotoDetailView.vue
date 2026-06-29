@@ -236,6 +236,21 @@ function onMouseMove(e: MouseEvent) {
 }
 function onMouseUp() { isDragging = false }
 
+// ── Double-tap detection ──────────────────────────────────────
+let lastTapTime = 0, prevTapX = 0, prevTapY = 0
+
+function animateZoomTo(targetScale: number, cx: number, cy: number) {
+  if (targetScale === scale.value && offsetX.value === 0 && offsetY.value === 0) return
+  zoomAnimating.value = true
+  clearTimeout(zoomTimer)
+  const ratio = targetScale / scale.value
+  offsetX.value = cx - (cx - offsetX.value) * ratio
+  offsetY.value = cy - (cy - offsetY.value) * ratio
+  scale.value = targetScale
+  clampOffset()
+  zoomTimer = setTimeout(() => { zoomAnimating.value = false }, 250)
+}
+
 // ── Touch (pinch + drag + swipe-down dismiss) ────────────────
 function onTouchStart(e: TouchEvent) {
   // Skip if any touch point is on a button/UI element
@@ -297,6 +312,26 @@ function onTouchMove(e: TouchEvent) {
   }
 }
 function onTouchEnd() {
+  // Double-tap detection for zoom (skip if pinch happened)
+  if (zoomable.value && !isDragging && !slideSnapping.value && lastPinchDist === 0 && isSwipingDown) {
+    const dy = Math.abs(dismissY.value)
+    const dx = Math.abs(swipeDx)
+    if (dy < 10 && dx < 10) {
+      const now = Date.now()
+      const tapDist = Math.hypot(swipeStartX - prevTapX, swipeStartY - prevTapY)
+      if (now - lastTapTime < 300 && tapDist < 50) {
+        if (scale.value > 1) {
+          animateZoomTo(1, vw / 2, vh / 2)
+        } else {
+          animateZoomTo(2, swipeStartX, swipeStartY)
+        }
+        lastTapTime = 0
+      } else {
+        lastTapTime = now
+        prevTapX = swipeStartX; prevTapY = swipeStartY
+      }
+    }
+  }
   isDragging = false; lastPinchDist = 0
   if (isSwipingDown) {
     isSwipingDown = false
@@ -313,9 +348,14 @@ function onTouchEnd() {
   }
 }
 
-// ── Double-click to reset zoom ──────────────────────────────
-function onDblClick() {
-  scale.value = 1; offsetX.value = 0; offsetY.value = 0; clampOffset()
+// ── Double-click to toggle zoom ──────────────────────────────
+function onDblClick(e: MouseEvent) {
+  if (!zoomable.value || slideSnapping.value) return
+  if (scale.value > 1) {
+    animateZoomTo(1, vw / 2, vh / 2)
+  } else {
+    animateZoomTo(2, e.clientX, e.clientY)
+  }
 }
 
 async function downloadOriginal() {
