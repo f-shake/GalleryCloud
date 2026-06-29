@@ -13,8 +13,18 @@ let checkTimer: any = null
 // Track fetch abort controllers per photo ID
 const controllers = new Map<string, AbortController>()
 
+// Persistent blob URL cache — survives register/unregister cycles
+// so thumbnails don't need to be re-fetched when scrolling back into view
+const blobCache = new Map<string, string>()
+
 export function useThumbnailQueue() {
   function register(id: string, el: HTMLImageElement) {
+    // If already cached, apply immediately — no re-fetch needed
+    const cached = blobCache.get(id)
+    if (cached) {
+      el.src = cached
+      return
+    }
     if (pending.value.has(id)) return
     pending.value.set(id, { el, status: 'pending' })
     debounceCheck()
@@ -57,6 +67,7 @@ export function useThumbnailQueue() {
         controllers.set(id, ctrl)
 
         fetchThumbnailImage(id, token, ctrl.signal).then(blobUrl => {
+          blobCache.set(id, blobUrl)
           if (pending.value.has(id)) {
             const el = pending.value.get(id)!.el
             el.src = blobUrl
