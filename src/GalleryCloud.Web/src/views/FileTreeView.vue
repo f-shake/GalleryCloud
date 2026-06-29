@@ -42,8 +42,8 @@ const defaultExpanded = computed(() => tree.value.slice(0, 10).map(n => n.path))
 </script>
 
 <template>
-  <div style="display:flex;height:100%">
-    <div style="width:260px;border-right:1px solid var(--el-border-color-light);overflow-y:auto;padding:4px 8px;flex-shrink:0">
+  <div class="ft-layout">
+    <div class="ft-tree-panel">
       <el-tree
         :data="tree"
         :props="{ children: 'subFolders', label: 'name' }"
@@ -62,7 +62,7 @@ const defaultExpanded = computed(() => tree.value.slice(0, 10).map(n => n.path))
         </template>
       </el-tree>
     </div>
-    <div style="flex:1;overflow-y:auto;padding:8px">
+    <div class="ft-photo-panel">
       <div style="margin-bottom:12px">
         <PhotoGridToolbar :count="photos.length">
           <template #left>
@@ -83,4 +83,24 @@ const defaultExpanded = computed(() => tree.value.slice(0, 10).map(n => n.path))
 
 <style>
 .el-tree-node__content { overflow: hidden; }
+
+/* Desktop: side-by-side layout */
+.ft-layout { display: flex; height: 100%; }
+.ft-tree-panel {
+  width: 260px; flex-shrink: 0; overflow-y: auto;
+  border-right: 1px solid var(--el-border-color-light);
+  padding: 4px 8px;
+}
+.ft-photo-panel { flex: 1; overflow-y: auto; padding: 8px; }
+
+/* Mobile: stacked layout — tree top 1/3, photos bottom */
+@media (max-width: 767px) {
+  .ft-layout { flex-direction: column; }
+  .ft-tree-panel {
+    width: 100%; flex: 0 0 33%; min-height: 120px;
+    border-right: none;
+    border-bottom: 1px solid var(--el-border-color-light);
+  }
+  .ft-photo-panel { flex: 1; overflow-y: auto; }
+}
 </style>
