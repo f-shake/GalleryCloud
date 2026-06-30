@@ -10,8 +10,24 @@ import { useScanStatus } from '../composables/useScanStatus'
 interface FolderNode { name: string; path: string; photoCount: number; subFolders: FolderNode[] }
 
 const viewStore = usePhotoViewStore()
-const { columns } = usePhotoGrid()
+const { columns, zoomIn, zoomOut } = usePhotoGrid()
 const { isScanning } = useScanStatus()
+
+// Pinch zoom for photo grid
+let pinchStart = 0, pinchEnd = 0
+function onTouchStart(e: TouchEvent) {
+  if (e.touches.length === 2) {
+    pinchStart = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY)
+    pinchEnd = pinchStart
+  }
+}
+function onTouchMove(e: TouchEvent) {
+  if (e.touches.length === 2 && pinchStart > 0) { e.preventDefault(); pinchEnd = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY) }
+}
+function onTouchEnd() {
+  if (pinchStart > 0 && Math.abs(pinchEnd - pinchStart) > 20) { if (pinchEnd > pinchStart) zoomIn(); else zoomOut() }
+  pinchStart = 0; pinchEnd = 0
+}
 const tree = ref<FolderNode[]>([])
 const selPath = ref('')
 const photos = ref<any[]>([])
@@ -62,7 +78,7 @@ const defaultExpanded = computed(() => tree.value.slice(0, 10).map(n => n.path))
         </template>
       </el-tree>
     </div>
-    <div class="ft-photo-panel">
+    <div class="ft-photo-panel" @touchstart="onTouchStart" @touchmove="onTouchMove" @touchend="onTouchEnd">
       <div style="margin-bottom:12px">
         <PhotoGridToolbar :count="photos.length">
           <template #left>

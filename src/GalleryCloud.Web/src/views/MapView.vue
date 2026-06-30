@@ -19,7 +19,7 @@ import PhotoGridToolbar from '../components/PhotoGridToolbar.vue'
 interface MapPoint { id: string; latitude: number; longitude: number; fileName: string; takenAt: string | null }
 
 const viewStore = usePhotoViewStore()
-const { columns } = usePhotoGrid()
+const { columns, zoomIn, zoomOut } = usePhotoGrid()
 const mapContainer = ref<HTMLDivElement | null>(null)
 const loading = ref(true)
 const pointCount = ref(0)
@@ -176,6 +176,22 @@ function closeClusterView() {
   clusterView.value = null
 }
 
+// Pinch zoom for cluster photo grid
+let pinchStart = 0, pinchEnd = 0
+function onTouchStart(e: TouchEvent) {
+  if (e.touches.length === 2) {
+    pinchStart = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY)
+    pinchEnd = pinchStart
+  }
+}
+function onTouchMove(e: TouchEvent) {
+  if (e.touches.length === 2 && pinchStart > 0) { e.preventDefault(); pinchEnd = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY) }
+}
+function onTouchEnd() {
+  if (pinchStart > 0 && Math.abs(pinchEnd - pinchStart) > 20) { if (pinchEnd > pinchStart) zoomIn(); else zoomOut() }
+  pinchStart = 0; pinchEnd = 0
+}
+
 onMounted(async () => {
   try {
     const [cfg, pts] = await Promise.all([
@@ -285,7 +301,7 @@ onUnmounted(() => {
     </div>
 
     <!-- Cluster photo list overlay -->
-    <div v-if="clusterView" class="cluster-overlay">
+    <div v-if="clusterView" class="cluster-overlay" @touchstart="onTouchStart" @touchmove="onTouchMove" @touchend="onTouchEnd">
       <div class="cluster-overlay-header">
         <PhotoGridToolbar :count="clusterView.photos.length">
           <template #left>
@@ -320,8 +336,13 @@ onUnmounted(() => {
 <style>
 /* Map fills parent, remove el-main padding */
 .app-main:has(.map-root) { padding: 0; }
-.map-root { position: absolute; inset: 0; }
+.map-root { position: absolute; inset: 0; outline: none; }
 .map-container { width: 100%; height: 100%; }
+/* Kill ArcGIS blue focus outline */
+.esri-view .esri-view-surface:focus::after,
+.esri-view .esri-view-surface:focus-visible::after {
+  outline: none !important;
+}
 
 /* Map container */
 .map-loading {
@@ -360,7 +381,9 @@ onUnmounted(() => {
   position: absolute; inset: 0; z-index: 30;
   display: flex; flex-direction: column;
   background: var(--el-bg-color-page);
+  outline: none;
 }
+.cluster-overlay *:focus { outline: none; }
 .cluster-overlay-header {
   flex-shrink: 0;
   display: flex; align-items: center; gap: 12px;
