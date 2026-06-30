@@ -10,9 +10,9 @@ const props = defineProps<{
   getTotalHeight: () => number
   getDateAt: (scrollTop: number) => string
   onJumpToDate: (date: string) => void
+  showScrubber?: boolean
 }>()
 
-const visible = ref(true)
 const hoverY = ref(-1)
 const hoverDate = ref('')
 const scrubberEl = ref<HTMLElement | null>(null)
@@ -105,7 +105,7 @@ onUnmounted(() => {
 <template>
   <div
     ref="scrubberEl"
-    :class="['scrubber', visible ? '' : 'scrubber--hidden']"
+    :class="['scrubber', (showScrubber ?? true) ? '' : 'scrubber--hidden']"
     @mousedown.prevent="onStart"
     @mousemove="onHover"
     @mouseleave="onLeave"

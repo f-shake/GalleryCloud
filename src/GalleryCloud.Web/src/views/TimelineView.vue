@@ -18,6 +18,19 @@ const containerRef = ref<HTMLElement | null>(null)
 const rows = ref<RowItem[]>([])
 const ready = ref(false)
 
+// Mobile: auto-hide scrubber, show on scroll
+const showScrubber = ref(window.innerWidth > 767)
+let scrubberTimer: ReturnType<typeof setTimeout> | null = null
+
+function onTlScroll() {
+  updateHeader()
+  if (window.innerWidth <= 767) {
+    showScrubber.value = true
+    if (scrubberTimer) clearTimeout(scrubberTimer)
+    scrubberTimer = setTimeout(() => { showScrubber.value = false }, 1200)
+  }
+}
+
 const CELL_GAP = 4 // horizontal gap between cells in the grid
 const ROW_GAP = 4  // vertical gap between rows (padding-bottom on each grid)
 
@@ -190,7 +203,7 @@ function onTouchEnd() {
     </div>
 
     <!-- Virtual scroller -->
-    <div ref="containerRef" class="tl-virt" @scroll="updateHeader">
+    <div ref="containerRef" class="tl-virt" @scroll="onTlScroll">
       <!-- Virtualized rows -->
       <div :style="{ height: virtualizer.getTotalSize() + 'px', position: 'relative' }">
         <div
@@ -234,12 +247,13 @@ function onTouchEnd() {
     :get-total-height="getTotalHeight"
     :get-date-at="getDateAtScrollTop"
     :on-jump-to-date="onJumpToDate"
+    :show-scrubber="showScrubber"
   />
 </template>
 
 <style>
 @media (max-width: 767px) {
-  .tl-wrap { padding: 0 36px 0 0 !important; }
+  .tl-wrap { padding: 0 !important; }
 }
 @media (min-width: 768px) {
   .tl-wrap { padding-right: 52px !important; }
