@@ -106,7 +106,6 @@ const currentTitle = computed(() => navItems.value.find(n => route.path.startsWi
       <el-header class="topbar">
         <el-button text @click="drawerVisible = true"><el-icon :size="22"><Menu /></el-icon></el-button>
         <span style="font-weight:700">GalleryCloud</span>
-        <span class="topbar-subtitle">{{ currentTitle }}</span>
         <div style="flex:1" />
         <el-button text circle @click="toggleDark" class="topbar-icon">
           <el-icon :size="18"><component :is="isDark ? 'Sunny' : 'Moon'" /></el-icon>

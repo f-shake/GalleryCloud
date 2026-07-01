@@ -484,8 +484,8 @@ function jumpToMap() {
     <div v-if="showBar" class="pv-topbar">
       <el-button circle :icon="'ArrowLeft'" @click="doClose" class="glass-btn" />
       <el-icon v-if="!previewReady" class="is-loading" :size="20" style="color:var(--el-text-color-secondary);margin-left:4px"><Loading /></el-icon>
-      <div style="flex:1" />
-      <span v-if="store.hasPrev || store.hasNext" style="font-size:12px;color:var(--el-text-color-secondary)">{{ store.currentIndex + 1 }} / {{ store.allItems.length }}</span>
+      <span v-if="photo?.fileName" class="pv-filename" style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:13px;margin:0 8px;color:#fff;text-shadow:0 0 4px rgba(0,0,0,.8),0 0 2px rgba(0,0,0,.6)">{{ photo.fileName }}</span>
+      <span v-if="store.hasPrev || store.hasNext" style="font-size:12px;color:var(--el-text-color-secondary);flex-shrink:0">{{ store.currentIndex + 1 }} / {{ store.allItems.length }}</span>
       <el-button circle :icon="favorited ? 'StarFilled' : 'Star'" @click="toggleFav" :class="['glass-btn', favorited ? 'fav-active' : '']" />
       <el-button circle :icon="'Download'" class="glass-btn" @click="downloadOriginal" />
       <el-button circle :icon="'InfoFilled'" @click="showInfo = !showInfo" class="glass-btn" />
@@ -655,7 +655,7 @@ function jumpToMap() {
 .info-split { display: flex; flex: 1; min-height: 0; gap: 12px; }
 .info-left { display: flex; flex-direction: column; gap: 8px; width: 50%; overflow-y: auto; }
 .info-right { display: flex; flex-direction: column; width: 50%; min-height: 0; }
-@media (max-width: 767px) { .pv-info { height: 70%; } .pv-img-wrap--shrunk { height: 30%; } .info-split { flex-direction: column; } .info-left, .info-right { width: 100%; } .info-right { min-height: 200px; } }
+@media (max-width: 767px) { .pv-info { height: 70%; } .pv-img-wrap--shrunk { height: 30%; } .info-split { flex-direction: column; } .info-left, .info-right { width: 100%; } .info-right { flex: 1; min-height: 200px; } .pv-info-body { padding-bottom: 8px; } }
 .info-section-title { font-size: 13px; font-weight: 600; color: var(--el-text-color-secondary); margin-bottom: 8px; }
 .info-row { display: flex; flex-direction: column; gap: 2px; font-size: 12px; }
 .info-row span { color: var(--el-text-color-secondary); font-size: 11px; }
