@@ -12,9 +12,11 @@ const props = defineProps<{
 }>()
 
 const mapContainer = ref<HTMLDivElement | null>(null)
-const { loading, initMap, destroy, mapInstance } = useMap(mapContainer)
-let markerLayer: GraphicsLayer | null = null
-let marker: Graphic | null = null
+const { loading, initMap, destroy } = useMap(mapContainer)
+let markerLayer: any = null
+let marker: any = null
+let mapInst: any = null
+let viewInst: any = null
 
 function buildMarker(lat: number, lng: number) {
   return new Graphic({
@@ -28,24 +30,19 @@ function buildMarker(lat: number, lng: number) {
 }
 
 function updatePosition(lat: number, lng: number) {
-  const inst = mapInstance
-  if (!inst) return
+  if (!viewInst || !mapInst) return
 
-  // Remove old marker
   if (markerLayer && marker) {
     markerLayer.remove(marker)
   }
 
-  // Create and add new marker
   marker = buildMarker(lat, lng)
   if (!markerLayer) {
     markerLayer = new GraphicsLayer()
-    inst.map.add(markerLayer)
+    mapInst.add(markerLayer)
   }
   markerLayer.add(marker)
-
-  // Animate to new location
-  inst.view.goTo({ center: [lng, lat], zoom: 16 }, { duration: 300 })
+  viewInst.goTo({ center: [lng, lat], zoom: 16 }, { duration: 300 })
 }
 
 onMounted(async () => {
@@ -56,6 +53,9 @@ onMounted(async () => {
   const inst = await initMap([lng, lat], 16)
   if (!inst) return
 
+  mapInst = inst.map
+  viewInst = inst.view
+
   inst.view.ui.move('zoom', 'bottom-right')
 
   markerLayer = new GraphicsLayer()
@@ -65,7 +65,7 @@ onMounted(async () => {
 })
 
 watch(() => [props.latitude, props.longitude], ([lat, lng]) => {
-  if (lat != null && lng != null) {
+  if (lat != null && lng != null && viewInst) {
     updatePosition(lat, lng)
   }
 })

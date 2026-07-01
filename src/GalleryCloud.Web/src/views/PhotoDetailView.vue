@@ -68,13 +68,19 @@ const carouselStyle = computed(() => {
 
 // ── Info panel swipe ──
 const infoDragY = ref(0); const infoSnapping = ref(false); let _infoTouchStartY = 0
-function onInfoTouchStart(e: TouchEvent) { _infoTouchStartY = e.touches[0].clientY; infoDragY.value = 0; infoSnapping.value = false }
+function onInfoTouchStart(e: TouchEvent) {
+  for (let i = 0; i < e.touches.length; i++) {
+    const el = document.elementFromPoint(e.touches[i].clientX, e.touches[i].clientY)
+    if (el && el.closest('.map-embed')) return
+  }
+  _infoTouchStartY = e.touches[0].clientY; infoDragY.value = 0; infoSnapping.value = false
+}
 function onInfoTouchMove(e: TouchEvent) { const dy = e.touches[0].clientY - _infoTouchStartY; if (dy > 0) { infoDragY.value = dy; if (e.cancelable) e.preventDefault() } }
 function onInfoTouchEnd() { if (infoDragY.value > 60) { showInfo.value = false; infoDragY.value = 0 } else { infoSnapping.value = true; requestAnimationFrame(() => { infoDragY.value = 0 }); setTimeout(() => { infoSnapping.value = false }, 250) } }
 
 // Mouse drag on info panel (desktop)
 let _infoMouseStartY = 0
-function onInfoMouseDown(e: MouseEvent) { _infoMouseStartY = e.clientY; infoDragY.value = 0; infoSnapping.value = false; window.addEventListener('mousemove', onInfoMouseMove); window.addEventListener('mouseup', onInfoMouseUp) }
+function onInfoMouseDown(e: MouseEvent) { if ((e.target as HTMLElement)?.closest?.('.map-embed')) return; _infoMouseStartY = e.clientY; infoDragY.value = 0; infoSnapping.value = false; window.addEventListener('mousemove', onInfoMouseMove); window.addEventListener('mouseup', onInfoMouseUp) }
 function onInfoMouseMove(e: MouseEvent) { const dy = e.clientY - _infoMouseStartY; if (dy > 0) infoDragY.value = dy }
 function onInfoMouseUp() { window.removeEventListener('mousemove', onInfoMouseMove); window.removeEventListener('mouseup', onInfoMouseUp); if (infoDragY.value > 60) { showInfo.value = false; infoDragY.value = 0 } else { infoSnapping.value = true; requestAnimationFrame(() => { infoDragY.value = 0 }); setTimeout(() => { infoSnapping.value = false }, 250) } }
 
@@ -483,60 +489,71 @@ function jumpToMap() {
     <!-- Info panel — full height with map embed -->
     <Transition name="info-slide">
       <div v-if="showInfo && photo" class="pv-info" :class="{ 'pv-info--snapping': infoSnapping }" @click.stop
-        @touchstart.passive="onInfoTouchStart" @touchmove="onInfoTouchMove" @touchend="onInfoTouchEnd"
-        @mousedown="onInfoMouseDown"
         :style="infoDragY > 0 ? { transform: `translateY(${infoDragY}px)` } : undefined">
-        <div class="pv-info-handle" @click.stop="showInfo = false" />
+        <div class="pv-info-handle" @click.stop="showInfo = false"
+          @touchstart.passive="onInfoTouchStart" @touchmove="onInfoTouchMove" @touchend="onInfoTouchEnd"
+          @mousedown="onInfoMouseDown" />
         <div class="pv-info-body">
-          <!-- Section 1: 文件路径 -->
-          <div class="info-section" style="flex-shrink:0">
-            <div class="info-row"><span>文件路径</span><b style="word-break:break-all;font-size:12px">{{ displayPath }}</b></div>
-          </div>
-          <!-- Section 2: 元数据 -->
-          <div class="info-section" style="flex-shrink:0">
-            <div class="info-section-title">元数据</div>
-            <div class="meta-grid">
-              <div class="meta-cell">
-                <span class="meta-label">时间</span>
-                <span class="meta-value">{{ formatDateTime(photo.takenAt) }}</span>
+          <div class="info-split">
+            <div class="info-left">
+              <!-- Section 1: 文件路径 -->
+              <div class="info-section" style="flex-shrink:0">
+                <div class="info-row"><span>文件路径</span><b style="word-break:break-all;font-size:12px">{{ displayPath }}</b></div>
               </div>
-              <div class="meta-cell" v-if="photo.deviceModel">
-                <span class="meta-label">设备</span>
-                <span class="meta-value">{{ photo.deviceModel }}</span>
-              </div>
-              <div class="meta-cell">
-                <span class="meta-label">尺寸</span>
-                <span class="meta-value">{{ photo.width }} × {{ photo.height }}</span>
-              </div>
-              <div class="meta-cell">
-                <span class="meta-label">大小</span>
-                <span class="meta-value">{{ (photo.fileSize / 1024 / 1024).toFixed(1) }} MB</span>
-              </div>
-              <div class="meta-cell" v-if="photo.aperture || photo.focalLength || photo.focalLength35mm != null">
-                <span class="meta-label">光圈/焦距</span>
-                <span class="meta-value">
-                  <template v-if="photo.aperture">{{ photo.aperture }} </template>
-                  <template v-if="photo.focalLength">{{ photo.focalLength }} </template>
-                  <template v-if="photo.focalLength35mm != null">(等效{{ photo.focalLength35mm }}mm)</template>
-                </span>
-              </div>
-              <div class="meta-cell" v-if="photo.exposureTime || photo.iso != null">
-                <span class="meta-label">曝光/ISO</span>
-                <span class="meta-value">
-                  <template v-if="photo.exposureTime">{{ photo.exposureTime }}s </template>
-                  <template v-if="photo.iso != null">ISO {{ photo.iso }}</template>
-                </span>
+              <!-- Section 2: 元数据 -->
+              <div class="info-section" style="flex-shrink:0">
+                <div class="info-section-title">元数据</div>
+                <div class="meta-grid">
+                  <div class="meta-cell">
+                    <span class="meta-label">时间</span>
+                    <span class="meta-value">{{ formatDateTime(photo.takenAt) || '未知' }}</span>
+                  </div>
+                  <div class="meta-cell">
+                    <span class="meta-label">设备</span>
+                    <span class="meta-value">{{ photo.deviceModel || '未知' }}</span>
+                  </div>
+                  <div class="meta-cell">
+                    <span class="meta-label">尺寸</span>
+                    <span class="meta-value">{{ photo.width }} × {{ photo.height }}</span>
+                  </div>
+                  <div class="meta-cell">
+                    <span class="meta-label">大小</span>
+                    <span class="meta-value">{{ (photo.fileSize / 1024 / 1024).toFixed(1) }} MB</span>
+                  </div>
+                  <div class="meta-cell">
+                    <span class="meta-label">光圈</span>
+                    <span class="meta-value">{{ photo.aperture || '未知' }}</span>
+                  </div>
+                  <div class="meta-cell">
+                    <span class="meta-label">焦距</span>
+                    <span class="meta-value">
+                      <template v-if="photo.focalLength">{{ photo.focalLength }} </template>
+                      <template v-if="photo.focalLength35mm != null">（等效{{ photo.focalLength35mm }}mm）</template>
+                      <template v-if="!photo.focalLength && photo.focalLength35mm == null">未知</template>
+                    </span>
+                  </div>
+                  <div class="meta-cell">
+                    <span class="meta-label">曝光时间</span>
+                    <span class="meta-value">{{ photo.exposureTime ? photo.exposureTime + 's' : '未知' }}</span>
+                  </div>
+                  <div class="meta-cell">
+                    <span class="meta-label">ISO</span>
+                    <span class="meta-value">{{ photo.iso != null ? photo.iso : '未知' }}</span>
+                  </div>
+                </div>
               </div>
             </div>
-          </div>
-          <!-- Section 3: 位置 -->
-          <div class="info-section" style="display:flex;flex-direction:column;min-height:0;flex:1">
-            <div class="info-section-title">位置</div>
-            <div v-if="photo.latitude" style="flex-shrink:0;font-size:12px;color:var(--el-text-color-primary);margin-bottom:8px">
-              {{ Number(photo.latitude).toFixed(6) }}, {{ Number(photo.longitude).toFixed(6) }}
+            <div class="info-right">
+              <!-- Section 3: 位置 -->
+              <div class="info-section" style="display:flex;flex-direction:column;min-height:0;flex:1">
+                <div class="info-section-title">位置</div>
+                <div v-if="photo.latitude" style="flex-shrink:0;font-size:12px;color:var(--el-text-color-primary);margin-bottom:6px">
+                  {{ Number(photo.latitude).toFixed(6) }}, {{ Number(photo.longitude).toFixed(6) }}
+                </div>
+                <div v-else style="flex-shrink:0;font-size:12px;color:var(--el-text-color-secondary);margin-bottom:6px">无空间信息</div>
+                <MapEmbed :latitude="photo.latitude" :longitude="photo.longitude" style="flex:1;min-height:0;border-radius:8px;overflow:hidden" />
+              </div>
             </div>
-            <div v-else style="flex-shrink:0;font-size:12px;color:var(--el-text-color-secondary);margin-bottom:8px">无空间信息</div>
-            <MapEmbed :latitude="photo.latitude" :longitude="photo.longitude" style="flex:1;min-height:0;margin-top:8px;border-radius:8px;overflow:hidden" />
           </div>
         </div>
       </div></Transition>
@@ -601,7 +618,7 @@ function jumpToMap() {
 .fav-active { color: #f59e0b !important; background: rgba(245,158,11,.25) !important; }
 
 .pv-info {
-  position: fixed; left: 0; right: 0; bottom: 0; height: 70%; z-index: 10000;
+  position: fixed; left: 0; right: 0; bottom: 0; height: 40%; z-index: 10000;
   background: var(--el-bg-color);
   display: flex; flex-direction: column;
   padding: 12px 0 0;
@@ -615,7 +632,7 @@ function jumpToMap() {
   flex: 1;
   display: flex; flex-direction: column;
   padding: 0 20px 20px;
-  overflow-y: auto;
+  overflow: hidden;
   min-height: 0;
 }
 .info-grid {
@@ -630,16 +647,20 @@ function jumpToMap() {
 .pv-info { padding-top: 12px !important; }
 .pv-info-handle { width: 36px; height: 5px; border-radius: 3px; background: var(--el-border-color); margin: 0 auto 8px; flex-shrink: 0; }
 
-.info-section { margin-bottom: 16px; }
+.info-section { margin-bottom: 8px; }
+.info-split { display: flex; flex: 1; min-height: 0; gap: 12px; }
+.info-left { display: flex; flex-direction: column; gap: 8px; width: 50%; overflow-y: auto; }
+.info-right { display: flex; flex-direction: column; width: 50%; min-height: 0; }
+@media (max-width: 767px) { .pv-info { height: 70%; } .info-split { flex-direction: column; } .info-left, .info-right { width: 100%; } .info-right { min-height: 200px; } }
 .info-section-title { font-size: 13px; font-weight: 600; color: var(--el-text-color-secondary); margin-bottom: 8px; }
 .info-row { display: flex; flex-direction: column; gap: 2px; font-size: 12px; }
 .info-row span { color: var(--el-text-color-secondary); font-size: 11px; }
 .info-row b { color: var(--el-text-color-primary); font-size: 13px; }
-.meta-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 24px; }
+.meta-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 4px 12px; }
 .meta-cell { display: flex; flex-direction: column; gap: 1px; }
 .meta-label { display: none; font-size: 11px; color: var(--el-text-color-secondary); white-space: nowrap; }
 .meta-value { font-size: 13px; color: var(--el-text-color-primary); }
-@media (min-width: 768px) { .meta-label { display: inline; } .meta-cell { flex-direction: row; gap: 6px; } }
+@media (min-width: 768px) { .meta-label { display: inline; } }
 
 .info-slide-enter-active { transition: transform .25s ease; }
 .info-slide-leave-active { transition: transform .2s ease; }
