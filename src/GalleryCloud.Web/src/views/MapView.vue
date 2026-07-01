@@ -4,13 +4,15 @@ import client from '../api/client'
 import { thumbUrl } from '../composables/useThumbnailUrl'
 import { usePhotoGrid } from '../composables/usePhotoGrid'
 import { usePhotoViewStore } from '../stores/photoViewStore'
-import { useMap } from '../composables/useMap'
+import { useMap, type MapInstance } from '../composables/useMap'
 import FeatureLayer from '@arcgis/core/layers/FeatureLayer'
+import GraphicsLayer from '@arcgis/core/layers/GraphicsLayer'
 import Graphic from '@arcgis/core/Graphic'
 import Point from '@arcgis/core/geometry/Point'
-import PopupTemplate from '@arcgis/core/PopupTemplate'
 import SimpleRenderer from '@arcgis/core/renderers/SimpleRenderer'
 import SimpleMarkerSymbol from '@arcgis/core/symbols/SimpleMarkerSymbol'
+import PictureMarkerSymbol from '@arcgis/core/symbols/PictureMarkerSymbol'
+import { watch as reactiveWatch } from '@arcgis/core/core/reactiveUtils'
 import PhotoGridToolbar from '../components/PhotoGridToolbar.vue'
 
 interface MapPoint { id: string; latitude: number; longitude: number; fileName: string; takenAt: string | null }
@@ -18,42 +20,85 @@ interface MapPoint { id: string; latitude: number; longitude: number; fileName: 
 const viewStore = usePhotoViewStore()
 const { columns, zoomIn, zoomOut } = usePhotoGrid()
 const mapContainer = ref<HTMLDivElement | null>(null)
-const { loading, initMap, switchBasemap, updateTileUrls, destroy } = useMap(mapContainer)
+const { loading, initMap, switchBasemap, updateTileUrls, destroy: destroyMap } = useMap(mapContainer)
 const pointCount = ref(0)
 const basemap = ref<'normal' | 'satellite'>('normal')
+const mode = ref<'cluster' | 'point'>('cluster')
 let allPoints: MapPoint[] = []
 const clusterView = ref<{ lat: number; lng: number; photos: any[]; groups: any[]; loading: boolean } | null>(null)
 
-function escapeHtml(s: string) {
-  const d = document.createElement('div')
-  d.textContent = s
-  return d.innerHTML
+let mapInst: MapInstance | null = null
+let clusterLayer: FeatureLayer | null = null
+let dotLayer: FeatureLayer | null = null      // many-dots mode (fast path)
+let dotGL: GraphicsLayer | null = null          // density-based dot layer
+let thumbGL: GraphicsLayer | null = null        // density-based bubble layer
+let extentWatcher: (() => void) | null = null
+let pointModeGen = 0
+
+function openPhoto(photoId: string, screenPoint?: { x: number; y: number }) {
+  const rect = screenPoint
+    ? { x: screenPoint.x, y: screenPoint.y, width: 1, height: 1 }
+    : { x: 0, y: 0, width: 0, height: 0 }
+  viewStore.show(photoId, rect, '')
 }
 
-function makePopupContent(feature: any): HTMLDivElement {
-  const attrs = feature.graphic.attributes
-  const thumbSrc = thumbUrl(attrs.photoId, 'grid', 240)
-  const date = attrs.takenAt ? attrs.takenAt.substring(0, 10) : '未知'
-  const gps = `${Number(attrs.latitude).toFixed(4)}, ${Number(attrs.longitude).toFixed(4)}`
+function thumbnailBubbleUrl(photoId: string): Promise<string> {
+  return new Promise((resolve) => {
+    const imgUrl = thumbUrl(photoId, 'grid', 60)
+    const img = new Image()
+    img.onload = () => {
+      const canvas = document.createElement('canvas')
+      canvas.width = 56; canvas.height = 68
+      const ctx = canvas.getContext('2d')!
+      const R = 8, x = 1, y = 1, w = 54, h = 54
 
-  const div = document.createElement('div')
-  div.className = 'map-popup'
-  div.innerHTML = `
-    <img src="${thumbSrc}" style="width:240px;max-height:180px;object-fit:cover;border-radius:4px;display:block"
-         loading="lazy"
-         onerror="this.remove()" />
-    <div style="font-size:13px;font-weight:500;margin:6px 0 2px">${escapeHtml(attrs.fileName)}</div>
-    <div style="font-size:12px;color:var(--el-text-color-secondary)">${date} · ${gps}</div>
-    <button class="el-button el-button--primary el-button--small" style="margin-top:8px">查看完整照片</button>
-  `
-  div.querySelector('button')?.addEventListener('click', () => {
-    viewStore.show(attrs.photoId, { x: 0, y: 0, width: 0, height: 0 }, '')
+      function roundRect(c: CanvasRenderingContext2D, rx: number, ry: number, rw: number, rh: number, rr: number) {
+        c.beginPath()
+        c.moveTo(rx + rr, ry)
+        c.lineTo(rx + rw - rr, ry)
+        c.quadraticCurveTo(rx + rw, ry, rx + rw, ry + rr)
+        c.lineTo(rx + rw, ry + rh - rr)
+        c.quadraticCurveTo(rx + rw, ry + rh, rx + rw - rr, ry + rh)
+        c.lineTo(rx + rr, ry + rh)
+        c.quadraticCurveTo(rx, ry + rh, rx, ry + rh - rr)
+        c.lineTo(rx, ry + rr)
+        c.quadraticCurveTo(rx, ry, rx + rr, ry)
+        c.closePath()
+      }
+
+      ctx.shadowColor = 'rgba(0,0,0,.25)'
+      ctx.shadowBlur = 6
+      ctx.shadowOffsetY = 2
+      roundRect(ctx, x, y, w, h, R)
+      ctx.fillStyle = '#fff'
+      ctx.fill()
+      ctx.shadowColor = 'transparent'
+      ctx.save()
+      roundRect(ctx, x, y, w, h, R)
+      ctx.clip()
+      ctx.drawImage(img, x, y, w, h)
+      ctx.restore()
+      roundRect(ctx, x, y, w, h, R)
+      ctx.strokeStyle = 'rgba(0,0,0,.12)'
+      ctx.lineWidth = 1
+      ctx.stroke()
+      ctx.beginPath()
+      ctx.moveTo(20, 55); ctx.lineTo(28, 66); ctx.lineTo(36, 55)
+      ctx.closePath()
+      ctx.fillStyle = '#fff'
+      ctx.fill()
+      ctx.strokeStyle = 'rgba(0,0,0,.12)'
+      ctx.lineWidth = 1
+      ctx.stroke()
+      resolve(canvas.toDataURL())
+    }
+    img.onerror = () => resolve(thumbUrl(photoId, 'grid', 120))
+    img.src = imgUrl
   })
-  return div
 }
 
-function buildLayer(points: MapPoint[]) {
-  const graphics = points.map((p, i) => new Graphic({
+function makeGraphics(points: MapPoint[]) {
+  return points.map((p, i) => new Graphic({
     geometry: new Point({ longitude: p.longitude, latitude: p.latitude }),
     attributes: {
       ObjectID: i + 1,
@@ -64,9 +109,11 @@ function buildLayer(points: MapPoint[]) {
       longitude: p.longitude,
     }
   }))
+}
 
+function buildClusterLayer(points: MapPoint[]) {
   return new FeatureLayer({
-    source: graphics,
+    source: makeGraphics(points),
     objectIdField: 'ObjectID',
     fields: [
       { name: 'ObjectID', type: 'oid' },
@@ -99,14 +146,142 @@ function buildLayer(points: MapPoint[]) {
           haloColor: '#1d4ed8',
         },
       }],
-      popupEnabled: false,
     } as any,
-    popupTemplate: new PopupTemplate({
-      title: '{fileName}',
-      content: makePopupContent,
-      outFields: ['photoId', 'fileName', 'takenAt', 'latitude', 'longitude'],
-    }),
   })
+}
+
+function buildDotLayer(points: MapPoint[]) {
+  return new FeatureLayer({
+    source: makeGraphics(points),
+    objectIdField: 'ObjectID',
+    fields: [
+      { name: 'ObjectID', type: 'oid' },
+      { name: 'photoId', type: 'string' },
+      { name: 'fileName', type: 'string' },
+      { name: 'takenAt', type: 'string' },
+      { name: 'latitude', type: 'double' },
+      { name: 'longitude', type: 'double' },
+    ],
+    renderer: new SimpleRenderer({
+      symbol: new SimpleMarkerSymbol({
+        color: [64, 158, 255],
+        size: 8,
+        outline: { color: [255, 255, 255], width: 1.5 },
+      })
+    }),
+    visible: false,
+  })
+}
+
+function getExtentBounds(): { xmin: number; xmax: number; ymin: number; ymax: number } | null {
+  if (!mapInst) return null
+  const extent = mapInst.view.extent
+  if (!extent) return null
+  let { xmin, xmax, ymin, ymax } = extent
+  if (extent.spatialReference && !extent.spatialReference.isGeographic) {
+    const half = 20037508.34
+    xmin = (xmin / half) * 180
+    xmax = (xmax / half) * 180
+    ymin = Math.atan(Math.exp(ymin / half * Math.PI)) * 360 / Math.PI - 90
+    ymax = Math.atan(Math.exp(ymax / half * Math.PI)) * 360 / Math.PI - 90
+  }
+  return { xmin, xmax, ymin, ymax }
+}
+
+async function updatePointMode() {
+  const gen = ++pointModeGen
+  if (!dotLayer || !dotGL || !thumbGL || !mapInst) return
+
+  const bounds = getExtentBounds()
+  if (!bounds) return
+
+  const visible = allPoints.filter(p =>
+    p.longitude >= bounds.xmin && p.longitude <= bounds.xmax &&
+    p.latitude >= bounds.ymin && p.latitude <= bounds.ymax
+  )
+
+  dotGL.removeAll()
+  thumbGL.removeAll()
+
+  // Fast path: 50+ visible → all dots, skip density check
+  if (visible.length >= 50 || visible.length === 0) {
+    dotLayer.visible = true
+    thumbGL.visible = false
+    dotGL.visible = false
+    return
+  }
+
+  // Density check: project to screen coords
+  const screenPts = visible.map(p => {
+    const sp = mapInst!.view.toScreen(new Point({ longitude: p.longitude, latitude: p.latitude }))
+    return { pt: p, sx: sp.x, sy: sp.y }
+  })
+
+  const MIN_DIST = 80 // pixels — bubble would overlap if closer
+  const MAX_NEIGHBORS = 2
+
+  const dense: typeof screenPts = []
+  const sparse: typeof screenPts = []
+
+  for (const a of screenPts) {
+    let n = 0
+    for (const b of screenPts) {
+      if (a === b) continue
+      const dx = a.sx - b.sx, dy = a.sy - b.sy
+      if (dx * dx + dy * dy < MIN_DIST * MIN_DIST) n++
+      if (n > MAX_NEIGHBORS) break
+    }
+    ;(n <= MAX_NEIGHBORS ? sparse : dense).push(a)
+  }
+
+  dotLayer.visible = false
+
+  // Show dots for dense points
+  dotGL.visible = dense.length > 0
+  for (const d of dense) {
+    dotGL.add(new Graphic({
+      geometry: new Point({ longitude: d.pt.longitude, latitude: d.pt.latitude }),
+      symbol: new SimpleMarkerSymbol({
+        color: [64, 158, 255],
+        size: 8,
+        outline: { color: [255, 255, 255], width: 1.5 },
+      }),
+    }))
+  }
+
+  // Show bubbles for sparse points
+  if (sparse.length > 0) {
+    thumbGL.visible = true
+    const urls = await Promise.all(sparse.map(s => thumbnailBubbleUrl(s.pt.id)))
+    if (gen !== pointModeGen) return // stale — discard
+    for (let i = 0; i < sparse.length; i++) {
+      thumbGL.add(new Graphic({
+        geometry: new Point({ longitude: sparse[i].pt.longitude, latitude: sparse[i].pt.latitude }),
+        symbol: new PictureMarkerSymbol({ url: urls[i], width: 56, height: 68 }),
+        attributes: { photoId: sparse[i].pt.id },
+      }))
+    }
+  } else {
+    thumbGL.visible = false
+  }
+}
+
+function switchMode(newMode: 'cluster' | 'point') {
+  mode.value = newMode
+  if (!clusterLayer || !dotLayer || !dotGL || !thumbGL || !mapInst) return
+
+  if (extentWatcher) { extentWatcher(); extentWatcher = null }
+
+  if (newMode === 'cluster') {
+    clusterLayer.visible = true
+    dotLayer.visible = false
+    dotGL.visible = false
+    thumbGL.visible = false
+  } else {
+    clusterLayer.visible = false
+    updatePointMode()
+    extentWatcher = reactiveWatch(() => mapInst!.view.extent, () => updatePointMode())
+  }
 }
 
 function getRadiusFromZoom(zoom: number): number {
@@ -156,7 +331,6 @@ function onPhotoClick(photoId: string, e: MouseEvent) {
 
 function closeClusterView() { clusterView.value = null }
 
-// Pinch zoom for cluster photo grid
 let pinchStart = 0, pinchEnd = 0
 function onTouchStart(e: TouchEvent) {
   if (e.touches.length === 2) {
@@ -188,34 +362,53 @@ onMounted(async () => {
 
     const instance = await initMap()
     if (!instance) return
+    mapInst = instance
 
     if (points.length > 0) {
-      const layer = buildLayer(points)
-      instance.map.add(layer)
+      clusterLayer = buildClusterLayer(points)
+      instance.map.add(clusterLayer)
 
-      // Handle cluster click
+      dotLayer = buildDotLayer(points)
+      instance.map.add(dotLayer)
+
+      dotGL = new GraphicsLayer()
+      instance.map.add(dotGL)
+      dotGL.visible = false
+
+      thumbGL = new GraphicsLayer()
+      instance.map.add(thumbGL)
+      thumbGL.visible = false
+
+      // Click handler
       instance.view.on('click', (event: any) => {
+        const sp = { x: event.screenPoint.x, y: event.screenPoint.y }
         instance.view.hitTest(event).then((response: any) => {
           const hit = response.results?.[0]
-          if (hit?.type === 'graphic') {
-            const graphic = hit.graphic
+          if (hit?.type !== 'graphic') return
+          const graphic = hit.graphic
+          const photoId = graphic.attributes?.photoId
+          if (!photoId) return
+
+          if (mode.value === 'cluster') {
             const clusterCount = graphic.attributes?.cluster_count
             if (clusterCount > 0 && graphic.geometry?.latitude != null) {
               event.stopPropagation()
               fetchClusterPhotos(graphic.geometry.latitude, graphic.geometry.longitude, instance.view.zoom)
+              return
+            }
+            openPhoto(photoId, sp)
+          } else {
+            if (graphic.layer === thumbGL) {
+              openPhoto(photoId, sp)
             }
           }
         })
       })
 
-      // Pointer cursor + hover highlight on features
-      let cursorOn = false, highlightHandle: any = null
-      const layerView = await instance.view.whenLayerView(layer)
-      layerView.highlightOptions = {
-        color: [255, 193, 7],
-        fillOpacity: 0.25,
-        haloOpacity: 0.5,
-      }
+      // Hover highlight
+      let cursorOn = false
+      const highlightSet = new Set<any>()
+      const layerView = await instance.view.whenLayerView(clusterLayer)
       instance.view.on('pointer-move', (event: any) => {
         const el = mapContainer.value
         if (!el) return
@@ -225,16 +418,17 @@ onMounted(async () => {
             cursorOn = over
             el.style.cursor = over ? 'pointer' : ''
           }
-          if (highlightHandle) { highlightHandle.remove(); highlightHandle = null }
+          highlightSet.forEach(h => h.remove())
+          highlightSet.clear()
           const hit = response.results?.[0]
           if (hit?.type === 'graphic') {
-            highlightHandle = layerView.highlight(hit.graphic)
+            const handle = layerView.highlight(hit.graphic)
+            highlightSet.add(handle)
           }
         })
       })
     }
 
-    // Check for lat/lng query params to jump to a specific location
     const params = new URLSearchParams(window.location.search)
     const qlat = params.get('lat')
     const qlng = params.get('lng')
@@ -245,10 +439,18 @@ onMounted(async () => {
         instance.view.goTo({ center: [lng, lat], zoom: 16 }, { duration: 1000 })
       }
     }
-  } catch { /* */ }
+  } catch (e) { console.error('MapView init error:', e) }
 })
 
-onUnmounted(() => destroy())
+onUnmounted(() => {
+  if (extentWatcher) extentWatcher()
+  destroyMap()
+  mapInst = null
+  clusterLayer = null
+  dotLayer = null
+  dotGL = null
+  thumbGL = null
+})
 </script>
 
 <template>
@@ -259,13 +461,26 @@ onUnmounted(() => destroy())
       <el-icon class="is-loading" :size="32"><Loading /></el-icon>
     </div>
 
-    <button v-show="!loading && !clusterView" class="map-toggle-btn" @click="basemap === 'normal' ? (basemap='satellite', switchBasemap('satellite')) : (basemap='normal', switchBasemap('normal'))" :title="basemap === 'normal' ? '卫星图' : '普通图'">
-      <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-        <circle cx="12" cy="12" r="10"/>
-        <line x1="2" y1="12" x2="22" y2="12"/>
-        <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/>
-      </svg>
-    </button>
+    <div v-show="!loading && !clusterView" class="map-buttons">
+      <button class="map-btn" @click="switchMode(mode === 'cluster' ? 'point' : 'cluster')" :title="mode === 'cluster' ? '显示所有点位' : '聚合显示'">
+        <svg v-if="mode === 'cluster'" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="8" cy="8" r="3"/>
+          <circle cx="18" cy="10" r="2"/>
+          <circle cx="14" cy="19" r="2.5"/>
+        </svg>
+        <svg v-else viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="12" cy="12" r="10"/>
+          <circle cx="12" cy="12" r="4" fill="currentColor"/>
+        </svg>
+      </button>
+      <button class="map-btn" @click="basemap === 'normal' ? (basemap='satellite', switchBasemap('satellite')) : (basemap='normal', switchBasemap('normal'))" :title="basemap === 'normal' ? '卫星图' : '普通图'">
+        <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="12" cy="12" r="10"/>
+          <line x1="2" y1="12" x2="22" y2="12"/>
+          <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/>
+        </svg>
+      </button>
+    </div>
 
     <div v-if="clusterView" class="cluster-overlay" @touchstart="onTouchStart" @touchmove="onTouchMove" @touchend="onTouchEnd">
       <div class="cluster-overlay-header">
@@ -313,10 +528,14 @@ onUnmounted(() => destroy())
   background: var(--el-bg-color-page);
   z-index: 20; pointer-events: none;
 }
-.map-toggle-btn {
+.map-buttons {
   position: absolute;
   bottom: 20px; right: 16px;
   z-index: 10;
+  display: flex; flex-direction: column;
+  gap: 8px;
+}
+.map-btn {
   display: flex; align-items: center; justify-content: center;
   width: 40px; height: 40px;
   background: var(--el-bg-color-overlay);
@@ -327,8 +546,7 @@ onUnmounted(() => destroy())
   color: var(--el-text-color-primary);
   transition: background .2s;
 }
-.map-toggle-btn:hover { background: var(--el-fill-color-light); }
-.map-popup button { cursor: pointer; }
+.map-btn:hover { background: var(--el-fill-color-light); }
 .esri-popup__main-container { max-width: 280px !important; }
 .esri-attribution { display: none !important; }
 .cluster-overlay {
