@@ -1,3 +1,4 @@
+using GalleryCloud.Api.Dtos;
 using GalleryCloud.Api.Services;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.Filters;
@@ -13,13 +14,14 @@ public class AdminOnlyAttribute : Attribute, IAuthorizationFilter
 
         if (!userContext.IsAuthenticated)
         {
-            context.Result = new UnauthorizedObjectResult(new { error = "Authentication required" });
+            context.Result = new UnauthorizedObjectResult(new ErrorResult("Authentication required"));
             return;
         }
 
+        // Admin is identified by hardcoded userId "admin"
         if (!userContext.IsAdmin)
         {
-            context.Result = new ForbidResult();
+            context.Result = new ObjectResult(new ErrorResult("Forbidden")) { StatusCode = 403 };
         }
     }
 }

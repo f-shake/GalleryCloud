@@ -1,3 +1,4 @@
+using System.ComponentModel;
 using GalleryCloud.Api.Data;
 using GalleryCloud.Api.Dtos;
 using GalleryCloud.Api.Middleware;
@@ -22,10 +23,11 @@ public class AdminController : ControllerBase
     private readonly IThumbnailService _thumbnailService;
     private readonly IAuthService _authService;
     private readonly UserContext _userContext;
+    private readonly FileWatcherService _fileWatcher;
 
     public AdminController(AppDbContext db, ThumbnailDbContext thumbDb, IScanService scanService,
         ISettingService settingService, IThumbnailService thumbnailService, IAuthService authService,
-        UserContext userContext)
+        UserContext userContext, FileWatcherService fileWatcher)
     {
         _db = db;
         _thumbDb = thumbDb;
@@ -34,6 +36,7 @@ public class AdminController : ControllerBase
         _thumbnailService = thumbnailService;
         _authService = authService;
         _userContext = userContext;
+        _fileWatcher = fileWatcher;
     }
 
     // ==================== Users ====================
@@ -43,8 +46,11 @@ public class AdminController : ControllerBase
     {
         var users = await _db.Users
             .Select(u => new UserListItem(
-                u.Id, u.Username, u.DisplayName, u.RootPath,
-                u.IsAdmin, u.IsActive, u.CreatedAt
+                u.Id, u.Username, u.DisplayName,
+                !u.IsDeleted, u.CreatedAt,
+                u.UserRoots.Where(r => !r.IsDeleted && r.IsEnabled)
+                    .Select(r => new UserRootDto(r.Id, r.RootPath, r.IsEnabled, r.CreatedAt))
+                    .ToList()
             ))
             .ToListAsync();
 
@@ -57,28 +63,52 @@ public class AdminController : ControllerBase
         if (string.IsNullOrWhiteSpace(request.Username) || string.IsNullOrWhiteSpace(request.Password))
             return BadRequest(new ErrorResult("Username and password are required"));
 
-        if (string.IsNullOrWhiteSpace(request.RootPath))
-            return BadRequest(new ErrorResult("RootPath is required"));
+        if (request.RootPaths == null || request.RootPaths.Count == 0)
+            return BadRequest(new ErrorResult("At least one root path is required"));
 
         if (await _db.Users.AnyAsync(u => u.Username == request.Username))
             return Conflict(new ErrorResult("Username already exists"));
+
+        // Validate nesting
+        if (HasNesting(request.RootPaths))
+            return BadRequest(new ErrorResult("Root paths cannot be nested within each other"));
 
         var user = new User
         {
             Username = request.Username,
             PasswordHash = _authService.HashPassword(request.Password),
             DisplayName = request.DisplayName,
-            RootPath = request.RootPath,
-            IsAdmin = request.IsAdmin,
-            IsActive = true,
         };
+
+        foreach (var path in request.RootPaths)
+        {
+            if (!string.IsNullOrWhiteSpace(path))
+            {
+                user.UserRoots.Add(new UserRoot
+                {
+                    UserId = user.Id,
+                    RootPath = path.Trim()
+                });
+            }
+        }
 
         _db.Users.Add(user);
         await _db.SaveChangesAsync();
 
+        // Start file watchers for new roots
+        foreach (var root in user.UserRoots.Where(r => !r.IsDeleted && r.IsEnabled))
+        {
+            _fileWatcher.WatchRoot(root);
+        }
+
+        var roots = user.UserRoots
+            .Where(r => !r.IsDeleted && r.IsEnabled)
+            .Select(r => new UserRootDto(r.Id, r.RootPath, r.IsEnabled, r.CreatedAt))
+            .ToList();
+
         return Ok(new UserListItem(
-            user.Id, user.Username, user.DisplayName, user.RootPath,
-            user.IsAdmin, user.IsActive, user.CreatedAt
+            user.Id, user.Username, user.DisplayName,
+            true, user.CreatedAt, roots
         ));
     }
 
@@ -92,12 +122,19 @@ public class AdminController : ControllerBase
             user.PasswordHash = _authService.HashPassword(request.Password);
         if (request.DisplayName != null)
             user.DisplayName = request.DisplayName;
-        if (request.RootPath != null)
-            user.RootPath = request.RootPath;
-        if (request.IsAdmin.HasValue)
-            user.IsAdmin = request.IsAdmin.Value;
         if (request.IsActive.HasValue)
-            user.IsActive = request.IsActive.Value;
+        {
+            if (request.IsActive.Value)
+            {
+                user.IsDeleted = false;
+                user.DeletedAt = null;
+            }
+            else
+            {
+                user.IsDeleted = true;
+                user.DeletedAt = DateTime.UtcNow;
+            }
+        }
 
         await _db.SaveChangesAsync();
         return Ok(new MessageResult("Updated"));
@@ -109,9 +146,81 @@ public class AdminController : ControllerBase
         var user = await _db.Users.FindAsync(id);
         if (user == null) return NotFound();
 
-        user.IsActive = false;
+        user.IsDeleted = true;
+        user.DeletedAt = DateTime.UtcNow;
         await _db.SaveChangesAsync();
         return Ok(new MessageResult("User disabled"));
+    }
+
+    // ==================== User Roots ====================
+
+    [HttpGet("users/{userId}/roots")]
+    public async Task<IActionResult> ListUserRoots(string userId)
+    {
+        var roots = await _db.UserRoots
+            .Where(r => r.UserId == userId && !r.IsDeleted)
+            .Select(r => new UserRootDto(r.Id, r.RootPath, r.IsEnabled, r.CreatedAt))
+            .ToListAsync();
+        return Ok(roots);
+    }
+
+    [HttpPost("users/{userId}/roots")]
+    public async Task<IActionResult> AddUserRoot(string userId, [FromBody] CreateUserRootRequest request)
+    {
+        if (string.IsNullOrWhiteSpace(request.RootPath))
+            return BadRequest(new ErrorResult("RootPath is required"));
+
+        var user = await _db.Users.FindAsync(userId);
+        if (user == null) return NotFound();
+
+        // Non-nesting validation
+        var existingRoots = await _db.UserRoots
+            .Where(r => r.UserId == userId && !r.IsDeleted && r.IsEnabled)
+            .Select(r => r.RootPath)
+            .ToListAsync();
+        var allRoots = existingRoots.Append(request.RootPath.Trim()).ToList();
+        if (HasNesting(allRoots))
+            return BadRequest(new ErrorResult("Root path cannot be nested within another root"));
+
+        var root = new UserRoot
+        {
+            UserId = userId,
+            RootPath = request.RootPath.Trim()
+        };
+        _db.UserRoots.Add(root);
+        await _db.SaveChangesAsync();
+
+        // Start watcher for this root
+        _fileWatcher.WatchRoot(root);
+
+        return Ok(new UserRootDto(root.Id, root.RootPath, root.IsEnabled, root.CreatedAt));
+    }
+
+    [HttpDelete("users/{userId}/roots/{rootId}")]
+    public async Task<IActionResult> DeleteUserRoot(string userId, string rootId)
+    {
+        var root = await _db.UserRoots.FirstOrDefaultAsync(r => r.Id == rootId && r.UserId == userId);
+        if (root == null) return NotFound();
+
+        // Soft-delete the root
+        root.IsDeleted = true;
+        root.DeletedAt = DateTime.UtcNow;
+
+        // Soft-delete all photos in this root
+        var photos = await _db.Photos.Where(p => p.RootId == rootId).ToListAsync();
+        foreach (var photo in photos)
+        {
+            photo.IsDeleted = true;
+            photo.DeletedAt = DateTime.UtcNow;
+            photo.UpdatedAt = DateTime.UtcNow;
+        }
+
+        await _db.SaveChangesAsync();
+
+        // Stop watcher
+        _fileWatcher.UnwatchRoot(userId, rootId);
+
+        return Ok(new MessageResult("Root deleted"));
     }
 
     // ==================== Settings ====================
@@ -260,5 +369,25 @@ public class AdminController : ControllerBase
             Math.Round(totalSize / (1024.0 * 1024 * 1024), 2),
             photosWithGps, formatDistribution
         ));
+    }
+
+    // ==================== Helpers ====================
+
+    private static bool HasNesting(List<string> roots)
+    {
+        var normalized = roots
+            .Where(r => !string.IsNullOrWhiteSpace(r))
+            .Select(r => Path.GetFullPath(r.Trim()).TrimEnd(Path.DirectorySeparatorChar) + Path.DirectorySeparatorChar)
+            .ToList();
+
+        for (int i = 0; i < normalized.Count; i++)
+        {
+            for (int j = 0; j < normalized.Count; j++)
+            {
+                if (i != j && normalized[j].StartsWith(normalized[i], StringComparison.OrdinalIgnoreCase))
+                    return true;
+            }
+        }
+        return false;
     }
 }

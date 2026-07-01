@@ -3,7 +3,7 @@ using Microsoft.EntityFrameworkCore.Migrations;
 
 #nullable disable
 
-namespace GalleryCloud.Api.Data.Migrations.ThumbnailDb
+namespace GalleryCloud.Api.Migrations.ThumbnailDb
 {
     /// <inheritdoc />
     public partial class InitialCreate : Migration

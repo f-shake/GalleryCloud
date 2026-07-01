@@ -110,14 +110,13 @@ public class PhotosController : ControllerBase
         if (photo == null)
             return NotFound();
 
-        // Use user's root path from DB (not JWT claim) for accuracy
-        var user = await _db.Users.FindAsync(photo.UserId);
-        if (user == null) return NotFound();
-        var rootPath = user.RootPath;
+        // Resolve full path via the photo's root
+        var root = await _db.UserRoots.FindAsync(photo.RootId);
+        if (root == null) return NotFound();
 
-        var fullPath = Path.GetFullPath(Path.Combine(rootPath, photo.FilePath));
-        if (!fullPath.StartsWith(Path.GetFullPath(rootPath), StringComparison.OrdinalIgnoreCase))
-            return Forbid();
+        var fullPath = Path.GetFullPath(Path.Combine(root.RootPath, photo.FilePath));
+        if (!fullPath.StartsWith(Path.GetFullPath(root.RootPath), StringComparison.OrdinalIgnoreCase))
+            return StatusCode(403, new ErrorResult("Forbidden"));
 
         if (!System.IO.File.Exists(fullPath))
             return NotFound(new ErrorResult("File not found on disk"));
@@ -206,7 +205,11 @@ public class PhotosController : ControllerBase
         if (photo == null)
             return NotFound();
 
-        var fullPath = Path.GetFullPath(Path.Combine(_userContext.RootPath, photo.FilePath));
+        var root = await _db.UserRoots.FindAsync(photo.RootId);
+        if (root == null)
+            return BadRequest(new ErrorResult("Root no longer exists"));
+
+        var fullPath = Path.GetFullPath(Path.Combine(root.RootPath, photo.FilePath));
         if (!System.IO.File.Exists(fullPath))
             return BadRequest(new ErrorResult("Original file no longer exists"));
 
@@ -230,10 +233,14 @@ public class PhotosController : ControllerBase
         if (photo == null)
             return NotFound();
 
-        var oldFullPath = Path.GetFullPath(Path.Combine(_userContext.RootPath, photo.FilePath));
-        var newFullPath = Path.GetFullPath(Path.Combine(_userContext.RootPath, request.NewRelativePath));
+        var root = await _db.UserRoots.FindAsync(photo.RootId);
+        if (root == null) return NotFound();
+        var rootPath = Path.GetFullPath(root.RootPath);
 
-        if (!newFullPath.StartsWith(Path.GetFullPath(_userContext.RootPath), StringComparison.OrdinalIgnoreCase))
+        var oldFullPath = Path.GetFullPath(Path.Combine(rootPath, photo.FilePath));
+        var newFullPath = Path.GetFullPath(Path.Combine(rootPath, request.NewRelativePath));
+
+        if (!newFullPath.StartsWith(rootPath, StringComparison.OrdinalIgnoreCase))
             return BadRequest(new ErrorResult("Invalid destination path"));
 
         if (!System.IO.File.Exists(oldFullPath))
@@ -262,12 +269,16 @@ public class PhotosController : ControllerBase
         if (photo == null)
             return NotFound();
 
-        var oldFullPath = Path.GetFullPath(Path.Combine(_userContext.RootPath, photo.FilePath));
+        var root = await _db.UserRoots.FindAsync(photo.RootId);
+        if (root == null) return NotFound();
+        var rootPath = Path.GetFullPath(root.RootPath);
+
+        var oldFullPath = Path.GetFullPath(Path.Combine(rootPath, photo.FilePath));
         var dir = Path.GetDirectoryName(photo.FilePath) ?? "";
         var newRelativePath = Path.Combine(dir, request.NewFileName);
-        var newFullPath = Path.GetFullPath(Path.Combine(_userContext.RootPath, newRelativePath));
+        var newFullPath = Path.GetFullPath(Path.Combine(rootPath, newRelativePath));
 
-        if (!newFullPath.StartsWith(Path.GetFullPath(_userContext.RootPath), StringComparison.OrdinalIgnoreCase))
+        if (!newFullPath.StartsWith(rootPath, StringComparison.OrdinalIgnoreCase))
             return BadRequest(new ErrorResult("Invalid file name"));
 
         if (!System.IO.File.Exists(oldFullPath))

@@ -16,6 +16,9 @@ namespace GalleryCloud.Api.Dtos;
 [JsonSerializable(typeof(LoginRequest))]
 [JsonSerializable(typeof(UserResponse))]
 [JsonSerializable(typeof(AuthResult))]
+[JsonSerializable(typeof(UserRootDto))]
+[JsonSerializable(typeof(CreateUserRootRequest))]
+[JsonSerializable(typeof(List<UserRootDto>))]
 
 [JsonSerializable(typeof(TagItem))]
 [JsonSerializable(typeof(Tag))]
@@ -51,6 +54,7 @@ namespace GalleryCloud.Api.Dtos;
 
 [JsonSerializable(typeof(MoveRequest))]
 [JsonSerializable(typeof(RenameRequest))]
+[JsonSerializable(typeof(ChangePasswordRequest))]
 
 [JsonSerializable(typeof(ScanStatus))]
 [JsonSerializable(typeof(ScanLogItem))]

@@ -25,10 +25,21 @@ public class AuthService : IAuthService
         _logger = logger;
     }
 
-    public async Task<(string Token, User User)?> LoginAsync(string username, string password)
+    public async Task<(string Token, string UserId, string Username, bool IsAdmin)?> LoginAsync(string username, string password)
     {
+        // Check admin login first (admin not in database)
+        if (username == "admin")
+        {
+            if (password != _options.AdminDefaultPassword)
+                return null;
+
+            var token = GenerateAdminToken();
+            return (token, "admin", "admin", true);
+        }
+
+        // Regular user login
         var user = await _db.Users
-            .FirstOrDefaultAsync(u => u.Username == username && u.IsActive);
+            .FirstOrDefaultAsync(u => u.Username == username && !u.IsDeleted);
 
         if (user == null)
             return null;
@@ -36,8 +47,8 @@ public class AuthService : IAuthService
         if (!VerifyPassword(password, user.PasswordHash))
             return null;
 
-        var token = GenerateToken(user);
-        return (token, user);
+        var userToken = GenerateToken(user);
+        return (userToken, user.Id, user.Username, false);
     }
 
     public string HashPassword(string password)
@@ -64,8 +75,7 @@ public class AuthService : IAuthService
 
     public string GenerateToken(User user)
     {
-        _logger.LogInformation("Generating token with secret len={Len}, expiry={Days}d",
-            _options.JwtSecret.Length, _options.TokenExpiryDays);
+        _logger.LogInformation("Generating token for user {User}", user.Username);
         var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(_options.JwtSecret));
         var creds = new SigningCredentials(key, SecurityAlgorithms.HmacSha256);
 
@@ -73,8 +83,31 @@ public class AuthService : IAuthService
         {
             new Claim(JwtRegisteredClaimNames.Sub, user.Id),
             new Claim(JwtRegisteredClaimNames.UniqueName, user.Username),
-            new Claim("admin", user.IsAdmin ? "true" : "false"),
-            new Claim("rootPath", user.RootPath),
+            new Claim(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString("N"))
+        };
+
+        var token = new JwtSecurityToken(
+            issuer: "GalleryCloud",
+            audience: "GalleryCloud",
+            claims: claims,
+            expires: DateTime.UtcNow.AddDays(_options.TokenExpiryDays),
+            signingCredentials: creds
+        );
+
+        return new JwtSecurityTokenHandler().WriteToken(token);
+    }
+
+    public string GenerateAdminToken()
+    {
+        _logger.LogInformation("Generating admin token");
+        var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(_options.JwtSecret));
+        var creds = new SigningCredentials(key, SecurityAlgorithms.HmacSha256);
+
+        var claims = new[]
+        {
+            new Claim(JwtRegisteredClaimNames.Sub, "admin"),
+            new Claim(JwtRegisteredClaimNames.UniqueName, "admin"),
+            new Claim("admin", "true"),
             new Claim(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString("N"))
         };
 

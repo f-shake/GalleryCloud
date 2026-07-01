@@ -17,7 +17,7 @@ async function handleLogin() {
   const ok = await auth.login(form.value.username, form.value.password)
   loading.value = false
   if (ok) {
-    router.push('/timeline')
+    router.push(auth.isAdmin ? '/admin' : '/timeline')
   } else {
     error.value = '用户名或密码错误'
   }

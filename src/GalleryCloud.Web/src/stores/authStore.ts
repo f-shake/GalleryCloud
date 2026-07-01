@@ -8,7 +8,7 @@ export const useAuthStore = defineStore('auth', () => {
   const user = ref<User | null>(JSON.parse(localStorage.getItem('user') || 'null'))
 
   const isAuthenticated = computed(() => !!token.value)
-  const isAdmin = computed(() => user.value?.isAdmin ?? false)
+  const isAdmin = computed(() => user.value?.id === 'admin')
 
   async function login(username: string, password: string): Promise<boolean> {
     try {

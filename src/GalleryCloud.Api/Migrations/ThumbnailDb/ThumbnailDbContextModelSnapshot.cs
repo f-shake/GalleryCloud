@@ -7,7 +7,7 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 
 #nullable disable
 
-namespace GalleryCloud.Api.Data.Migrations.ThumbnailDb
+namespace GalleryCloud.Api.Migrations.ThumbnailDb
 {
     [DbContext(typeof(ThumbnailDbContext))]
     partial class ThumbnailDbContextModelSnapshot : ModelSnapshot

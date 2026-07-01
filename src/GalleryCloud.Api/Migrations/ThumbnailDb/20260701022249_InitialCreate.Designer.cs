@@ -8,10 +8,10 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 
 #nullable disable
 
-namespace GalleryCloud.Api.Data.Migrations.ThumbnailDb
+namespace GalleryCloud.Api.Migrations.ThumbnailDb
 {
     [DbContext(typeof(ThumbnailDbContext))]
-    [Migration("20260628082326_InitialCreate")]
+    [Migration("20260701022249_InitialCreate")]
     partial class InitialCreate
     {
         /// <inheritdoc />

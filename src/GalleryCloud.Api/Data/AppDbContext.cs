@@ -8,6 +8,7 @@ public class AppDbContext : DbContext
     public AppDbContext(DbContextOptions<AppDbContext> options) : base(options) { }
 
     public DbSet<User> Users => Set<User>();
+    public DbSet<UserRoot> UserRoots => Set<UserRoot>();
     public DbSet<Photo> Photos => Set<Photo>();
     public DbSet<Tag> Tags => Set<Tag>();
     public DbSet<PhotoTag> PhotoTags => Set<PhotoTag>();
@@ -27,7 +28,23 @@ public class AppDbContext : DbContext
             e.Property(x => x.Username).HasMaxLength(128).IsRequired();
             e.Property(x => x.PasswordHash).HasMaxLength(256).IsRequired();
             e.Property(x => x.DisplayName).HasMaxLength(128);
+            e.Property(x => x.DeletedAt);
+            e.HasQueryFilter(p => !p.IsDeleted);
+        });
+
+        // --- UserRoot ---
+        modelBuilder.Entity<UserRoot>(e =>
+        {
+            e.ToTable("UserRoots");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).HasMaxLength(32);
+            e.Property(x => x.UserId).HasMaxLength(32).IsRequired();
             e.Property(x => x.RootPath).HasMaxLength(1024).IsRequired();
+            e.Property(x => x.IsEnabled).HasDefaultValue(true);
+            e.HasIndex(x => new { x.UserId, x.RootPath }).IsUnique().HasFilter("IsDeleted = 0");
+            e.HasOne(x => x.User).WithMany(u => u.UserRoots).HasForeignKey(x => x.UserId)
+                .OnDelete(DeleteBehavior.Cascade);
+            e.HasQueryFilter(p => !p.IsDeleted);
         });
 
         // --- Photo ---
@@ -37,15 +54,16 @@ public class AppDbContext : DbContext
             e.HasKey(x => x.Id);
             e.Property(x => x.Id).HasMaxLength(32);
             e.Property(x => x.UserId).HasMaxLength(32).IsRequired();
+            e.Property(x => x.RootId).HasMaxLength(32).IsRequired();
             e.Property(x => x.FilePath).HasMaxLength(1024).IsRequired();
             e.Property(x => x.FileName).HasMaxLength(512).IsRequired();
             e.Property(x => x.FileFormat).HasMaxLength(16).IsRequired();
             e.Property(x => x.DeviceModel).HasMaxLength(256);
             e.Property(x => x.Md5Hash).HasMaxLength(32);
-        e.Property(x => x.FileModifiedAt);
+            e.Property(x => x.FileModifiedAt);
 
-            // Unique per user+path for non-deleted photos
-            e.HasIndex(x => new { x.UserId, x.FilePath })
+            // Unique per user+root+path for non-deleted photos
+            e.HasIndex(x => new { x.UserId, x.RootId, x.FilePath })
                 .IsUnique()
                 .HasFilter("IsDeleted = 0");
 
@@ -55,6 +73,8 @@ public class AppDbContext : DbContext
                 .HasFilter("Latitude IS NOT NULL");
 
             e.HasOne(x => x.User).WithMany().HasForeignKey(x => x.UserId).OnDelete(DeleteBehavior.Cascade);
+            e.HasOne(x => x.Root).WithMany().HasForeignKey(x => x.RootId).OnDelete(DeleteBehavior.Cascade);
+            e.HasQueryFilter(p => !p.IsDeleted);
         });
 
         // --- Tag ---
@@ -68,6 +88,7 @@ public class AppDbContext : DbContext
             e.Property(x => x.Color).HasMaxLength(16);
             e.HasIndex(x => new { x.UserId, x.Name }).IsUnique();
             e.HasOne(x => x.User).WithMany().HasForeignKey(x => x.UserId).OnDelete(DeleteBehavior.Cascade);
+            e.HasQueryFilter(p => !p.IsDeleted);
         });
 
         // --- PhotoTag ---
@@ -79,6 +100,7 @@ public class AppDbContext : DbContext
             e.Property(x => x.TagId).HasMaxLength(32);
             e.HasOne(x => x.Photo).WithMany().HasForeignKey(x => x.PhotoId).OnDelete(DeleteBehavior.Cascade);
             e.HasOne(x => x.Tag).WithMany().HasForeignKey(x => x.TagId).OnDelete(DeleteBehavior.Cascade);
+            e.HasQueryFilter(p => !p.IsDeleted);
         });
 
         // --- Favorite ---
@@ -90,6 +112,7 @@ public class AppDbContext : DbContext
             e.Property(x => x.PhotoId).HasMaxLength(32);
             e.HasOne(x => x.User).WithMany().HasForeignKey(x => x.UserId).OnDelete(DeleteBehavior.Cascade);
             e.HasOne(x => x.Photo).WithMany().HasForeignKey(x => x.PhotoId).OnDelete(DeleteBehavior.Cascade);
+            e.HasQueryFilter(p => !p.IsDeleted);
         });
 
         // --- ScanLog ---

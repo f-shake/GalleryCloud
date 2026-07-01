@@ -3,7 +3,7 @@ using Microsoft.EntityFrameworkCore.Migrations;
 
 #nullable disable
 
-namespace GalleryCloud.Api.Data.Migrations
+namespace GalleryCloud.Api.Migrations
 {
     /// <inheritdoc />
     public partial class InitialCreate : Migration
@@ -32,48 +32,13 @@ namespace GalleryCloud.Api.Data.Migrations
                     Username = table.Column<string>(type: "TEXT", maxLength: 128, nullable: false),
                     PasswordHash = table.Column<string>(type: "TEXT", maxLength: 256, nullable: false),
                     DisplayName = table.Column<string>(type: "TEXT", maxLength: 128, nullable: true),
-                    RootPath = table.Column<string>(type: "TEXT", maxLength: 1024, nullable: false),
-                    IsAdmin = table.Column<bool>(type: "INTEGER", nullable: false),
-                    IsActive = table.Column<bool>(type: "INTEGER", nullable: false),
+                    IsDeleted = table.Column<bool>(type: "INTEGER", nullable: false),
+                    DeletedAt = table.Column<DateTime>(type: "TEXT", nullable: true),
                     CreatedAt = table.Column<DateTime>(type: "TEXT", nullable: false)
                 },
                 constraints: table =>
                 {
                     table.PrimaryKey("PK_Users", x => x.Id);
-                });
-
-            migrationBuilder.CreateTable(
-                name: "Photos",
-                columns: table => new
-                {
-                    Id = table.Column<string>(type: "TEXT", maxLength: 32, nullable: false),
-                    UserId = table.Column<string>(type: "TEXT", maxLength: 32, nullable: false),
-                    FilePath = table.Column<string>(type: "TEXT", maxLength: 1024, nullable: false),
-                    FileName = table.Column<string>(type: "TEXT", maxLength: 512, nullable: false),
-                    FileSize = table.Column<long>(type: "INTEGER", nullable: false),
-                    FileFormat = table.Column<string>(type: "TEXT", maxLength: 16, nullable: false),
-                    Width = table.Column<int>(type: "INTEGER", nullable: true),
-                    Height = table.Column<int>(type: "INTEGER", nullable: true),
-                    Orientation = table.Column<int>(type: "INTEGER", nullable: false),
-                    TakenAt = table.Column<DateTime>(type: "TEXT", nullable: true),
-                    DeviceModel = table.Column<string>(type: "TEXT", maxLength: 256, nullable: true),
-                    Latitude = table.Column<double>(type: "REAL", nullable: true),
-                    Longitude = table.Column<double>(type: "REAL", nullable: true),
-                    Md5Hash = table.Column<string>(type: "TEXT", maxLength: 32, nullable: true),
-                    IsDeleted = table.Column<bool>(type: "INTEGER", nullable: false),
-                    DeletedAt = table.Column<DateTime>(type: "TEXT", nullable: true),
-                    CreatedAt = table.Column<DateTime>(type: "TEXT", nullable: false),
-                    UpdatedAt = table.Column<DateTime>(type: "TEXT", nullable: false)
-                },
-                constraints: table =>
-                {
-                    table.PrimaryKey("PK_Photos", x => x.Id);
-                    table.ForeignKey(
-                        name: "FK_Photos_Users_UserId",
-                        column: x => x.UserId,
-                        principalTable: "Users",
-                        principalColumn: "Id",
-                        onDelete: ReferentialAction.Cascade);
                 });
 
             migrationBuilder.CreateTable(
@@ -107,7 +72,9 @@ namespace GalleryCloud.Api.Data.Migrations
                     Id = table.Column<string>(type: "TEXT", maxLength: 32, nullable: false),
                     UserId = table.Column<string>(type: "TEXT", maxLength: 32, nullable: false),
                     Name = table.Column<string>(type: "TEXT", maxLength: 128, nullable: false),
-                    Color = table.Column<string>(type: "TEXT", maxLength: 16, nullable: true)
+                    Color = table.Column<string>(type: "TEXT", maxLength: 16, nullable: true),
+                    IsDeleted = table.Column<bool>(type: "INTEGER", nullable: false),
+                    DeletedAt = table.Column<DateTime>(type: "TEXT", nullable: true)
                 },
                 constraints: table =>
                 {
@@ -121,12 +88,79 @@ namespace GalleryCloud.Api.Data.Migrations
                 });
 
             migrationBuilder.CreateTable(
+                name: "UserRoots",
+                columns: table => new
+                {
+                    Id = table.Column<string>(type: "TEXT", maxLength: 32, nullable: false),
+                    UserId = table.Column<string>(type: "TEXT", maxLength: 32, nullable: false),
+                    RootPath = table.Column<string>(type: "TEXT", maxLength: 1024, nullable: false),
+                    IsEnabled = table.Column<bool>(type: "INTEGER", nullable: false, defaultValue: true),
+                    IsDeleted = table.Column<bool>(type: "INTEGER", nullable: false),
+                    DeletedAt = table.Column<DateTime>(type: "TEXT", nullable: true),
+                    CreatedAt = table.Column<DateTime>(type: "TEXT", nullable: false)
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("PK_UserRoots", x => x.Id);
+                    table.ForeignKey(
+                        name: "FK_UserRoots_Users_UserId",
+                        column: x => x.UserId,
+                        principalTable: "Users",
+                        principalColumn: "Id",
+                        onDelete: ReferentialAction.Cascade);
+                });
+
+            migrationBuilder.CreateTable(
+                name: "Photos",
+                columns: table => new
+                {
+                    Id = table.Column<string>(type: "TEXT", maxLength: 32, nullable: false),
+                    UserId = table.Column<string>(type: "TEXT", maxLength: 32, nullable: false),
+                    FilePath = table.Column<string>(type: "TEXT", maxLength: 1024, nullable: false),
+                    FileName = table.Column<string>(type: "TEXT", maxLength: 512, nullable: false),
+                    FileSize = table.Column<long>(type: "INTEGER", nullable: false),
+                    FileFormat = table.Column<string>(type: "TEXT", maxLength: 16, nullable: false),
+                    Width = table.Column<int>(type: "INTEGER", nullable: true),
+                    Height = table.Column<int>(type: "INTEGER", nullable: true),
+                    Orientation = table.Column<int>(type: "INTEGER", nullable: false),
+                    TakenAt = table.Column<DateTime>(type: "TEXT", nullable: true),
+                    DeviceModel = table.Column<string>(type: "TEXT", maxLength: 256, nullable: true),
+                    Latitude = table.Column<double>(type: "REAL", nullable: true),
+                    Longitude = table.Column<double>(type: "REAL", nullable: true),
+                    Md5Hash = table.Column<string>(type: "TEXT", maxLength: 32, nullable: true),
+                    FileModifiedAt = table.Column<DateTime>(type: "TEXT", nullable: true),
+                    IsDeleted = table.Column<bool>(type: "INTEGER", nullable: false),
+                    DeletedAt = table.Column<DateTime>(type: "TEXT", nullable: true),
+                    CreatedAt = table.Column<DateTime>(type: "TEXT", nullable: false),
+                    UpdatedAt = table.Column<DateTime>(type: "TEXT", nullable: false),
+                    RootId = table.Column<string>(type: "TEXT", maxLength: 32, nullable: false)
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("PK_Photos", x => x.Id);
+                    table.ForeignKey(
+                        name: "FK_Photos_UserRoots_RootId",
+                        column: x => x.RootId,
+                        principalTable: "UserRoots",
+                        principalColumn: "Id",
+                        onDelete: ReferentialAction.Cascade);
+                    table.ForeignKey(
+                        name: "FK_Photos_Users_UserId",
+                        column: x => x.UserId,
+                        principalTable: "Users",
+                        principalColumn: "Id",
+                        onDelete: ReferentialAction.Cascade);
+                });
+
+            migrationBuilder.CreateTable(
                 name: "Favorites",
                 columns: table => new
                 {
                     UserId = table.Column<string>(type: "TEXT", maxLength: 32, nullable: false),
                     PhotoId = table.Column<string>(type: "TEXT", maxLength: 32, nullable: false),
-                    AddedAt = table.Column<DateTime>(type: "TEXT", nullable: false)
+                    AddedAt = table.Column<DateTime>(type: "TEXT", nullable: false),
+                    IsDeleted = table.Column<bool>(type: "INTEGER", nullable: false),
+                    DeletedAt = table.Column<DateTime>(type: "TEXT", nullable: true)
                 },
                 constraints: table =>
                 {
@@ -146,32 +180,13 @@ namespace GalleryCloud.Api.Data.Migrations
                 });
 
             migrationBuilder.CreateTable(
-                name: "ThumbnailCache",
-                columns: table => new
-                {
-                    PhotoId = table.Column<string>(type: "TEXT", maxLength: 32, nullable: false),
-                    Size = table.Column<string>(type: "TEXT", maxLength: 16, nullable: false),
-                    Format = table.Column<string>(type: "TEXT", maxLength: 8, nullable: false),
-                    FilePath = table.Column<string>(type: "TEXT", maxLength: 1024, nullable: false),
-                    CreatedAt = table.Column<DateTime>(type: "TEXT", nullable: false)
-                },
-                constraints: table =>
-                {
-                    table.PrimaryKey("PK_ThumbnailCache", x => new { x.PhotoId, x.Size });
-                    table.ForeignKey(
-                        name: "FK_ThumbnailCache_Photos_PhotoId",
-                        column: x => x.PhotoId,
-                        principalTable: "Photos",
-                        principalColumn: "Id",
-                        onDelete: ReferentialAction.Cascade);
-                });
-
-            migrationBuilder.CreateTable(
                 name: "PhotoTags",
                 columns: table => new
                 {
                     PhotoId = table.Column<string>(type: "TEXT", maxLength: 32, nullable: false),
-                    TagId = table.Column<string>(type: "TEXT", maxLength: 32, nullable: false)
+                    TagId = table.Column<string>(type: "TEXT", maxLength: 32, nullable: false),
+                    IsDeleted = table.Column<bool>(type: "INTEGER", nullable: false),
+                    DeletedAt = table.Column<DateTime>(type: "TEXT", nullable: true)
                 },
                 constraints: table =>
                 {
@@ -196,22 +211,27 @@ namespace GalleryCloud.Api.Data.Migrations
                 column: "PhotoId");
 
             migrationBuilder.CreateIndex(
+                name: "IX_Photos_RootId",
+                table: "Photos",
+                column: "RootId");
+
+            migrationBuilder.CreateIndex(
                 name: "IX_Photos_UserId_FileFormat",
                 table: "Photos",
                 columns: new[] { "UserId", "FileFormat" });
-
-            migrationBuilder.CreateIndex(
-                name: "IX_Photos_UserId_FilePath",
-                table: "Photos",
-                columns: new[] { "UserId", "FilePath" },
-                unique: true,
-                filter: "IsDeleted = 0");
 
             migrationBuilder.CreateIndex(
                 name: "IX_Photos_UserId_Latitude_Longitude",
                 table: "Photos",
                 columns: new[] { "UserId", "Latitude", "Longitude" },
                 filter: "Latitude IS NOT NULL");
+
+            migrationBuilder.CreateIndex(
+                name: "IX_Photos_UserId_RootId_FilePath",
+                table: "Photos",
+                columns: new[] { "UserId", "RootId", "FilePath" },
+                unique: true,
+                filter: "IsDeleted = 0");
 
             migrationBuilder.CreateIndex(
                 name: "IX_Photos_UserId_TakenAt",
@@ -236,6 +256,13 @@ namespace GalleryCloud.Api.Data.Migrations
                 unique: true);
 
             migrationBuilder.CreateIndex(
+                name: "IX_UserRoots_UserId_RootPath",
+                table: "UserRoots",
+                columns: new[] { "UserId", "RootPath" },
+                unique: true,
+                filter: "IsDeleted = 0");
+
+            migrationBuilder.CreateIndex(
                 name: "IX_Users_Username",
                 table: "Users",
                 column: "Username",
@@ -258,13 +285,13 @@ namespace GalleryCloud.Api.Data.Migrations
                 name: "SystemSettings");
 
             migrationBuilder.DropTable(
-                name: "ThumbnailCache");
+                name: "Photos");
 
             migrationBuilder.DropTable(
                 name: "Tags");
 
             migrationBuilder.DropTable(
-                name: "Photos");
+                name: "UserRoots");
 
             migrationBuilder.DropTable(
                 name: "Users");

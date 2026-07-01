@@ -1,9 +1,15 @@
+export interface UserRoot {
+  id: string
+  rootPath: string
+  isEnabled: boolean
+  createdAt: string
+}
+
 export interface User {
   id: string
   username: string
   displayName: string | null
-  isAdmin: boolean
-  rootPath: string
+  roots: UserRoot[]
 }
 
 export interface PhotoSummary {

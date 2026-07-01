@@ -30,19 +30,22 @@ public class FileWatcherService : BackgroundService
 
         using var scope = _scopeFactory.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-        var users = await db.Users.Where(u => u.IsActive).ToListAsync();
+        var roots = await db.UserRoots
+            .Where(r => r.IsEnabled && !r.IsDeleted && r.User != null && !r.User.IsDeleted)
+            .ToListAsync();
 
-        foreach (var user in users)
+        foreach (var root in roots)
         {
-            WatchUser(user.Id, user.RootPath);
+            WatchRoot(root);
         }
     }
 
-    public void WatchUser(string userId, string rootPath)
+    public void WatchRoot(UserRoot root)
     {
-        if (_watchers.ContainsKey(userId)) return;
+        var key = $"{root.UserId}:{root.Id}";
+        if (_watchers.ContainsKey(key)) return;
 
-        rootPath = Path.GetFullPath(rootPath);
+        var rootPath = Path.GetFullPath(root.RootPath);
         if (!Directory.Exists(rootPath)) return;
 
         try
@@ -56,14 +59,14 @@ public class FileWatcherService : BackgroundService
                 EnableRaisingEvents = true,
             };
 
-            watcher.Created += (_, e) => Enqueue(userId, rootPath, "created", e.FullPath);
-            watcher.Changed += (_, e) => Enqueue(userId, rootPath, "changed", e.FullPath);
-            watcher.Deleted += (_, e) => Enqueue(userId, rootPath, "deleted", e.FullPath);
-            watcher.Renamed += (_, e) => Enqueue(userId, rootPath, "renamed", e.FullPath, e.OldFullPath);
-            watcher.Error += (_, e) => _logger.LogError(e.GetException(), "FileWatcher error for user {UserId}", userId);
+            watcher.Created += (_, e) => Enqueue(root.UserId, root.Id, rootPath, "created", e.FullPath);
+            watcher.Changed += (_, e) => Enqueue(root.UserId, root.Id, rootPath, "changed", e.FullPath);
+            watcher.Deleted += (_, e) => Enqueue(root.UserId, root.Id, rootPath, "deleted", e.FullPath);
+            watcher.Renamed += (_, e) => Enqueue(root.UserId, root.Id, rootPath, "renamed", e.FullPath, e.OldFullPath);
+            watcher.Error += (_, e) => _logger.LogError(e.GetException(), "FileWatcher error for root {RootId}", root.Id);
 
-            _watchers[userId] = watcher;
-            _logger.LogInformation("FileWatcher started for user {UserId}: {RootPath}", userId, rootPath);
+            _watchers[key] = watcher;
+            _logger.LogInformation("FileWatcher started for root {RootId}: {RootPath}", root.Id, rootPath);
         }
         catch (Exception ex)
         {
@@ -71,18 +74,19 @@ public class FileWatcherService : BackgroundService
         }
     }
 
-    public void UnwatchUser(string userId)
+    public void UnwatchRoot(string userId, string rootId)
     {
-        if (_watchers.TryRemove(userId, out var watcher))
+        var key = $"{userId}:{rootId}";
+        if (_watchers.TryRemove(key, out var watcher))
         {
             watcher.EnableRaisingEvents = false;
             watcher.Dispose();
         }
     }
 
-    private void Enqueue(string userId, string rootPath, string changeType, string fullPath, string? oldPath = null)
+    private void Enqueue(string userId, string rootId, string rootPath, string changeType, string fullPath, string? oldPath = null)
     {
-        _eventChannel.Writer.TryWrite(new FileEvent(userId, rootPath, changeType, fullPath, oldPath));
+        _eventChannel.Writer.TryWrite(new FileEvent(userId, rootId, rootPath, changeType, fullPath, oldPath));
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -154,23 +158,23 @@ public class FileWatcherService : BackgroundService
             {
                 case "created":
                 case "changed":
-                    await HandleAddOrUpdate(db, evt.UserId, evt.RootPath, relativePath, evt.FullPath, ct);
+                    await HandleAddOrUpdate(db, evt.UserId, evt.RootId, evt.RootPath, relativePath, evt.FullPath, ct);
                     break;
 
                 case "deleted":
-                    await HandleDelete(db, evt.UserId, relativePath, ct);
+                    await HandleDelete(db, evt.UserId, evt.RootId, relativePath, ct);
                     break;
 
                 case "renamed" when evt.OldPath != null:
                     var oldRelative = evt.OldPath[evt.RootPath.Length..]
                         .TrimStart(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar).Replace('\\', '/');
-                    await HandleRename(db, evt.UserId, oldRelative, relativePath, evt.FullPath, ct);
+                    await HandleRename(db, evt.UserId, evt.RootId, oldRelative, relativePath, evt.FullPath, ct);
                     break;
             }
         }
     }
 
-    private async Task HandleAddOrUpdate(AppDbContext db, string userId, string rootPath,
+    private async Task HandleAddOrUpdate(AppDbContext db, string userId, string rootId, string rootPath,
         string relativePath, string fullPath, CancellationToken ct)
     {
         try
@@ -181,13 +185,14 @@ public class FileWatcherService : BackgroundService
             var fileInfo = new FileInfo(fullPath);
 
             var photo = await db.Photos
-                .FirstOrDefaultAsync(p => p.UserId == userId && p.FilePath == relativePath, ct);
+                .FirstOrDefaultAsync(p => p.UserId == userId && p.RootId == rootId && p.FilePath == relativePath, ct);
 
             if (photo == null)
             {
                 photo = new Photo
                 {
                     UserId = userId,
+                    RootId = rootId,
                     FilePath = relativePath,
                     FileName = Path.GetFileName(relativePath),
                     FileSize = fileInfo.Length,
@@ -226,10 +231,10 @@ public class FileWatcherService : BackgroundService
         }
     }
 
-    private static async Task HandleDelete(AppDbContext db, string userId, string relativePath, CancellationToken ct)
+    private static async Task HandleDelete(AppDbContext db, string userId, string rootId, string relativePath, CancellationToken ct)
     {
         var photo = await db.Photos
-            .FirstOrDefaultAsync(p => p.UserId == userId && p.FilePath == relativePath && !p.IsDeleted, ct);
+            .FirstOrDefaultAsync(p => p.UserId == userId && p.RootId == rootId && p.FilePath == relativePath && !p.IsDeleted, ct);
 
         if (photo != null)
         {
@@ -240,11 +245,11 @@ public class FileWatcherService : BackgroundService
         }
     }
 
-    private async Task HandleRename(AppDbContext db, string userId, string oldPath,
+    private async Task HandleRename(AppDbContext db, string userId, string rootId, string oldPath,
         string newPath, string fullPath, CancellationToken ct)
     {
         var photo = await db.Photos
-            .FirstOrDefaultAsync(p => p.UserId == userId && p.FilePath == oldPath, ct);
+            .FirstOrDefaultAsync(p => p.UserId == userId && p.RootId == rootId && p.FilePath == oldPath, ct);
 
         if (photo == null) return;
 
@@ -254,7 +259,7 @@ public class FileWatcherService : BackgroundService
         await db.SaveChangesAsync(ct);
     }
 
-    private static string GetEventKey(FileEvent evt) => $"{evt.UserId}|{evt.FullPath}";
+    private static string GetEventKey(FileEvent evt) => $"{evt.UserId}|{evt.RootId}|{evt.FullPath}";
 
-    private record FileEvent(string UserId, string RootPath, string ChangeType, string FullPath, string? OldPath = null);
+    private record FileEvent(string UserId, string RootId, string RootPath, string ChangeType, string FullPath, string? OldPath = null);
 }

@@ -17,6 +17,15 @@ const router = createRouter({
         { path: 'search', name: 'search', component: () => import('../views/SearchView.vue') },
         { path: 'favorites', name: 'favorites', component: () => import('../views/FavoritesView.vue') },
         {
+          path: 'manage',
+          component: () => import('../views/user/ManageLayout.vue'),
+          children: [
+            { path: '', redirect: '/manage/dashboard' },
+            { path: 'dashboard', name: 'user-dashboard', component: () => import('../views/UserDashboardView.vue') },
+            { path: 'scan', name: 'user-scan', component: () => import('../views/UserScanView.vue') },
+          ],
+        },
+        {
           path: 'admin',
           component: () => import('../views/admin/AdminLayout.vue'),
           meta: { requiresAdmin: true },
@@ -24,19 +33,26 @@ const router = createRouter({
             { path: '', name: 'admin-dashboard', component: () => import('../views/admin/DashboardView.vue') },
             { path: 'users', name: 'admin-users', component: () => import('../views/admin/UsersView.vue') },
             { path: 'settings', name: 'admin-settings', component: () => import('../views/admin/SettingsView.vue') },
-            { path: 'scan', name: 'admin-scan', component: () => import('../views/admin/ScanControlView.vue') },
           ],
         },
       ],
     },
+    { path: '/:pathMatch(.*)*', name: 'not-found', component: () => import('../views/NotFoundView.vue') },
   ],
 })
 
 router.beforeEach((to, _from) => {
   const auth = useAuthStore()
-  if (to.meta.requiresAdmin && !auth.isAdmin) return '/timeline'
-  if (!auth.isAuthenticated && to.path !== '/login') return '/login'
-  if (auth.isAuthenticated && to.meta.guest) return '/timeline'
+  // Admin can only access admin routes
+  if (auth.isAdmin && !to.path.startsWith('/admin') && to.path !== '/login')
+    return '/admin'
+  // Non-admin cannot access admin routes
+  if (!auth.isAdmin && to.path.startsWith('/admin'))
+    return '/timeline'
+  if (!auth.isAuthenticated && to.path !== '/login')
+    return '/login'
+  if (auth.isAuthenticated && to.meta.guest)
+    return auth.isAdmin ? '/admin' : '/timeline'
 })
 
 export default router

@@ -61,13 +61,13 @@ public class ScanService : IScanService
         {
             using var scope = _scopeFactory.CreateScope();
             var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-            var users = await db.Users.Where(u => u.IsActive).ToListAsync(linkedCt);
+            var users = await db.Users.Where(u => !u.IsDeleted).ToListAsync(linkedCt);
 
             foreach (var user in users)
             {
                 if (linkedCt.IsCancellationRequested) break;
                 Status = Status with { UserId = user.Id };
-                await RunScanAsync(user, ScanMode.Full, linkedCt);
+                await RunScanAsync(user.Id, ScanMode.Full, linkedCt);
             }
         }
         catch (OperationCanceledException)
@@ -91,12 +91,7 @@ public class ScanService : IScanService
 
         try
         {
-            using var scope = _scopeFactory.CreateScope();
-            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-            var user = await db.Users.FirstOrDefaultAsync(u => u.Id == userId, linkedCt);
-            if (user == null) return;
-
-            await RunScanAsync(user, mode, linkedCt);
+            await RunScanAsync(userId, mode, linkedCt);
         }
         catch (OperationCanceledException)
         {
@@ -110,10 +105,38 @@ public class ScanService : IScanService
         }
     }
 
-    private async Task RunScanAsync(Core.Entities.User user, ScanMode mode, CancellationToken ct)
+    private async Task RunScanAsync(string userId, ScanMode mode, CancellationToken ct)
     {
         using var scope = _scopeFactory.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+
+        var roots = await db.UserRoots
+            .Where(r => r.UserId == userId && r.IsEnabled && !r.IsDeleted)
+            .ToListAsync(ct);
+
+        if (roots.Count == 0)
+        {
+            _logger.LogWarning("No enabled roots found for user {UserId}", userId);
+            return;
+        }
+
+        foreach (var root in roots)
+        {
+            if (ct.IsCancellationRequested) break;
+            await ScanRootAsync(db, root, mode, ct);
+        }
+    }
+
+    private async Task ScanRootAsync(AppDbContext db, UserRoot root, ScanMode mode, CancellationToken ct)
+    {
+        using var innerScope = _scopeFactory.CreateScope();
+        var thumbDb = innerScope.ServiceProvider.GetRequiredService<ThumbnailDbContext>();
+        var rootPath = Path.GetFullPath(root.RootPath);
+        if (!Directory.Exists(rootPath))
+        {
+            _logger.LogWarning("Root path does not exist: {RootPath} (rootId={RootId})", rootPath, root.Id);
+            return;
+        }
 
         var formatsStr = await _settings.GetAsync(SettingKeys.ScanSupportedFormats) ?? ".jpg,.jpeg,.heic,.avif,.png,.webp";
         var supportedFormats = formatsStr.Split(',', StringSplitOptions.RemoveEmptyEntries)
@@ -127,16 +150,9 @@ public class ScanService : IScanService
         var parallelThreads = await _settings.GetAsync(SettingKeys.ThumbnailParallelThreads, 2);
         var semaphore = new SemaphoreSlim(Math.Max(1, parallelThreads));
 
-        var rootPath = Path.GetFullPath(user.RootPath);
-        if (!Directory.Exists(rootPath))
-        {
-            _logger.LogWarning("Root path does not exist: {RootPath}", rootPath);
-            return;
-        }
-
-        // Enumerate all files first to get accurate count
+        // Enumerate all files
         _logger.LogInformation("Enumerating files in {RootPath}...", rootPath);
-        Status = Status with { TotalFiles = 0, ProcessedFiles = -1 }; // -1 = enumerating
+        Status = Status with { TotalFiles = 0, ProcessedFiles = -1 };
         var allFiles = new List<string>();
         var enumOptions = new EnumerationOptions
         {
@@ -160,20 +176,21 @@ public class ScanService : IScanService
             }
         }
 
-        _logger.LogInformation("Found {Count} files to scan for user {User}", allFiles.Count, user.Id);
+        _logger.LogInformation("Found {Count} files to scan for root {RootId}", allFiles.Count, root.Id);
         Status = Status with { TotalFiles = allFiles.Count, ProcessedFiles = 0 };
 
         var log = new ScanLog
         {
-            UserId = user.Id,
+            UserId = root.UserId,
             StartedAt = DateTime.UtcNow,
             Mode = mode == ScanMode.Full ? "full" : "incremental",
             TotalFound = allFiles.Count
         };
         db.ScanLogs.Add(log);
 
+        // Existing photos for this root
         var existingPhotos = await db.Photos
-            .Where(p => p.UserId == user.Id)
+            .Where(p => p.UserId == root.UserId && p.RootId == root.Id)
             .ToDictionaryAsync(p => p.FilePath, p => p, ct);
 
         int newAdded = 0, skipped = 0, errors = 0;
@@ -207,7 +224,8 @@ public class ScanService : IScanService
                 var fileInfo2 = new FileInfo(fullPath);
                 var photo = new Photo
                 {
-                    UserId = user.Id,
+                    UserId = root.UserId,
+                    RootId = root.Id,
                     FilePath = relativePath,
                     FileName = Path.GetFileName(relativePath),
                     FileSize = fileInfo2.Length,
@@ -226,7 +244,7 @@ public class ScanService : IScanService
                 newPhotos.Add(photo);
                 var added = Interlocked.Increment(ref newAdded);
                 if (added % 100 == 0)
-                    _logger.LogInformation("Scanned {Count}/{Total} for user {User}", added, allFiles.Count, user.Id);
+                    _logger.LogInformation("Scanned {Count}/{Total} for root {RootId}", added, allFiles.Count, root.Id);
             }
             catch (Exception ex)
             {
@@ -252,7 +270,6 @@ public class ScanService : IScanService
                 // Invalidate thumbnails if file content changed
                 if (existing.FileSize != photo.FileSize || existing.FileModifiedAt != photo.FileModifiedAt)
                 {
-                    var thumbDb = scope.ServiceProvider.GetRequiredService<ThumbnailDbContext>();
                     var oldThumbs = await thumbDb.ThumbnailCaches.Where(t => t.PhotoId == existing.Id).ToListAsync(ct);
                     thumbDb.ThumbnailCaches.RemoveRange(oldThumbs);
                     await thumbDb.SaveChangesAsync(ct);
@@ -278,7 +295,7 @@ public class ScanService : IScanService
             }
         }
 
-        // Soft-delete missing files
+        // Soft-delete missing files for this root
         int softDeleted = 0;
         var existingPaths = new HashSet<string>(allFiles
             .Select(f => f[rootPath.Length..].TrimStart(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar).Replace('\\', '/')));
@@ -299,8 +316,8 @@ public class ScanService : IScanService
 
         await db.SaveChangesAsync(ct);
         _logger.LogInformation(
-            "Scan complete: {Total} files, {New} new, {Skipped} skipped, {Deleted} deleted, {Errors} errors",
-            allFiles.Count, newAdded, skipped, softDeleted, errors);
+            "Scan complete for root {RootId}: {Total} files, {New} new, {Skipped} skipped, {Deleted} deleted, {Errors} errors",
+            root.Id, allFiles.Count, newAdded, skipped, softDeleted, errors);
     }
 
     private static bool IsExcluded(string filePath, string rootPath, List<string> globPatterns)

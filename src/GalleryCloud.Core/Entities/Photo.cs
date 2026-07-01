@@ -22,6 +22,9 @@ public class Photo
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
     public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
 
+    public string RootId { get; set; } = string.Empty;
+
     // Navigation
     public User? User { get; set; }
+    public UserRoot? Root { get; set; }
 }

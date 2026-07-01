@@ -1,0 +1,197 @@
+using GalleryCloud.Api.Data;
+using GalleryCloud.Api.Dtos;
+using GalleryCloud.Api.Services;
+using GalleryCloud.Core.Interfaces;
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
+
+namespace GalleryCloud.Api.Controllers;
+
+[ApiController]
+[Route("api/user")]
+public class UserPanelController : ControllerBase
+{
+    private readonly AppDbContext _db;
+    private readonly UserContext _userContext;
+    private readonly IScanService _scanService;
+    private readonly IAuthService _authService;
+    private readonly IThumbnailService _thumbnailService;
+
+    public UserPanelController(AppDbContext db, UserContext userContext, IScanService scanService,
+        IAuthService authService, IThumbnailService thumbnailService)
+    {
+        _db = db;
+        _userContext = userContext;
+        _scanService = scanService;
+        _authService = authService;
+        _thumbnailService = thumbnailService;
+    }
+
+    // ==================== Scan ====================
+
+    [HttpPost("scan/trigger")]
+    public async Task<IActionResult> TriggerScan()
+    {
+        if (!_userContext.IsAuthenticated || _userContext.IsAdmin)
+            return Unauthorized();
+
+        if (_scanService.Status.IsRunning)
+            return Conflict(new ErrorResult("Scan is already running"));
+
+        _ = Task.Run(() => _scanService.TriggerFullScanAsync(_userContext.UserId));
+        return Ok(new MessageResult("Scan started"));
+    }
+
+    [HttpPost("scan/trigger-incremental")]
+    public async Task<IActionResult> TriggerIncrementalScan()
+    {
+        if (!_userContext.IsAuthenticated || _userContext.IsAdmin)
+            return Unauthorized();
+
+        if (_scanService.Status.IsRunning)
+            return Conflict(new ErrorResult("Scan is already running"));
+
+        _ = Task.Run(() => _scanService.TriggerIncrementalScanAsync(_userContext.UserId));
+        return Ok(new MessageResult("Incremental scan started"));
+    }
+
+    [HttpPost("scan/cancel")]
+    public IActionResult CancelScan()
+    {
+        _scanService.Cancel();
+        return Ok(new MessageResult("Cancelling..."));
+    }
+
+    [HttpGet("scan/status")]
+    public IActionResult GetScanStatus()
+    {
+        var s = _scanService.Status;
+        // Strip userId to avoid leaking other users
+        return Ok(new ScanStatus
+        {
+            IsRunning = s.IsRunning,
+            Mode = s.Mode,
+            StartedAt = s.StartedAt,
+            ProcessedFiles = s.ProcessedFiles,
+            TotalFiles = s.TotalFiles
+        });
+    }
+
+    [HttpGet("scan/logs")]
+    public async Task<IActionResult> GetScanLogs([FromQuery] int limit = 50)
+    {
+        if (!_userContext.IsAuthenticated || _userContext.IsAdmin)
+            return Unauthorized();
+
+        var logs = await _db.ScanLogs
+            .Where(l => l.UserId == _userContext.UserId)
+            .OrderByDescending(l => l.StartedAt)
+            .Take(limit)
+            .Select(l => new ScanLogItem(
+                l.Id, l.UserId, l.StartedAt, l.FinishedAt,
+                l.TotalFound, l.NewAdded, l.SoftDeleted, l.Mode
+            ))
+            .ToListAsync();
+
+        return Ok(logs);
+    }
+
+    // ==================== Password ====================
+
+    [HttpPut("password")]
+    public async Task<IActionResult> ChangePassword([FromBody] ChangePasswordRequest request)
+    {
+        if (!_userContext.IsAuthenticated || _userContext.IsAdmin)
+            return Unauthorized();
+
+        var user = await _db.Users.FindAsync(_userContext.UserId);
+        if (user == null) return NotFound();
+
+        if (!_authService.VerifyPassword(request.OldPassword, user.PasswordHash))
+            return BadRequest(new ErrorResult("当前密码不正确"));
+
+        user.PasswordHash = _authService.HashPassword(request.NewPassword);
+        await _db.SaveChangesAsync();
+
+        return Ok(new MessageResult("密码已修改"));
+    }
+
+    // ==================== Thumbnails ====================
+
+    [HttpGet("thumbnails/stats")]
+    public async Task<IActionResult> GetThumbnailStats()
+    {
+        var stats = await _thumbnailService.GetStatsAsync();
+        return Ok(stats);
+    }
+
+    [HttpPost("thumbnails/fill-missing")]
+    public IActionResult FillMissingThumbnails([FromBody] ThumbnailGenerationRequest? request)
+    {
+        if (_thumbnailService.RegenerationStatus.IsRunning)
+            return Conflict(new ErrorResult("Thumbnail generation is already running"));
+
+        _ = Task.Run(() => _thumbnailService.FillMissingAsync(request?.Sizes));
+        return Ok(new MessageResult("Fill-missing started"));
+    }
+
+    [HttpPost("thumbnails/regenerate")]
+    public IActionResult RegenerateThumbnails([FromBody] ThumbnailGenerationRequest? request)
+    {
+        if (_thumbnailService.RegenerationStatus.IsRunning)
+            return Conflict(new ErrorResult("Thumbnail regeneration is already running"));
+
+        _ = Task.Run(() => _thumbnailService.RegenerateAllAsync(request?.Sizes));
+        return Ok(new MessageResult("Thumbnail regeneration started"));
+    }
+
+    [HttpPost("thumbnails/cancel")]
+    public IActionResult CancelGeneration()
+    {
+        _thumbnailService.CancelGeneration();
+        return Ok(new MessageResult("Cancelling..."));
+    }
+
+    [HttpGet("thumbnails/status")]
+    public IActionResult GetThumbnailStatus()
+    {
+        return Ok(_thumbnailService.RegenerationStatus);
+    }
+
+    [HttpDelete("thumbnails/cache")]
+    public async Task<IActionResult> ClearThumbnailCache()
+    {
+        if (_thumbnailService.RegenerationStatus.IsRunning)
+            return Conflict(new ErrorResult("Thumbnail generation is running, wait for it to finish"));
+
+        var thumbDb = HttpContext.RequestServices.GetRequiredService<ThumbnailDbContext>();
+        thumbDb.ThumbnailCaches.RemoveRange(thumbDb.ThumbnailCaches);
+        await thumbDb.SaveChangesAsync();
+
+        return Ok(new MessageResult("Cache cleared"));
+    }
+
+    // ==================== Stats ====================
+
+    [HttpGet("stats")]
+    public async Task<IActionResult> GetStats()
+    {
+        if (!_userContext.IsAuthenticated || _userContext.IsAdmin)
+            return Unauthorized();
+
+        var totalPhotos = await _db.Photos.CountAsync(p => p.UserId == _userContext.UserId && !p.IsDeleted);
+        var totalSize = await _db.Photos.Where(p => p.UserId == _userContext.UserId && !p.IsDeleted).SumAsync(p => (long?)p.FileSize) ?? 0;
+        var photosWithGps = await _db.Photos.CountAsync(p => p.UserId == _userContext.UserId && !p.IsDeleted && p.Latitude != null);
+        var formatDistribution = await _db.Photos
+            .Where(p => p.UserId == _userContext.UserId && !p.IsDeleted)
+            .GroupBy(p => p.FileFormat)
+            .Select(g => new FormatCountItem(g.Key, g.Count()))
+            .ToListAsync();
+
+        return Ok(new AdminStats(
+            totalPhotos, 0, totalSize,
+            Math.Round(totalSize / (1024.0 * 1024 * 1024), 2),
+            photosWithGps, formatDistribution
+        ));
+    }
+}

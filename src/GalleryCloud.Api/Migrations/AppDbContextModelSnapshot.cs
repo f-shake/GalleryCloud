@@ -3,19 +3,16 @@ using System;
 using GalleryCloud.Api.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
-using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 
 #nullable disable
 
-namespace GalleryCloud.Api.Data.Migrations
+namespace GalleryCloud.Api.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    [Migration("20260627080946_InitialCreate")]
-    partial class InitialCreate
+    partial class AppDbContextModelSnapshot : ModelSnapshot
     {
-        /// <inheritdoc />
-        protected override void BuildTargetModel(ModelBuilder modelBuilder)
+        protected override void BuildModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder.HasAnnotation("ProductVersion", "10.0.9");
@@ -32,6 +29,12 @@ namespace GalleryCloud.Api.Data.Migrations
 
                     b.Property<DateTime>("AddedAt")
                         .HasColumnType("TEXT");
+
+                    b.Property<DateTime?>("DeletedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("INTEGER");
 
                     b.HasKey("UserId", "PhotoId");
 
@@ -59,6 +62,9 @@ namespace GalleryCloud.Api.Data.Migrations
                     b.Property<string>("FileFormat")
                         .IsRequired()
                         .HasMaxLength(16)
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime?>("FileModifiedAt")
                         .HasColumnType("TEXT");
 
                     b.Property<string>("FileName")
@@ -93,6 +99,11 @@ namespace GalleryCloud.Api.Data.Migrations
                     b.Property<int>("Orientation")
                         .HasColumnType("INTEGER");
 
+                    b.Property<string>("RootId")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("TEXT");
+
                     b.Property<DateTime?>("TakenAt")
                         .HasColumnType("TEXT");
 
@@ -109,17 +120,19 @@ namespace GalleryCloud.Api.Data.Migrations
 
                     b.HasKey("Id");
 
-                    b.HasIndex("UserId", "FileFormat");
+                    b.HasIndex("RootId");
 
-                    b.HasIndex("UserId", "FilePath")
-                        .IsUnique()
-                        .HasFilter("IsDeleted = 0");
+                    b.HasIndex("UserId", "FileFormat");
 
                     b.HasIndex("UserId", "TakenAt")
                         .IsDescending(false, true);
 
                     b.HasIndex("UserId", "Latitude", "Longitude")
                         .HasFilter("Latitude IS NOT NULL");
+
+                    b.HasIndex("UserId", "RootId", "FilePath")
+                        .IsUnique()
+                        .HasFilter("IsDeleted = 0");
 
                     b.ToTable("Photos", (string)null);
                 });
@@ -133,6 +146,12 @@ namespace GalleryCloud.Api.Data.Migrations
                     b.Property<string>("TagId")
                         .HasMaxLength(32)
                         .HasColumnType("TEXT");
+
+                    b.Property<DateTime?>("DeletedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("INTEGER");
 
                     b.HasKey("PhotoId", "TagId");
 
@@ -207,6 +226,12 @@ namespace GalleryCloud.Api.Data.Migrations
                         .HasMaxLength(16)
                         .HasColumnType("TEXT");
 
+                    b.Property<DateTime?>("DeletedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("INTEGER");
+
                     b.Property<string>("Name")
                         .IsRequired()
                         .HasMaxLength(128)
@@ -225,34 +250,6 @@ namespace GalleryCloud.Api.Data.Migrations
                     b.ToTable("Tags", (string)null);
                 });
 
-            modelBuilder.Entity("GalleryCloud.Core.Entities.ThumbnailCache", b =>
-                {
-                    b.Property<string>("PhotoId")
-                        .HasMaxLength(32)
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("Size")
-                        .HasMaxLength(16)
-                        .HasColumnType("TEXT");
-
-                    b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("FilePath")
-                        .IsRequired()
-                        .HasMaxLength(1024)
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("Format")
-                        .IsRequired()
-                        .HasMaxLength(8)
-                        .HasColumnType("TEXT");
-
-                    b.HasKey("PhotoId", "Size");
-
-                    b.ToTable("ThumbnailCache", (string)null);
-                });
-
             modelBuilder.Entity("GalleryCloud.Core.Entities.User", b =>
                 {
                     b.Property<string>("Id")
@@ -262,24 +259,19 @@ namespace GalleryCloud.Api.Data.Migrations
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("TEXT");
 
+                    b.Property<DateTime?>("DeletedAt")
+                        .HasColumnType("TEXT");
+
                     b.Property<string>("DisplayName")
                         .HasMaxLength(128)
                         .HasColumnType("TEXT");
 
-                    b.Property<bool>("IsActive")
-                        .HasColumnType("INTEGER");
-
-                    b.Property<bool>("IsAdmin")
+                    b.Property<bool>("IsDeleted")
                         .HasColumnType("INTEGER");
 
                     b.Property<string>("PasswordHash")
                         .IsRequired()
                         .HasMaxLength(256)
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("RootPath")
-                        .IsRequired()
-                        .HasMaxLength(1024)
                         .HasColumnType("TEXT");
 
                     b.Property<string>("Username")
@@ -293,6 +285,45 @@ namespace GalleryCloud.Api.Data.Migrations
                         .IsUnique();
 
                     b.ToTable("Users", (string)null);
+                });
+
+            modelBuilder.Entity("GalleryCloud.Core.Entities.UserRoot", b =>
+                {
+                    b.Property<string>("Id")
+                        .HasMaxLength(32)
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime?>("DeletedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<bool>("IsEnabled")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER")
+                        .HasDefaultValue(true);
+
+                    b.Property<string>("RootPath")
+                        .IsRequired()
+                        .HasMaxLength(1024)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("UserId")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("UserId", "RootPath")
+                        .IsUnique()
+                        .HasFilter("IsDeleted = 0");
+
+                    b.ToTable("UserRoots", (string)null);
                 });
 
             modelBuilder.Entity("GalleryCloud.Core.Entities.Favorite", b =>
@@ -316,11 +347,19 @@ namespace GalleryCloud.Api.Data.Migrations
 
             modelBuilder.Entity("GalleryCloud.Core.Entities.Photo", b =>
                 {
+                    b.HasOne("GalleryCloud.Core.Entities.UserRoot", "Root")
+                        .WithMany()
+                        .HasForeignKey("RootId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
                     b.HasOne("GalleryCloud.Core.Entities.User", "User")
                         .WithMany()
                         .HasForeignKey("UserId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
+
+                    b.Navigation("Root");
 
                     b.Navigation("User");
                 });
@@ -366,15 +405,20 @@ namespace GalleryCloud.Api.Data.Migrations
                     b.Navigation("User");
                 });
 
-            modelBuilder.Entity("GalleryCloud.Core.Entities.ThumbnailCache", b =>
+            modelBuilder.Entity("GalleryCloud.Core.Entities.UserRoot", b =>
                 {
-                    b.HasOne("GalleryCloud.Core.Entities.Photo", "Photo")
-                        .WithMany()
-                        .HasForeignKey("PhotoId")
+                    b.HasOne("GalleryCloud.Core.Entities.User", "User")
+                        .WithMany("UserRoots")
+                        .HasForeignKey("UserId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
 
-                    b.Navigation("Photo");
+                    b.Navigation("User");
+                });
+
+            modelBuilder.Entity("GalleryCloud.Core.Entities.User", b =>
+                {
+                    b.Navigation("UserRoots");
                 });
 #pragma warning restore 612, 618
         }

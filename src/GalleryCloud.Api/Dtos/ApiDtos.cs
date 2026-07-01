@@ -70,9 +70,13 @@ public record SearchResponse(int Total, int Page, int Limit, List<PhotoListItem>
 
 public record LoginRequest(string Username, string Password);
 
-public record UserResponse(string Id, string Username, string? DisplayName, bool IsAdmin, string RootPath);
+public record UserResponse(string Id, string Username, string? DisplayName, List<UserRootDto> Roots);
 
 public record AuthResult(string Token, UserResponse User);
+
+public record UserRootDto(string Id, string RootPath, bool IsEnabled, DateTime CreatedAt);
+
+public record CreateUserRootRequest(string RootPath);
 
 // ============================================================
 // Tags
@@ -134,11 +138,11 @@ public class FolderNode
 // Admin
 // ============================================================
 
-public record CreateUserRequest(string Username, string Password, string? DisplayName, string RootPath, bool IsAdmin);
+public record CreateUserRequest(string Username, string Password, string? DisplayName, List<string> RootPaths);
 
-public record UpdateUserRequest(string? Password, string? DisplayName, string? RootPath, bool? IsAdmin, bool? IsActive);
+public record UpdateUserRequest(string? Password, string? DisplayName, bool? IsActive);
 
-public record UserListItem(string Id, string Username, string? DisplayName, string RootPath, bool IsAdmin, bool IsActive, DateTime CreatedAt);
+public record UserListItem(string Id, string Username, string? DisplayName, bool IsActive, DateTime CreatedAt, List<UserRootDto> Roots);
 
 public record ThumbnailGenerationRequest(List<string>? Sizes);
 
@@ -172,3 +176,9 @@ public record EnqueueResponse(int Enqueued);
 public record MoveRequest(string NewRelativePath);
 
 public record RenameRequest(string NewFileName);
+
+// ============================================================
+// User Panel
+// ============================================================
+
+public record ChangePasswordRequest(string OldPassword, string NewPassword);

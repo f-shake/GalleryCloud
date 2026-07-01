@@ -146,14 +146,14 @@ public class ThumbnailService : IThumbnailService
         var sizeKey = size.ToString().ToLowerInvariant();
         var isPreview = sizeKey == "preview";
 
-        // Photo + user (for source file path only)
+        // Photo + root (for source file path)
         var photo = await db.Photos.FirstOrDefaultAsync(p => p.Id == photoId && !p.IsDeleted, ct);
         if (photo == null) return null;
 
-        var user = await db.Users.FirstOrDefaultAsync(u => u.Id == photo.UserId, ct);
-        if (user == null) return null;
+        var root = await db.UserRoots.FirstOrDefaultAsync(r => r.Id == photo.RootId, ct);
+        if (root == null) return null;
 
-        var fullPath = Path.GetFullPath(Path.Combine(user.RootPath, photo.FilePath));
+        var fullPath = Path.GetFullPath(Path.Combine(root.RootPath, photo.FilePath));
         if (!File.Exists(fullPath)) return null;
 
         var quality = await _settings.GetAsync(

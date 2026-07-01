@@ -52,11 +52,9 @@ public class AuthMiddleware
 
                 var userId = claims.FirstOrDefault(c => c.Type == JwtRegisteredClaimNames.Sub)?.Value ?? "";
                 var username = claims.FirstOrDefault(c => c.Type == JwtRegisteredClaimNames.UniqueName)?.Value ?? "";
-                var isAdmin = claims.FirstOrDefault(c => c.Type == "admin")?.Value == "true";
-                var rootPath = claims.FirstOrDefault(c => c.Type == "rootPath")?.Value ?? "";
 
-                userContext.SetUser(userId, username, isAdmin, rootPath);
-                _logger.LogDebug("Auth OK: user={User}, admin={Admin}", username, isAdmin);
+                userContext.SetUser(userId, username);
+                _logger.LogDebug("Auth OK: user={User}", username);
             }
             catch (Exception ex)
             {

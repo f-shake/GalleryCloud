@@ -1,15 +1,15 @@
 namespace GalleryCloud.Core.Entities;
 
-public class User
+public class UserRoot
 {
     public string Id { get; set; } = Guid.NewGuid().ToString("N");
-    public string Username { get; set; } = string.Empty;
-    public string PasswordHash { get; set; } = string.Empty;
-    public string? DisplayName { get; set; }
+    public string UserId { get; set; } = string.Empty;
+    public string RootPath { get; set; } = string.Empty;
+    public bool IsEnabled { get; set; } = true;
     public bool IsDeleted { get; set; }
     public DateTime? DeletedAt { get; set; }
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 
     // Navigation
-    public ICollection<UserRoot> UserRoots { get; set; } = new List<UserRoot>();
+    public User? User { get; set; }
 }
