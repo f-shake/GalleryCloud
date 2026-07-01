@@ -371,6 +371,87 @@ public class AdminController : ControllerBase
         ));
     }
 
+    // ==================== Filesystem Browser ====================
+
+    [HttpGet("fs/drives")]
+    public IActionResult GetDrives()
+    {
+        try
+        {
+            var drives = DriveInfo.GetDrives()
+                .Where(d => d.IsReady)
+                .Select(d => new FsEntryDto(
+                    d.Name.TrimEnd(Path.DirectorySeparatorChar) + "/",
+                    d.RootDirectory.FullName,
+                    true
+                ))
+                .ToList();
+
+            if (drives.Count == 0)
+            {
+                drives = new List<FsEntryDto> { new("/", "/", true) };
+            }
+
+            return Ok(drives);
+        }
+        catch (Exception ex)
+        {
+            return StatusCode(500, new ErrorResult($"Failed to enumerate drives: {ex.Message}"));
+        }
+    }
+
+    [HttpGet("fs/browse")]
+    public IActionResult BrowseDirectory([FromQuery] string path = "")
+    {
+        try
+        {
+            if (string.IsNullOrWhiteSpace(path))
+                path = "/";
+
+            // Normalize: accept both / and \ as separators
+            var normalized = path.Replace('/', Path.DirectorySeparatorChar);
+
+            if (!Directory.Exists(normalized))
+                return BadRequest(new ErrorResult($"Directory not found: {path}"));
+
+            var dirInfo = new DirectoryInfo(normalized);
+
+            var entries = dirInfo.EnumerateDirectories()
+                .Where(d => !d.Name.StartsWith('.'))           // skip hidden
+                .Select(d => new FsEntryDto(d.Name, d.FullName, false))
+                .OrderBy(e => e.Name, StringComparer.OrdinalIgnoreCase)
+                .ToList();
+
+            var parent = dirInfo.Parent?.FullName;
+
+            // Check if we're at root level
+            var isRoot = false;
+            try
+            {
+                var driveRoot = Path.GetPathRoot(normalized);
+                isRoot = string.Equals(normalized.TrimEnd(Path.DirectorySeparatorChar),
+                    driveRoot?.TrimEnd(Path.DirectorySeparatorChar),
+                    StringComparison.OrdinalIgnoreCase);
+            }
+            catch { /* ignore */ }
+
+            return Ok(new FsBrowseResult(
+                dirInfo.FullName,
+                entries,
+                parent,
+                isRoot
+            ));
+        }
+        catch (UnauthorizedAccessException)
+        {
+            return BadRequest(new ErrorResult("Access denied"));
+        }
+        catch (Exception ex)
+        {
+            return BadRequest(new ErrorResult(ex.Message));
+        }
+    }
+
     // ==================== Helpers ====================
 
     private static bool HasNesting(List<string> roots)

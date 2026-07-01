@@ -2,6 +2,7 @@
 import { ref, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import client from '../../api/client'
+import FolderBrowser from '../../components/FolderBrowser.vue'
 import type { UserRoot } from '../../types'
 
 interface UserRow {
@@ -22,6 +23,25 @@ const editRoots = ref<UserRoot[]>([])
 const newRootPath = ref('')
 const showRootsDialog = ref(false)
 const editingUser = ref<string | null>(null)
+
+// Folder browser state
+const showFolderBrowser = ref(false)
+const folderBrowserTarget = ref<{ mode: 'create'; index: number } | { mode: 'edit' } | null>(null)
+
+function openFolderBrowser(target: typeof folderBrowserTarget.value) {
+  folderBrowserTarget.value = target
+  showFolderBrowser.value = true
+}
+
+function onFolderSelected(path: string) {
+  const target = folderBrowserTarget.value
+  if (!target) return
+  if (target.mode === 'create') {
+    form.value.rootPaths[target.index] = path
+  } else if (target.mode === 'edit') {
+    newRootPath.value = path
+  }
+}
 
 onMounted(() => loadUsers())
 
@@ -150,10 +170,11 @@ async function toggleUser(u: UserRow) {
         <el-form-item label="根目录">
           <div style="width:100%">
             <div v-for="(_, i) in form.rootPaths" :key="i" style="display:flex;gap:4px;margin-bottom:4px;align-items:center">
-              <el-input v-model="form.rootPaths[i]" placeholder="输入目录路径" />
+              <el-input v-model="form.rootPaths[i]" placeholder="输入目录路径或点击浏览选择" />
+              <el-button type="primary" @click="openFolderBrowser({ mode: 'create', index: i })" size="small">浏览</el-button>
               <el-button @click="form.rootPaths.splice(i, 1)" :icon="'Delete'" circle size="small" />
             </div>
-            <el-button size="small" @click="form.rootPaths.push('')" :icon="'Plus'" circle />
+            <el-button size="small" @click="form.rootPaths.push('')" :icon="'Plus'" style="margin-top:4px" />
           </div>
         </el-form-item>
       </el-form>
@@ -177,6 +198,7 @@ async function toggleUser(u: UserRow) {
             </div>
             <div style="display:flex;gap:4px;align-items:center">
               <el-input v-model="newRootPath" placeholder="添加新目录" />
+              <el-button type="primary" @click="openFolderBrowser({ mode: 'edit' })" size="small">浏览</el-button>
               <el-button @click="addRoot" :icon="'Plus'" circle size="small" />
             </div>
           </div>
@@ -187,5 +209,10 @@ async function toggleUser(u: UserRow) {
         <el-button type="primary" @click="save">保存</el-button>
       </template>
     </el-dialog>
+
+    <FolderBrowser
+      v-model="showFolderBrowser"
+      @selected="onFolderSelected"
+    />
   </div>
 </template>

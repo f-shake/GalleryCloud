@@ -190,3 +190,11 @@ public record RenameRequest(string NewFileName);
 // ============================================================
 
 public record ChangePasswordRequest(string OldPassword, string NewPassword);
+
+// ============================================================
+// Filesystem browser (admin)
+// ============================================================
+
+public record FsEntryDto(string Name, string FullPath, bool IsDrive);
+
+public record FsBrowseResult(string CurrentPath, List<FsEntryDto> Entries, string? ParentPath, bool IsRoot);

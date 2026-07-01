@@ -61,6 +61,10 @@ namespace GalleryCloud.Api.Dtos;
 [JsonSerializable(typeof(ThumbnailStats))]
 [JsonSerializable(typeof(ThumbnailGenerationStatus))]
 
+[JsonSerializable(typeof(FsEntryDto))]
+[JsonSerializable(typeof(FsBrowseResult))]
+[JsonSerializable(typeof(List<FsEntryDto>))]
+
 // List<T> variants used in controller responses (returned directly)
 [JsonSerializable(typeof(List<PhotoItem>))]
 [JsonSerializable(typeof(List<PhotoIdentity>))]

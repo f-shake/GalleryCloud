@@ -142,7 +142,6 @@ const currentTitle = computed(() => navItems.value.find(n => route.path.startsWi
       </el-drawer>
 
       <el-main class="app-main">
-        <el-alert v-if="isScanning" title="扫描进行中，照片列表可能不完整" type="info" show-icon :closable="false" class="scan-alert" />
         <router-view />
       </el-main>
     </el-container>
@@ -171,7 +170,6 @@ const currentTitle = computed(() => navItems.value.find(n => route.path.startsWi
         </el-dropdown>
       </el-header>
       <el-main class="app-main">
-        <el-alert v-if="isScanning" title="扫描进行中，照片列表可能不完整" type="info" show-icon :closable="false" class="scan-alert" />
         <router-view />
       </el-main>
     </el-container>
@@ -232,5 +230,4 @@ html, body, #app { margin:0; height:100%; }
   padding: 0;
 }
 .app-main::-webkit-scrollbar { display: none; }
-.scan-alert { margin: 8px 16px 0; border-radius: 8px; }
 </style>
