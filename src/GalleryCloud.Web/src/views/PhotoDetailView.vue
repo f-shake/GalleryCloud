@@ -632,7 +632,6 @@ function jumpToMap() {
   flex: 1;
   display: flex; flex-direction: column;
   padding: 0 20px 20px;
-  overflow: hidden;
   min-height: 0;
 }
 .info-grid {

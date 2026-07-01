@@ -90,6 +90,7 @@ onUnmounted(() => destroy())
   border-radius: 8px;
   overflow: hidden;
   position: relative;
+  touch-action: none;
 }
 .map-embed--loading {
   display: flex;
