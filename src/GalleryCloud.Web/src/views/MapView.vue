@@ -157,10 +157,11 @@ function updatePointMode() {
   }
 
   // Density check: project to screen coords
-  const screenPts = visible.map(p => {
+  const screenPts: { pt: MapPoint; sx: number; sy: number }[] = []
+  for (const p of visible) {
     const sp = mapInst!.view.toScreen(new Point({ longitude: p.longitude, latitude: p.latitude }))
-    return { pt: p, sx: sp.x, sy: sp.y }
-  })
+    if (sp) screenPts.push({ pt: p, sx: sp.x, sy: sp.y })
+  }
 
   const MIN_DIST = 80 // pixels — bubble would overlap if closer
   const MAX_NEIGHBORS = 2

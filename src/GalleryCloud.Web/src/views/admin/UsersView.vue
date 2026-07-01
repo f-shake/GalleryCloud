@@ -2,7 +2,7 @@
 import { ref, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import client from '../../api/client'
-import type { User, UserRoot } from '../../types'
+import type { UserRoot } from '../../types'
 
 interface UserRow {
   id: string
@@ -149,7 +149,7 @@ async function toggleUser(u: UserRow) {
         <el-form-item label="显示名"><el-input v-model="form.displayName" /></el-form-item>
         <el-form-item label="根目录">
           <div style="width:100%">
-            <div v-for="(p, i) in form.rootPaths" :key="i" style="display:flex;gap:4px;margin-bottom:4px;align-items:center">
+            <div v-for="(_, i) in form.rootPaths" :key="i" style="display:flex;gap:4px;margin-bottom:4px;align-items:center">
               <el-input v-model="form.rootPaths[i]" placeholder="输入目录路径" />
               <el-button @click="form.rootPaths.splice(i, 1)" :icon="'Delete'" circle size="small" />
             </div>

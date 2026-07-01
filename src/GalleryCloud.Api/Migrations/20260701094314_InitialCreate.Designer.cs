@@ -11,7 +11,7 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace GalleryCloud.Api.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    [Migration("20260701022233_InitialCreate")]
+    [Migration("20260701094314_InitialCreate")]
     partial class InitialCreate
     {
         /// <inheritdoc />
@@ -52,6 +52,10 @@ namespace GalleryCloud.Api.Migrations
                         .HasMaxLength(32)
                         .HasColumnType("TEXT");
 
+                    b.Property<string>("Aperture")
+                        .HasMaxLength(16)
+                        .HasColumnType("TEXT");
+
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("TEXT");
 
@@ -60,6 +64,10 @@ namespace GalleryCloud.Api.Migrations
 
                     b.Property<string>("DeviceModel")
                         .HasMaxLength(256)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("ExposureTime")
+                        .HasMaxLength(32)
                         .HasColumnType("TEXT");
 
                     b.Property<string>("FileFormat")
@@ -83,10 +91,20 @@ namespace GalleryCloud.Api.Migrations
                     b.Property<long>("FileSize")
                         .HasColumnType("INTEGER");
 
+                    b.Property<string>("FocalLength")
+                        .HasMaxLength(16)
+                        .HasColumnType("TEXT");
+
+                    b.Property<int?>("FocalLength35mm")
+                        .HasColumnType("INTEGER");
+
                     b.Property<int?>("Height")
                         .HasColumnType("INTEGER");
 
                     b.Property<bool>("IsDeleted")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int?>("Iso")
                         .HasColumnType("INTEGER");
 
                     b.Property<double?>("Latitude")

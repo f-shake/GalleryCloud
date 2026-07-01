@@ -1,4 +1,4 @@
-import { ref, onUnmounted, type Ref } from 'vue'
+import { ref, type Ref } from 'vue'
 import Map from '@arcgis/core/Map'
 import ArcMapView from '@arcgis/core/views/MapView'
 import Basemap from '@arcgis/core/Basemap'
@@ -9,7 +9,7 @@ export interface MapInstance {
   view: ArcMapView
 }
 
-export function useMap(containerRef: Ref<HTMLElement | null>) {
+export function useMap(containerRef: Ref<HTMLDivElement | null>) {
   const loading = ref(true)
   let tileUrlNormal = 'https://tile.openstreetmap.org/{z}/{x}/{y}.png'
   let tileUrlSatellite = 'https://mt1.google.com/vt/lyrs=s&x={x}&y={y}&z={z}'

@@ -1,6 +1,5 @@
 <script setup lang="ts">
 import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
-import { useRouter } from 'vue-router'
 import client from '../api/client'
 import { ElMessage } from 'element-plus'
 import { thumbUrl } from '../composables/useThumbnailUrl'
@@ -8,7 +7,6 @@ import { usePhotoViewStore } from '../stores/photoViewStore'
 import { useAuthStore } from '../stores/authStore'
 import MapEmbed from '../components/MapEmbed.vue'
 
-const router = useRouter()
 const store = usePhotoViewStore()
 const auth = useAuthStore()
 
@@ -456,11 +454,6 @@ const displayPath = computed(() => {
   return rootName ? rootName + '/' + photo.value.filePath : photo.value.filePath
 })
 
-function jumpToMap() {
-  if (!photo.value?.latitude || !photo.value?.longitude) return
-  store.close()
-  router.push({ path: '/map', query: { lat: photo.value.latitude.toFixed(6), lng: photo.value.longitude.toFixed(6) } })
-}
 </script>
 
 <template>

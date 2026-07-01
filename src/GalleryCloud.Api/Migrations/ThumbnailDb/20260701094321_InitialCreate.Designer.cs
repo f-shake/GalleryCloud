@@ -11,7 +11,7 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace GalleryCloud.Api.Migrations.ThumbnailDb
 {
     [DbContext(typeof(ThumbnailDbContext))]
-    [Migration("20260701022249_InitialCreate")]
+    [Migration("20260701094321_InitialCreate")]
     partial class InitialCreate
     {
         /// <inheritdoc />

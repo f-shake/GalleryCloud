@@ -4,7 +4,8 @@ param(
     [string]$OutputDir = "publish",
     [string]$Configuration = "Release",
     [switch]$BackendOnly,
-    [switch]$FrontendOnly
+    [switch]$FrontendOnly,
+    [switch]$NoCopy
 )
 
 $ErrorActionPreference = "Stop"
@@ -14,9 +15,11 @@ Write-Host "=== GalleryCloud Publish ===" -ForegroundColor Cyan
 Write-Host "Runtime: $Runtime | Config: $Configuration" -ForegroundColor Yellow
 if ($BackendOnly) { Write-Host "Mode: Backend only" -ForegroundColor Yellow }
 if ($FrontendOnly) { Write-Host "Mode: Frontend only" -ForegroundColor Yellow }
+if ($NoCopy) { Write-Host "Mode: Skip wwwroot copy" -ForegroundColor Yellow }
 
 $skipFrontend = $BackendOnly
 $skipBackend = $FrontendOnly
+$skipCopy = $BackendOnly -or $NoCopy
 
 # 1. Build frontend
 if (-not $skipFrontend) {
@@ -37,8 +40,10 @@ if (-not $skipBackend) {
         -c $Configuration `
         -r $Runtime `
         --self-contained true `
-        -p:PublishAot=true `
-        -p:StripSymbols=true `
+        -p:PublishSingleFile=true `
+        -p:IncludeNativeLibrariesForSelfExtract=true `
+        -p:EnableCompressionInSingleFile=true `
+        -p:DebugType=embedded `
         -o "$ScriptDir\$OutputDir"
     if ($LASTEXITCODE -ne 0) { throw "Backend publish failed" }
 } else {
@@ -46,7 +51,7 @@ if (-not $skipBackend) {
 }
 
 # 3. Copy frontend assets to wwwroot
-if (-not ($BackendOnly -or $FrontendOnly)) {
+if (-not $skipCopy) {
     Write-Host "`n[3/3] Copying frontend assets..." -ForegroundColor Green
     $WwwRoot = "$ScriptDir\$OutputDir\wwwroot"
     if (Test-Path $WwwRoot) { Remove-Item -Recurse -Force $WwwRoot }

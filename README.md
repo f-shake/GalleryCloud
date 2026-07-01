@@ -20,10 +20,19 @@ npm run dev
 ## 一键发布
 
 ```powershell
-.\publish.ps1
+.\publish.ps1                        # 全量构建（前端 + 后端 AOT + 复制静态资源）
+.\publish.ps1 -BackendOnly           # 只构建后端
+.\publish.ps1 -FrontendOnly          # 只构建前端
+.\publish.ps1 -NoCopy                # 全量构建但跳过 wwwroot 复制
 ```
 
-输出目录 `publish/`，运行 `./GalleryCloud.Api`，浏览器打开 http://localhost:5000。
+输出目录 `publish/`，运行 `./GalleryCloud.Api.exe`，浏览器打开 http://localhost:5000。
+
+## 数据库迁移
+
+```bash
+dotnet ef migrations add <名称>
+```
 
 ## 技术栈
 
@@ -32,6 +41,7 @@ npm run dev
 | 后端 | .NET 10 + EF Core + SQLite |
 | 图像 | SixLabors.ImageSharp 3.x |
 | 前端 | Vue 3 + TypeScript + Element Plus |
+| 地图 | ArcGIS JS API |
 | 认证 | JWT |
 
 ## 初始配置
@@ -44,8 +54,8 @@ npm run dev
 ## 特性
 
 - 时间线浏览（按天/月/平铺，缩放联动）
-- 文件夹树浏览
-- 地图视图（GPS 聚类，管理员可配底图）
+- 文件夹树浏览（多根目录支持）
+- 地图视图（GPS 聚类/缩略图散点，可切换底图）
 - 多维度搜索
 - 标签与收藏
 - 缩略图按需生成 + 磁盘缓存

@@ -128,7 +128,7 @@ public class AppDbContext : DbContext
             e.Property(x => x.Id).HasMaxLength(32);
             e.Property(x => x.UserId).HasMaxLength(32).IsRequired();
             e.Property(x => x.Mode).HasMaxLength(16).IsRequired();
-            e.HasOne(x => x.User).WithMany().HasForeignKey(x => x.UserId).OnDelete(DeleteBehavior.Cascade);
+            e.HasOne(x => x.User).WithMany().HasForeignKey(x => x.UserId).IsRequired(false).OnDelete(DeleteBehavior.Cascade);
         });
 
         // --- SystemSetting ---
