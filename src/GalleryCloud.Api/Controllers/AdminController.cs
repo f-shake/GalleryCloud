@@ -24,10 +24,12 @@ public class AdminController : ControllerBase
     private readonly IAuthService _authService;
     private readonly UserContext _userContext;
     private readonly FileWatcherService _fileWatcher;
+    private readonly ILogger<AdminController> _logger;
 
     public AdminController(AppDbContext db, ThumbnailDbContext thumbDb, IScanService scanService,
         ISettingService settingService, IThumbnailService thumbnailService, IAuthService authService,
-        UserContext userContext, FileWatcherService fileWatcher)
+        UserContext userContext, FileWatcherService fileWatcher,
+        ILogger<AdminController> logger)
     {
         _db = db;
         _thumbDb = thumbDb;
@@ -37,6 +39,7 @@ public class AdminController : ControllerBase
         _authService = authService;
         _userContext = userContext;
         _fileWatcher = fileWatcher;
+        _logger = logger;
     }
 
     // ==================== Users ====================
@@ -136,7 +139,47 @@ public class AdminController : ControllerBase
             }
         }
 
+        // Replace root paths if provided
+        if (request.RootPaths != null)
+        {
+            await CancelTasksForUserAsync(id);
+
+            var valid = request.RootPaths.Where(p => !string.IsNullOrWhiteSpace(p)).Select(p => p.Trim()).ToList();
+            if (valid.Count == 0)
+                return BadRequest(new ErrorResult("至少需要一个根目录"));
+            if (HasNesting(valid))
+                return BadRequest(new ErrorResult("根目录不能相互嵌套"));
+
+            var existing = await _db.UserRoots.Where(r => r.UserId == id && !r.IsDeleted).ToListAsync();
+            var existingByPath = existing.ToDictionary(r => r.RootPath, StringComparer.OrdinalIgnoreCase);
+
+            // Soft-delete roots that were removed from the list
+            foreach (var root in existing)
+            {
+                if (!valid.Contains(root.RootPath, StringComparer.OrdinalIgnoreCase))
+                {
+                    root.IsDeleted = true;
+                    root.DeletedAt = DateTime.UtcNow;
+                    _fileWatcher.UnwatchRoot(id, root.Id);
+                }
+            }
+
+            // Add truly new roots
+            foreach (var path in valid)
+            {
+                if (!existingByPath.ContainsKey(path))
+                {
+                    var root = new UserRoot { UserId = id, RootPath = path };
+                    _db.UserRoots.Add(root);
+                    _fileWatcher.WatchRoot(root);
+                }
+            }
+
+            // Note: photos of removed roots remain in DB — they are filtered out at query time
+        }
+
         await _db.SaveChangesAsync();
+
         return Ok(new MessageResult("Updated"));
     }
 
@@ -170,6 +213,9 @@ public class AdminController : ControllerBase
         if (string.IsNullOrWhiteSpace(request.RootPath))
             return BadRequest(new ErrorResult("RootPath is required"));
 
+        // Cancel any running tasks for this user before modifying roots
+        await CancelTasksForUserAsync(userId);
+
         var user = await _db.Users.FindAsync(userId);
         if (user == null) return NotFound();
 
@@ -199,6 +245,9 @@ public class AdminController : ControllerBase
     [HttpDelete("users/{userId}/roots/{rootId}")]
     public async Task<IActionResult> DeleteUserRoot(string userId, string rootId)
     {
+        // Cancel any running tasks for this user before modifying roots
+        await CancelTasksForUserAsync(userId);
+
         var root = await _db.UserRoots.FirstOrDefaultAsync(r => r.Id == rootId && r.UserId == userId);
         if (root == null) return NotFound();
 
@@ -206,14 +255,7 @@ public class AdminController : ControllerBase
         root.IsDeleted = true;
         root.DeletedAt = DateTime.UtcNow;
 
-        // Soft-delete all photos in this root
-        var photos = await _db.Photos.Where(p => p.RootId == rootId).ToListAsync();
-        foreach (var photo in photos)
-        {
-            photo.IsDeleted = true;
-            photo.DeletedAt = DateTime.UtcNow;
-            photo.UpdatedAt = DateTime.UtcNow;
-        }
+        // Photos remain in DB — filtered out at query time by active root check
 
         await _db.SaveChangesAsync();
 
@@ -249,7 +291,9 @@ public class AdminController : ControllerBase
     public async Task<IActionResult> TriggerScan()
     {
         if (_scanService.Status.IsRunning)
-            return Conflict(new ErrorResult("Scan is already running"));
+            return Conflict(new ErrorResult("当前有扫描任务正在运行，请稍后再试"));
+        if (_thumbnailService.RegenerationStatus.IsRunning)
+            return Conflict(new ErrorResult("当前有缩略图生成任务正在运行，无法同时扫描，请稍后再试"));
 
         _ = Task.Run(() => _scanService.TriggerFullScanForAllUsersAsync());
         return Ok(new MessageResult("Scan started"));
@@ -259,7 +303,9 @@ public class AdminController : ControllerBase
     public async Task<IActionResult> TriggerIncrementalScan()
     {
         if (_scanService.Status.IsRunning)
-            return Conflict(new ErrorResult("Scan is already running"));
+            return Conflict(new ErrorResult("当前有扫描任务正在运行，请稍后再试"));
+        if (_thumbnailService.RegenerationStatus.IsRunning)
+            return Conflict(new ErrorResult("当前有缩略图生成任务正在运行，无法同时扫描，请稍后再试"));
 
         _ = Task.Run(() => _scanService.TriggerFullScanForAllUsersAsync());
         return Ok(new MessageResult("Incremental scan started"));
@@ -306,7 +352,9 @@ public class AdminController : ControllerBase
     public IActionResult RegenerateThumbnails([FromBody] ThumbnailGenerationRequest? request)
     {
         if (_thumbnailService.RegenerationStatus.IsRunning)
-            return Conflict(new ErrorResult("Thumbnail regeneration is already running"));
+            return Conflict(new ErrorResult("当前有缩略图生成任务正在运行，请稍后再试"));
+        if (_scanService.Status.IsRunning)
+            return Conflict(new ErrorResult("当前有扫描任务正在运行，无法生成缩略图，请稍后再试"));
 
         _ = Task.Run(() => _thumbnailService.RegenerateAllAsync(request?.Sizes));
         return Ok(new MessageResult("Thumbnail regeneration started"));
@@ -316,7 +364,9 @@ public class AdminController : ControllerBase
     public IActionResult FillMissingThumbnails([FromBody] ThumbnailGenerationRequest? request)
     {
         if (_thumbnailService.RegenerationStatus.IsRunning)
-            return Conflict(new ErrorResult("Thumbnail generation is already running"));
+            return Conflict(new ErrorResult("当前有缩略图生成任务正在运行，请稍后再试"));
+        if (_scanService.Status.IsRunning)
+            return Conflict(new ErrorResult("当前有扫描任务正在运行，无法生成缩略图，请稍后再试"));
 
         _ = Task.Run(() => _thumbnailService.FillMissingAsync(request?.Sizes));
         return Ok(new MessageResult("Fill-missing started"));
@@ -453,6 +503,26 @@ public class AdminController : ControllerBase
     }
 
     // ==================== Helpers ====================
+
+    private async Task CancelTasksForUserAsync(string userId)
+    {
+        if (_scanService.Status.IsRunning)
+        {
+            _logger.LogInformation("Cancelling scan because user {UserId} root is being modified", userId);
+            _scanService.Cancel();
+            // 等待扫描实际停止，最多等 10 秒
+            for (var i = 0; i < 100 && _scanService.Status.IsRunning; i++)
+                await Task.Delay(100);
+        }
+
+        if (_thumbnailService.RegenerationStatus.IsRunning)
+        {
+            _logger.LogInformation("Cancelling thumbnail generation because user {UserId} root is being modified", userId);
+            _thumbnailService.CancelGeneration();
+            for (var i = 0; i < 100 && _thumbnailService.RegenerationStatus.IsRunning; i++)
+                await Task.Delay(100);
+        }
+    }
 
     private static bool HasNesting(List<string> roots)
     {

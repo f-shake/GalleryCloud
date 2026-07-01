@@ -148,7 +148,7 @@ public class FolderNode
 
 public record CreateUserRequest(string Username, string Password, string? DisplayName, List<string> RootPaths);
 
-public record UpdateUserRequest(string? Password, string? DisplayName, bool? IsActive);
+public record UpdateUserRequest(string? Password, string? DisplayName, bool? IsActive, List<string>? RootPaths = null);
 
 public record UserListItem(string Id, string Username, string? DisplayName, bool IsActive, DateTime CreatedAt, List<UserRootDto> Roots);
 

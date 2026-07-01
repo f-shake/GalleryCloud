@@ -14,6 +14,7 @@ public class ScanService : IScanService
     private readonly ISettingService _settings;
     private readonly ILogger<ScanService> _logger;
     private readonly object _statusLock = new();
+    private readonly object _startLock = new();
     private ScanStatus _status = new();
     private CancellationTokenSource? _cts;
 
@@ -36,38 +37,34 @@ public class ScanService : IScanService
         _logger.LogInformation("Scan cancellation requested");
     }
 
-    public async Task TriggerFullScanAsync(string userId, CancellationToken ct = default)
-    {
-        if (Status.IsRunning) return;
-        await RunWithStatusAsync(userId, ScanMode.Full, ct);
-    }
+    public Task TriggerFullScanAsync(string userId, CancellationToken ct = default)
+        => RunWithStatusLockedAsync(userId, ScanMode.Full, ct);
 
-    public async Task TriggerIncrementalScanAsync(string userId, CancellationToken ct = default)
-    {
-        if (Status.IsRunning) return;
-        await RunWithStatusAsync(userId, ScanMode.Incremental, ct);
-    }
+    public Task TriggerIncrementalScanAsync(string userId, CancellationToken ct = default)
+        => RunWithStatusLockedAsync(userId, ScanMode.Incremental, ct);
 
     public async Task TriggerFullScanForAllUsersAsync(CancellationToken ct = default)
     {
-        if (Status.IsRunning) return;
-
-        _cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
-        var linkedCt = _cts.Token;
-
-        Status = new ScanStatus { IsRunning = true, Mode = "full", StartedAt = DateTime.UtcNow };
+        CancellationTokenSource? cts;
+        lock (_startLock)
+        {
+            if (Status.IsRunning) return;
+            cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            _cts = cts;
+            Status = new ScanStatus { IsRunning = true, Mode = "full", StartedAt = DateTime.UtcNow };
+        }
 
         try
         {
             using var scope = _scopeFactory.CreateScope();
             var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-            var users = await db.Users.Where(u => !u.IsDeleted).ToListAsync(linkedCt);
+            var users = await db.Users.Where(u => !u.IsDeleted).ToListAsync(cts.Token);
 
             foreach (var user in users)
             {
-                if (linkedCt.IsCancellationRequested) break;
+                if (cts.Token.IsCancellationRequested) break;
                 Status = Status with { UserId = user.Id };
-                await RunScanAsync(user.Id, ScanMode.Full, linkedCt);
+                await RunScanAsync(user.Id, ScanMode.Full, cts.Token);
             }
         }
         catch (OperationCanceledException)
@@ -76,22 +73,29 @@ public class ScanService : IScanService
         }
         finally
         {
-            _cts?.Dispose();
-            _cts = null;
-            Status = new ScanStatus();
+            lock (_startLock)
+            {
+                _cts?.Dispose();
+                _cts = null;
+                Status = new ScanStatus();
+            }
         }
     }
 
-    private async Task RunWithStatusAsync(string userId, ScanMode mode, CancellationToken ct)
+    private async Task RunWithStatusLockedAsync(string userId, ScanMode mode, CancellationToken ct)
     {
-        _cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
-        var linkedCt = _cts.Token;
-
-        Status = new ScanStatus { IsRunning = true, Mode = mode.ToString().ToLower(), UserId = userId, StartedAt = DateTime.UtcNow };
+        CancellationTokenSource? cts;
+        lock (_startLock)
+        {
+            if (Status.IsRunning) return;
+            cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            _cts = cts;
+            Status = new ScanStatus { IsRunning = true, Mode = mode.ToString().ToLower(), UserId = userId, StartedAt = DateTime.UtcNow };
+        }
 
         try
         {
-            await RunScanAsync(userId, mode, linkedCt);
+            await RunScanAsync(userId, mode, cts.Token);
         }
         catch (OperationCanceledException)
         {
@@ -99,9 +103,12 @@ public class ScanService : IScanService
         }
         finally
         {
-            _cts?.Dispose();
-            _cts = null;
-            Status = new ScanStatus();
+            lock (_startLock)
+            {
+                _cts?.Dispose();
+                _cts = null;
+                Status = new ScanStatus();
+            }
         }
     }
 
@@ -327,7 +334,11 @@ public class ScanService : IScanService
 
     public async Task RefreshExifAsync(string userId, CancellationToken ct = default)
     {
-        Status = new ScanStatus { IsRunning = true, Mode = "refreshexif", UserId = userId, StartedAt = DateTime.UtcNow };
+        lock (_startLock)
+        {
+            if (Status.IsRunning) return;
+            Status = new ScanStatus { IsRunning = true, Mode = "refreshexif", UserId = userId, StartedAt = DateTime.UtcNow };
+        }
 
         try
         {
@@ -383,7 +394,10 @@ public class ScanService : IScanService
         }
         finally
         {
-            Status = new ScanStatus();
+            lock (_startLock)
+            {
+                Status = new ScanStatus();
+            }
         }
     }
 

@@ -28,7 +28,8 @@ public class TimelineController : ControllerBase
         if (!_userContext.IsAuthenticated) return Unauthorized();
 
         var query = _db.Photos
-            .Where(p => p.UserId == _userContext.UserId && !p.IsDeleted && p.TakenAt != null)
+            .Where(p => p.UserId == _userContext.UserId && !p.IsDeleted && p.TakenAt != null
+                && _db.UserRoots.Any(r => r.Id == p.RootId && !r.IsDeleted))
             .OrderByDescending(p => p.TakenAt);
 
         return groupLevel switch
@@ -166,7 +167,8 @@ public class TimelineController : ControllerBase
         if (!_userContext.IsAuthenticated) return Unauthorized();
 
         var baseQuery = _db.Photos
-            .Where(p => p.UserId == _userContext.UserId && !p.IsDeleted && p.TakenAt != null);
+            .Where(p => p.UserId == _userContext.UserId && !p.IsDeleted && p.TakenAt != null
+                && _db.UserRoots.Any(r => r.Id == p.RootId && !r.IsDeleted));
 
         DateTime? fromDate = null, toDate = null;
         if (!string.IsNullOrEmpty(from) && DateTime.TryParse(from, out var fd)) fromDate = fd;

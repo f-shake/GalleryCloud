@@ -35,7 +35,7 @@ public class FavoritesController : ControllerBase
         var pageIds = photoIds.Skip((page - 1) * limit).Take(limit).ToList();
 
         var photos = await _db.Photos
-            .Where(p => pageIds.Contains(p.Id))
+            .Where(p => pageIds.Contains(p.Id) && _db.UserRoots.Any(r => r.Id == p.RootId && !r.IsDeleted))
             .Select(p => new PhotoItem(
                 p.Id, p.FileName, p.FileFormat,
                 p.Width, p.Height, p.Orientation,

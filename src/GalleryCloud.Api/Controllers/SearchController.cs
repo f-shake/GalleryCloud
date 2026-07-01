@@ -33,7 +33,8 @@ public class SearchController : ControllerBase
     {
         if (!_userContext.IsAuthenticated) return Unauthorized();
 
-        var query = _db.Photos.Where(p => p.UserId == _userContext.UserId);
+        var query = _db.Photos.Where(p => p.UserId == _userContext.UserId
+            && _db.UserRoots.Any(r => r.Id == p.RootId && !r.IsDeleted));
 
         // Soft delete filter
         if (isDeleted == true)

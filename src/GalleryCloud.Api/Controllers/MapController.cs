@@ -28,6 +28,7 @@ public class MapController : ControllerBase
 
         var points = await _db.Photos
             .Where(p => p.UserId == _userContext.UserId && !p.IsDeleted
+                && _db.UserRoots.Any(r => r.Id == p.RootId && !r.IsDeleted)
                 && p.Latitude != null && p.Longitude != null)
             .Select(p => new MapPhotoPoint(p.Id, p.FileName, p.Latitude!.Value, p.Longitude!.Value,
                 p.TakenAt, p.Width, p.Height))
@@ -47,6 +48,7 @@ public class MapController : ControllerBase
 
         var photos = await _db.Photos
             .Where(p => p.UserId == _userContext.UserId && !p.IsDeleted
+                && _db.UserRoots.Any(r => r.Id == p.RootId && !r.IsDeleted)
                 && p.Latitude != null && p.Longitude != null
                 && (p.Latitude!.Value - lat) * (p.Latitude!.Value - lat)
                     + (p.Longitude!.Value - lng) * (p.Longitude!.Value - lng) < radius * radius)
@@ -69,6 +71,7 @@ public class MapController : ControllerBase
 
         var points = await _db.Photos
             .Where(p => p.UserId == _userContext.UserId && !p.IsDeleted
+                && _db.UserRoots.Any(r => r.Id == p.RootId && !r.IsDeleted)
                 && p.Latitude != null && p.Longitude != null)
             .Select(p => new MapPointItem(
                 p.Id, p.Latitude, p.Longitude, p.FileName, p.TakenAt

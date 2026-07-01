@@ -1,6 +1,7 @@
 using System.Text.Json.Serialization;
 using GalleryCloud.Core.Interfaces;
 using GalleryCloud.Core.Entities;
+using Microsoft.AspNetCore.Mvc;
 
 namespace GalleryCloud.Api.Dtos;
 
@@ -84,6 +85,9 @@ namespace GalleryCloud.Api.Dtos;
 
 // Dictionary for admin settings update
 [JsonSerializable(typeof(Dictionary<string, string>))]
+
+// ASP.NET Core auto-converts 4xx responses to ProblemDetails
+[JsonSerializable(typeof(ProblemDetails))]
 
 [JsonSourceGenerationOptions(
     PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase,

@@ -19,14 +19,14 @@ const loading = ref(true)
 const showDialog = ref(false)
 const isEdit = ref(false)
 const form = ref({ id: '', username: '', password: '', displayName: '', rootPaths: [] as string[], isActive: true })
-const editRoots = ref<UserRoot[]>([])
-const newRootPath = ref('')
+const editRootPaths = ref<string[]>([])
 const showRootsDialog = ref(false)
 const editingUser = ref<string | null>(null)
+const saving = ref(false)
 
 // Folder browser state
 const showFolderBrowser = ref(false)
-const folderBrowserTarget = ref<{ mode: 'create'; index: number } | { mode: 'edit' } | null>(null)
+const folderBrowserTarget = ref<{ mode: 'create'; index: number } | { mode: 'edit'; index: number } | null>(null)
 
 function openFolderBrowser(target: typeof folderBrowserTarget.value) {
   folderBrowserTarget.value = target
@@ -38,8 +38,8 @@ function onFolderSelected(path: string) {
   if (!target) return
   if (target.mode === 'create') {
     form.value.rootPaths[target.index] = path
-  } else if (target.mode === 'edit') {
-    newRootPath.value = path
+  } else {
+    editRootPaths.value[target.index] = path
   }
 }
 
@@ -61,10 +61,7 @@ function openCreate() {
 async function openEdit(u: UserRow) {
   isEdit.value = true
   form.value = { id: u.id, username: u.username, password: '', displayName: u.displayName || '', rootPaths: [], isActive: u.isActive }
-  try {
-    const r = await client.get(`/admin/users/${u.id}/roots`)
-    editRoots.value = r.data
-  } catch { editRoots.value = [] }
+  editRootPaths.value = u.roots.map(r => r.rootPath)
   editingUser.value = u.id
   showRootsDialog.value = true
 }
@@ -72,14 +69,19 @@ async function openEdit(u: UserRow) {
 function closeEdit() {
   showRootsDialog.value = false
   editingUser.value = null
-  editRoots.value = []
-  newRootPath.value = ''
+  editRootPaths.value = []
 }
 
 async function save() {
+  saving.value = true
   try {
     if (isEdit.value) {
-      const body: any = { displayName: form.value.displayName, isActive: form.value.isActive }
+      const rootPaths = editRootPaths.value.filter(p => p.trim())
+      if (rootPaths.length === 0) {
+        ElMessage.error('至少需要一个根目录')
+        return
+      }
+      const body: any = { displayName: form.value.displayName, isActive: form.value.isActive, rootPaths }
       if (form.value.password) body.password = form.value.password
       await client.put(`/admin/users/${form.value.id}`, body)
       showRootsDialog.value = false
@@ -95,27 +97,15 @@ async function save() {
     await loadUsers()
     ElMessage.success('保存成功')
   } catch (e: any) { ElMessage.error(e.response?.data?.error || '操作失败') }
+  finally { saving.value = false }
 }
 
-async function addRoot() {
-  if (!newRootPath.value.trim()) return
-  try {
-    await client.post(`/admin/users/${editingUser.value}/roots`, { rootPath: newRootPath.value.trim() })
-    newRootPath.value = ''
-    const r = await client.get(`/admin/users/${editingUser.value}/roots`)
-    editRoots.value = r.data
-    await loadUsers()
-    ElMessage.success('根目录已添加')
-  } catch (e: any) { ElMessage.error(e.response?.data?.error || '添加失败') }
+function addRoot() {
+  editRootPaths.value.push('')
 }
 
-async function removeRoot(rootId: string) {
-  try {
-    await client.delete(`/admin/users/${editingUser.value}/roots/${rootId}`)
-    editRoots.value = editRoots.value.filter(r => r.id !== rootId)
-    await loadUsers()
-    ElMessage.success('根目录已删除')
-  } catch (e: any) { ElMessage.error(e.response?.data?.error || '删除失败') }
+function removeRoot(index: number) {
+  editRootPaths.value.splice(index, 1)
 }
 
 async function toggleUser(u: UserRow) {
@@ -171,7 +161,7 @@ async function toggleUser(u: UserRow) {
           <div style="width:100%">
             <div v-for="(_, i) in form.rootPaths" :key="i" style="display:flex;gap:4px;margin-bottom:4px;align-items:center">
               <el-input v-model="form.rootPaths[i]" placeholder="输入目录路径或点击浏览选择" />
-              <el-button type="primary" @click="openFolderBrowser({ mode: 'create', index: i })" size="small">浏览</el-button>
+              <el-button type="primary" @click="openFolderBrowser({ mode: 'create', index: i })" >浏览</el-button>
               <el-button @click="form.rootPaths.splice(i, 1)" :icon="'Delete'" circle size="small" />
             </div>
             <el-button size="small" @click="form.rootPaths.push('')" :icon="'Plus'" style="margin-top:4px" />
@@ -180,7 +170,7 @@ async function toggleUser(u: UserRow) {
       </el-form>
       <template #footer>
         <el-button @click="showDialog = false">取消</el-button>
-        <el-button type="primary" @click="save">保存</el-button>
+        <el-button type="primary" @click="save" :loading="saving">保存</el-button>
       </template>
     </el-dialog>
 
@@ -192,21 +182,18 @@ async function toggleUser(u: UserRow) {
         <el-form-item label="显示名"><el-input v-model="form.displayName" /></el-form-item>
         <el-form-item label="根目录">
           <div style="width:100%">
-            <div v-for="root in editRoots" :key="root.id" style="display:flex;gap:4px;margin-bottom:4px;align-items:center">
-              <el-input :model-value="root.rootPath" disabled />
-              <el-button @click="removeRoot(root.id)" type="danger" :icon="'Delete'" circle size="small" />
+            <div v-for="(p, i) in editRootPaths" :key="i" style="display:flex;gap:4px;margin-bottom:4px;align-items:center">
+              <el-input v-model="editRootPaths[i]" placeholder="输入目录路径或点击浏览选择" />
+              <el-button type="primary" @click="openFolderBrowser({ mode: 'edit', index: i })" >浏览</el-button>
+              <el-button @click="removeRoot(i)" :icon="'Delete'" circle size="small" />
             </div>
-            <div style="display:flex;gap:4px;align-items:center">
-              <el-input v-model="newRootPath" placeholder="添加新目录" />
-              <el-button type="primary" @click="openFolderBrowser({ mode: 'edit' })" size="small">浏览</el-button>
-              <el-button @click="addRoot" :icon="'Plus'" circle size="small" />
-            </div>
+            <el-button size="small" @click="addRoot" :icon="'Plus'" style="margin-top:4px" />
           </div>
         </el-form-item>
       </el-form>
       <template #footer>
         <el-button @click="closeEdit">取消</el-button>
-        <el-button type="primary" @click="save">保存</el-button>
+        <el-button type="primary" @click="save" :loading="saving">保存</el-button>
       </template>
     </el-dialog>
 

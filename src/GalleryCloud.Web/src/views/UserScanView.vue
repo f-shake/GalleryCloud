@@ -61,17 +61,28 @@ async function loadLogs() { loading.value = true; try { const r = await client.g
 
 async function triggerScan() {
   triggering.value = true
-  try { await client.post('/user/scan/trigger') } catch { /* */ }
+  try { await client.post('/user/scan/trigger') }
+  catch (e: any) {
+    triggering.value = false
+    ElMessage.warning(e.response?.data?.error || '操作失败')
+  }
 }
 async function triggerRefreshExif() {
   refreshing.value = true
   try { await client.post('/user/scan/refresh-exif') }
-  catch { /* */ }
+  catch (e: any) {
+    refreshing.value = false
+    ElMessage.warning(e.response?.data?.error || '操作失败')
+  }
 }
 
 async function cancelScan() {
   cancelling.value = true
-  try { await client.post('/user/scan/cancel') } catch { /* */ }
+  try { await client.post('/user/scan/cancel') }
+  catch (e: any) {
+    cancelling.value = false
+    ElMessage.warning(e.response?.data?.error || '取消失败')
+  }
 }
 
 // ── Thumbnail dialog ──

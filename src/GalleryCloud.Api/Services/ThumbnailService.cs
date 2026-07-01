@@ -28,6 +28,7 @@ public class ThumbnailService : IThumbnailService
     private readonly Channel<(string PhotoId, ThumbnailSize Size, int Width)> _channel
         = Channel.CreateUnbounded<(string, ThumbnailSize, int)>();
 
+    private readonly object _regLock = new();
     private ThumbnailGenerationStatus _regenerationStatus = new();
     private CancellationTokenSource? _regenerationCts;
 
@@ -259,10 +260,14 @@ public class ThumbnailService : IThumbnailService
     // ── Fill missing ────────────────────────────────────────────
     public async Task FillMissingAsync(List<string>? sizes = null, CancellationToken ct = default)
     {
-        if (RegenerationStatus.IsRunning) return;
-
-        _regenerationCts?.Cancel();
-        _regenerationCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        CancellationTokenSource? cts;
+        lock (_regLock)
+        {
+            if (RegenerationStatus.IsRunning) return;
+            _regenerationCts?.Cancel();
+            cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            _regenerationCts = cts;
+        }
 
         var allSizes = new[] { ("grid", ThumbnailSize.Grid, 400), ("preview", ThumbnailSize.Preview, 0) };
         var selected = sizes is { Count: > 0 }
@@ -274,10 +279,10 @@ public class ThumbnailService : IThumbnailService
         var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
         var thumbDb = scope.ServiceProvider.GetRequiredService<ThumbnailDbContext>();
 
-        var photoIds = await db.Photos.Where(p => !p.IsDeleted).Select(p => p.Id).ToListAsync(_regenerationCts.Token);
+        var photoIds = await db.Photos.Where(p => !p.IsDeleted).Select(p => p.Id).ToListAsync(cts.Token);
         var cachedKeys = await thumbDb.ThumbnailCaches
             .Select(t => new { t.PhotoId, t.Size })
-            .ToListAsync(_regenerationCts.Token);
+            .ToListAsync(cts.Token);
         var cachedSet = new HashSet<string>(cachedKeys.Select(c => $"{c.PhotoId}:{c.Size}"));
 
         var missing = new List<(string PhotoId, ThumbnailSize Size, int Width)>();
@@ -292,26 +297,25 @@ public class ThumbnailService : IThumbnailService
 
         if (missing.Count == 0)
         {
-            _regenerationCts.Dispose();
-            _regenerationCts = null;
-            RegenerationStatus = new ThumbnailGenerationStatus();
+            cts.Dispose();
+            lock (_regLock) { _regenerationCts = null; RegenerationStatus = new(); }
             return;
         }
 
-        RegenerationStatus = new ThumbnailGenerationStatus { IsRunning = true, Total = missing.Count, Processed = 0 };
+        lock (_regLock) { RegenerationStatus = new ThumbnailGenerationStatus { IsRunning = true, Total = missing.Count, Processed = 0 }; }
         var parallel = await _settings.GetAsync(SettingKeys.ThumbnailParallelThreads, 4);
         var semaphore = new SemaphoreSlim(Math.Max(1, parallel));
 
         var tasks = missing.Select(async item =>
         {
             var (pid, sz, w) = item;
-            try { await semaphore.WaitAsync(_regenerationCts.Token); }
+            try { await semaphore.WaitAsync(cts.Token); }
             catch { return; }
             try
             {
-                if (_regenerationCts.Token.IsCancellationRequested) return;
+                if (cts.Token.IsCancellationRequested) return;
                 Interlocked.Increment(ref _inProgressCount);
-                try { await InternalGenerateAsync(pid, sz, w, _regenerationCts.Token); }
+                try { await InternalGenerateAsync(pid, sz, w, cts.Token); }
                 catch { }
                 finally { Interlocked.Decrement(ref _inProgressCount); }
                 RegenerationStatus = RegenerationStatus with { Processed = RegenerationStatus.Processed + 1 };
@@ -320,16 +324,20 @@ public class ThumbnailService : IThumbnailService
         });
         await Task.WhenAll(tasks);
 
-        RegenerationStatus = new ThumbnailGenerationStatus();
+        lock (_regLock) { RegenerationStatus = new(); }
     }
 
     // ── Regenerate all ─────────────────────────────────────────
     public async Task RegenerateAllAsync(List<string>? sizes = null, CancellationToken ct = default)
     {
-        if (RegenerationStatus.IsRunning) return;
-
-        _regenerationCts?.Cancel();
-        _regenerationCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        CancellationTokenSource? cts;
+        lock (_regLock)
+        {
+            if (RegenerationStatus.IsRunning) return;
+            _regenerationCts?.Cancel();
+            cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            _regenerationCts = cts;
+        }
 
         var allSizes = new[] { (ThumbnailSize.Grid, 400, "grid"), (ThumbnailSize.Preview, 0, "preview") };
         var selected = sizes is { Count: > 0 }
@@ -344,31 +352,31 @@ public class ThumbnailService : IThumbnailService
         // Clear cache records for selected sizes
         foreach (var (_, _, sizeKey) in selected)
         {
-            var toRemove = await thumbDb.ThumbnailCaches.Where(t => t.Size == sizeKey).ToListAsync(_regenerationCts.Token);
+            var toRemove = await thumbDb.ThumbnailCaches.Where(t => t.Size == sizeKey).ToListAsync(cts.Token);
             thumbDb.ThumbnailCaches.RemoveRange(toRemove);
         }
-        await thumbDb.SaveChangesAsync(_regenerationCts.Token);
+        await thumbDb.SaveChangesAsync(cts.Token);
 
-        var photoIds = await db.Photos.Where(p => !p.IsDeleted).Select(p => p.Id).ToListAsync(_regenerationCts.Token);
+        var photoIds = await db.Photos.Where(p => !p.IsDeleted).Select(p => p.Id).ToListAsync(cts.Token);
         var workItems = new List<(string PhotoId, ThumbnailSize Size, int Width)>();
         foreach (var pid in photoIds)
             foreach (var (sz, w, _) in selected)
                 workItems.Add((pid, sz, w));
 
-        RegenerationStatus = new ThumbnailGenerationStatus { IsRunning = true, Total = workItems.Count, Processed = 0 };
+        lock (_regLock) { RegenerationStatus = new ThumbnailGenerationStatus { IsRunning = true, Total = workItems.Count, Processed = 0 }; }
         var parallel = await _settings.GetAsync(SettingKeys.ThumbnailParallelThreads, 4);
         var semaphore = new SemaphoreSlim(Math.Max(1, parallel));
 
         var tasks = workItems.Select(async item =>
         {
             var (pid, sz, w) = item;
-            try { await semaphore.WaitAsync(_regenerationCts.Token); }
+            try { await semaphore.WaitAsync(cts.Token); }
             catch { return; }
             try
             {
-                if (_regenerationCts.Token.IsCancellationRequested) return;
+                if (cts.Token.IsCancellationRequested) return;
                 Interlocked.Increment(ref _inProgressCount);
-                try { await InternalGenerateAsync(pid, sz, w, _regenerationCts.Token); }
+                try { await InternalGenerateAsync(pid, sz, w, cts.Token); }
                 catch { }
                 finally { Interlocked.Decrement(ref _inProgressCount); }
                 RegenerationStatus = RegenerationStatus with { Processed = RegenerationStatus.Processed + 1 };
@@ -377,7 +385,7 @@ public class ThumbnailService : IThumbnailService
         });
         await Task.WhenAll(tasks);
 
-        RegenerationStatus = new ThumbnailGenerationStatus();
+        lock (_regLock) { RegenerationStatus = new(); }
     }
 
     private void CacheInMemory(string key, byte[] data)

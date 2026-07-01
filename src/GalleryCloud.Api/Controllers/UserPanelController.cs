@@ -36,7 +36,9 @@ public class UserPanelController : ControllerBase
             return Unauthorized();
 
         if (_scanService.Status.IsRunning)
-            return Conflict(new ErrorResult("Scan is already running"));
+            return Conflict(new ErrorResult("当前有扫描任务正在运行，请稍后再试"));
+        if (_thumbnailService.RegenerationStatus.IsRunning)
+            return Conflict(new ErrorResult("当前有缩略图生成任务正在运行，无法同时扫描，请稍后再试"));
 
         _ = Task.Run(() => _scanService.TriggerFullScanAsync(_userContext.UserId));
         return Ok(new MessageResult("Scan started"));
@@ -49,7 +51,9 @@ public class UserPanelController : ControllerBase
             return Unauthorized();
 
         if (_scanService.Status.IsRunning)
-            return Conflict(new ErrorResult("Scan is already running"));
+            return Conflict(new ErrorResult("当前有扫描任务正在运行，请稍后再试"));
+        if (_thumbnailService.RegenerationStatus.IsRunning)
+            return Conflict(new ErrorResult("当前有缩略图生成任务正在运行，无法同时扫描，请稍后再试"));
 
         _ = Task.Run(() => _scanService.TriggerIncrementalScanAsync(_userContext.UserId));
         return Ok(new MessageResult("Incremental scan started"));
@@ -84,7 +88,9 @@ public class UserPanelController : ControllerBase
             return Unauthorized();
 
         if (_scanService.Status.IsRunning)
-            return Conflict(new ErrorResult("Scan is already running"));
+            return Conflict(new ErrorResult("当前有扫描任务正在运行，请稍后再试"));
+        if (_thumbnailService.RegenerationStatus.IsRunning)
+            return Conflict(new ErrorResult("当前有缩略图生成任务正在运行，无法刷新EXIF，请稍后再试"));
 
         _ = Task.Run(() => _scanService.RefreshExifAsync(_userContext.UserId));
         return Ok(new MessageResult("EXIF refresh started"));
@@ -142,7 +148,9 @@ public class UserPanelController : ControllerBase
     public IActionResult FillMissingThumbnails([FromBody] ThumbnailGenerationRequest? request)
     {
         if (_thumbnailService.RegenerationStatus.IsRunning)
-            return Conflict(new ErrorResult("Thumbnail generation is already running"));
+            return Conflict(new ErrorResult("当前有缩略图生成任务正在运行，请稍后再试"));
+        if (_scanService.Status.IsRunning)
+            return Conflict(new ErrorResult("当前有扫描任务正在运行，无法生成缩略图，请稍后再试"));
 
         _ = Task.Run(() => _thumbnailService.FillMissingAsync(request?.Sizes));
         return Ok(new MessageResult("Fill-missing started"));
@@ -152,7 +160,9 @@ public class UserPanelController : ControllerBase
     public IActionResult RegenerateThumbnails([FromBody] ThumbnailGenerationRequest? request)
     {
         if (_thumbnailService.RegenerationStatus.IsRunning)
-            return Conflict(new ErrorResult("Thumbnail regeneration is already running"));
+            return Conflict(new ErrorResult("当前有缩略图生成任务正在运行，请稍后再试"));
+        if (_scanService.Status.IsRunning)
+            return Conflict(new ErrorResult("当前有扫描任务正在运行，无法生成缩略图，请稍后再试"));
 
         _ = Task.Run(() => _thumbnailService.RegenerateAllAsync(request?.Sizes));
         return Ok(new MessageResult("Thumbnail regeneration started"));

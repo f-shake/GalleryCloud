@@ -59,11 +59,19 @@ async function loadLogs() { loading.value = true; try { const r = await client.g
 
 async function triggerScan() {
   triggering.value = true
-  try { await client.post('/admin/scan/trigger') } catch { /* */ }
+  try { await client.post('/admin/scan/trigger') }
+  catch (e: any) {
+    triggering.value = false
+    ElMessage.warning(e.response?.data?.error || '操作失败')
+  }
 }
 async function cancelScan() {
   cancelling.value = true
-  try { await client.post('/admin/scan/cancel') } catch { /* */ }
+  try { await client.post('/admin/scan/cancel') }
+  catch (e: any) {
+    cancelling.value = false
+    ElMessage.warning(e.response?.data?.error || '取消失败')
+  }
 }
 
 // Block scan when thumbnail generation is running

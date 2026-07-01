@@ -35,7 +35,8 @@ public class PhotosController : ControllerBase
             return Unauthorized();
 
         var query = _db.Photos
-            .Where(p => p.UserId == _userContext.UserId && !p.IsDeleted)
+            .Where(p => p.UserId == _userContext.UserId && !p.IsDeleted
+                && _db.UserRoots.Any(r => r.Id == p.RootId && !r.IsDeleted))
             .OrderByDescending(p => p.TakenAt);
 
         var total = await query.CountAsync();
@@ -60,7 +61,8 @@ public class PhotosController : ControllerBase
             return Unauthorized();
 
         var photo = await _db.Photos
-            .FirstOrDefaultAsync(p => p.Id == id && p.UserId == _userContext.UserId && !p.IsDeleted);
+            .FirstOrDefaultAsync(p => p.Id == id && p.UserId == _userContext.UserId && !p.IsDeleted
+                && _db.UserRoots.Any(r => r.Id == p.RootId && !r.IsDeleted));
 
         if (photo == null)
             return NotFound();
@@ -85,7 +87,8 @@ public class PhotosController : ControllerBase
         if (!_userContext.IsAuthenticated) return Unauthorized();
 
         var query = _db.Photos
-            .Where(p => p.UserId == _userContext.UserId && !p.IsDeleted)
+            .Where(p => p.UserId == _userContext.UserId && !p.IsDeleted
+                && _db.UserRoots.Any(r => r.Id == p.RootId && !r.IsDeleted))
             .OrderByDescending(p => p.TakenAt);
 
         if (fromYear.HasValue)
@@ -107,7 +110,8 @@ public class PhotosController : ControllerBase
             return Unauthorized();
 
         var photo = await _db.Photos
-            .FirstOrDefaultAsync(p => p.Id == id && p.UserId == _userContext.UserId && !p.IsDeleted);
+            .FirstOrDefaultAsync(p => p.Id == id && p.UserId == _userContext.UserId && !p.IsDeleted
+                && _db.UserRoots.Any(r => r.Id == p.RootId && !r.IsDeleted));
 
         if (photo == null)
             return NotFound();
