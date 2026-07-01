@@ -67,22 +67,27 @@ const carouselStyle = computed(() => {
 })
 
 // ── Info panel swipe ──
-const infoDragY = ref(0); const infoSnapping = ref(false); let _infoTouchStartY = 0
+const infoDragY = ref(0); const infoSnapping = ref(false); let _infoTouchStartY = 0; let _touchDragActive = false
 function onInfoTouchStart(e: TouchEvent) {
   for (let i = 0; i < e.touches.length; i++) {
     const el = document.elementFromPoint(e.touches[i].clientX, e.touches[i].clientY)
-    if (el && el.closest('.map-embed')) return
+    if (el && el.closest('.map-embed')) { _touchDragActive = false; return }
   }
+  _touchDragActive = true
   _infoTouchStartY = e.touches[0].clientY; infoDragY.value = 0; infoSnapping.value = false
 }
-function onInfoTouchMove(e: TouchEvent) { const dy = e.touches[0].clientY - _infoTouchStartY; if (dy > 0) { infoDragY.value = dy; if (e.cancelable) e.preventDefault() } }
-function onInfoTouchEnd() { if (infoDragY.value > 60) { showInfo.value = false; infoDragY.value = 0 } else { infoSnapping.value = true; requestAnimationFrame(() => { infoDragY.value = 0 }); setTimeout(() => { infoSnapping.value = false }, 250) } }
+function onInfoTouchMove(e: TouchEvent) { if (!_touchDragActive) return; const dy = e.touches[0].clientY - _infoTouchStartY; if (dy > 0) { infoDragY.value = dy; if (e.cancelable) e.preventDefault() } }
+function onInfoTouchEnd() { if (!_touchDragActive) return; if (infoDragY.value > 60) { showInfo.value = false; infoDragY.value = 0 } else { infoSnapping.value = true; requestAnimationFrame(() => { infoDragY.value = 0 }); setTimeout(() => { infoSnapping.value = false }, 250) } }
 
 // Mouse drag on info panel (desktop)
-let _infoMouseStartY = 0
-function onInfoMouseDown(e: MouseEvent) { if ((e.target as HTMLElement)?.closest?.('.map-embed')) return; _infoMouseStartY = e.clientY; infoDragY.value = 0; infoSnapping.value = false; window.addEventListener('mousemove', onInfoMouseMove); window.addEventListener('mouseup', onInfoMouseUp) }
-function onInfoMouseMove(e: MouseEvent) { const dy = e.clientY - _infoMouseStartY; if (dy > 0) infoDragY.value = dy }
-function onInfoMouseUp() { window.removeEventListener('mousemove', onInfoMouseMove); window.removeEventListener('mouseup', onInfoMouseUp); if (infoDragY.value > 60) { showInfo.value = false; infoDragY.value = 0 } else { infoSnapping.value = true; requestAnimationFrame(() => { infoDragY.value = 0 }); setTimeout(() => { infoSnapping.value = false }, 250) } }
+let _infoMouseStartY = 0; let _mouseDragActive = false
+function onInfoMouseDown(e: MouseEvent) {
+  if ((e.target as HTMLElement)?.closest?.('.map-embed')) { _mouseDragActive = false; return }
+  _mouseDragActive = true
+  _infoMouseStartY = e.clientY; infoDragY.value = 0; infoSnapping.value = false; window.addEventListener('mousemove', onInfoMouseMove); window.addEventListener('mouseup', onInfoMouseUp)
+}
+function onInfoMouseMove(e: MouseEvent) { if (!_mouseDragActive) return; const dy = e.clientY - _infoMouseStartY; if (dy > 0) infoDragY.value = dy }
+function onInfoMouseUp() { window.removeEventListener('mousemove', onInfoMouseMove); window.removeEventListener('mouseup', onInfoMouseUp); if (!_mouseDragActive) return; if (infoDragY.value > 60) { showInfo.value = false; infoDragY.value = 0 } else { infoSnapping.value = true; requestAnimationFrame(() => { infoDragY.value = 0 }); setTimeout(() => { infoSnapping.value = false }, 250) } }
 
 // Swan-down to dismiss + swipe nav
 const dismissY = ref(0)
@@ -489,10 +494,10 @@ function jumpToMap() {
     <!-- Info panel — full height with map embed -->
     <Transition name="info-slide">
       <div v-if="showInfo && photo" class="pv-info" :class="{ 'pv-info--snapping': infoSnapping }" @click.stop
+        @touchstart.passive="onInfoTouchStart" @touchmove="onInfoTouchMove" @touchend="onInfoTouchEnd"
+        @mousedown="onInfoMouseDown"
         :style="infoDragY > 0 ? { transform: `translateY(${infoDragY}px)` } : undefined">
-        <div class="pv-info-handle" @click.stop="showInfo = false"
-          @touchstart.passive="onInfoTouchStart" @touchmove="onInfoTouchMove" @touchend="onInfoTouchEnd"
-          @mousedown="onInfoMouseDown" />
+        <div class="pv-info-handle" @click.stop="showInfo = false" />
         <div class="pv-info-body">
           <div class="info-split">
             <div class="info-left">
