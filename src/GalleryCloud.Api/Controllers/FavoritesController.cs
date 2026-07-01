@@ -50,6 +50,17 @@ public class FavoritesController : ControllerBase
         return Ok(new PhotoListResponse(total, page, limit, ordered));
     }
 
+    [HttpGet("check/{photoId}")]
+    public async Task<IActionResult> Check(string photoId)
+    {
+        if (!_userContext.IsAuthenticated) return Unauthorized();
+
+        var favorited = await _db.Favorites
+            .AnyAsync(f => f.UserId == _userContext.UserId && f.PhotoId == photoId);
+
+        return Ok(new FavoriteResult(favorited));
+    }
+
     [HttpPost("{photoId}")]
     public async Task<IActionResult> Add(string photoId)
     {

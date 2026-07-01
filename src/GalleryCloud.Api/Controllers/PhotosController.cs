@@ -66,7 +66,7 @@ public class PhotosController : ControllerBase
             return NotFound();
 
         return Ok(new PhotoDetail(
-            photo.Id, photo.FileName, photo.FileFormat, photo.FilePath,
+            photo.Id, photo.FileName, photo.FileFormat, photo.FilePath, photo.RootId,
             photo.Width, photo.Height, photo.Orientation,
             photo.TakenAt, photo.DeviceModel,
             photo.Latitude, photo.Longitude,

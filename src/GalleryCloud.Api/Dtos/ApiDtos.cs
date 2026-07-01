@@ -25,6 +25,7 @@ public record PhotoDetail(
     string FileName,
     string FileFormat,
     string FilePath,
+    string RootId,
     int? Width,
     int? Height,
     int Orientation,

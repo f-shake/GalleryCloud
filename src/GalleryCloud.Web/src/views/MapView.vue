@@ -4,10 +4,7 @@ import client from '../api/client'
 import { thumbUrl } from '../composables/useThumbnailUrl'
 import { usePhotoGrid } from '../composables/usePhotoGrid'
 import { usePhotoViewStore } from '../stores/photoViewStore'
-import Map from '@arcgis/core/Map'
-import MapView from '@arcgis/core/views/MapView'
-import Basemap from '@arcgis/core/Basemap'
-import WebTileLayer from '@arcgis/core/layers/WebTileLayer'
+import { useMap } from '../composables/useMap'
 import FeatureLayer from '@arcgis/core/layers/FeatureLayer'
 import Graphic from '@arcgis/core/Graphic'
 import Point from '@arcgis/core/geometry/Point'
@@ -21,16 +18,11 @@ interface MapPoint { id: string; latitude: number; longitude: number; fileName: 
 const viewStore = usePhotoViewStore()
 const { columns, zoomIn, zoomOut } = usePhotoGrid()
 const mapContainer = ref<HTMLDivElement | null>(null)
-const loading = ref(true)
+const { loading, initMap, switchBasemap, updateTileUrls, destroy } = useMap(mapContainer)
 const pointCount = ref(0)
 const basemap = ref<'normal' | 'satellite'>('normal')
 let allPoints: MapPoint[] = []
 const clusterView = ref<{ lat: number; lng: number; photos: any[]; groups: any[]; loading: boolean } | null>(null)
-
-let tileUrlNormal = 'https://tile.openstreetmap.org/{z}/{x}/{y}.png'
-let tileUrlSatellite = 'https://mt1.google.com/vt/lyrs=s&x={x}&y={y}&z={z}'
-let map: any = null
-let mapView: any = null
 
 function escapeHtml(s: string) {
   const d = document.createElement('div')
@@ -117,15 +109,6 @@ function buildLayer(points: MapPoint[]) {
   })
 }
 
-function switchBasemap(type: 'normal' | 'satellite') {
-  if (!map) return
-  basemap.value = type
-  const url = type === 'normal' ? tileUrlNormal : tileUrlSatellite
-  map.basemap = new Basemap({
-    baseLayers: [new WebTileLayer({ urlTemplate: url })]
-  })
-}
-
 function getRadiusFromZoom(zoom: number): number {
   if (zoom <= 5) return 3.0
   if (zoom <= 8) return 1.0
@@ -153,7 +136,6 @@ function groupByDate(photos: any[]) {
 function fetchClusterPhotos(lat: number, lng: number, zoom: number) {
   const r2 = getRadiusFromZoom(zoom) ** 2
   clusterView.value = { lat, lng, photos: [], groups: [], loading: true }
-  // Client-side filtering — instant, no network request
   setTimeout(() => {
     const nearby = allPoints
       .filter(p => {
@@ -172,9 +154,7 @@ function onPhotoClick(photoId: string, e: MouseEvent) {
   viewStore.show(photoId, { x: r.x, y: r.y, width: r.width, height: r.height }, img?.src)
 }
 
-function closeClusterView() {
-  clusterView.value = null
-}
+function closeClusterView() { clusterView.value = null }
 
 // Pinch zoom for cluster photo grid
 let pinchStart = 0, pinchEnd = 0
@@ -200,45 +180,29 @@ onMounted(async () => {
     ])
 
     const c = cfg.data
-    if (c.tileUrlNormal) tileUrlNormal = c.tileUrlNormal
-    if (c.tileUrlSatellite) tileUrlSatellite = c.tileUrlSatellite
-    basemap.value = c.defaultBasemap === 'satellite' ? 'satellite' : 'normal'
+    basemap.value = updateTileUrls(c.tileUrlNormal, c.tileUrlSatellite, c.defaultBasemap)
 
     const points: MapPoint[] = Array.isArray(pts.data) ? pts.data : []
     allPoints = points
     pointCount.value = points.length
 
-    const tileUrl = basemap.value === 'normal' ? tileUrlNormal : tileUrlSatellite
-    map = new Map({
-      basemap: new Basemap({
-        baseLayers: [new WebTileLayer({ urlTemplate: tileUrl })]
-      })
-    })
-
-    mapView = new MapView({
-      container: mapContainer.value!,
-      map,
-      center: [105, 35],
-      zoom: 4,
-    })
-
-    await mapView.when()
+    const instance = await initMap()
+    if (!instance) return
 
     if (points.length > 0) {
       const layer = buildLayer(points)
-      map.add(layer)
+      instance.map.add(layer)
 
       // Handle cluster click
-      mapView.on('click', (event: any) => {
-        mapView.hitTest(event).then((response: any) => {
+      instance.view.on('click', (event: any) => {
+        instance.view.hitTest(event).then((response: any) => {
           const hit = response.results?.[0]
           if (hit?.type === 'graphic') {
             const graphic = hit.graphic
-            // Check if it's a cluster (aggregate feature)
             const clusterCount = graphic.attributes?.cluster_count
             if (clusterCount > 0 && graphic.geometry?.latitude != null) {
               event.stopPropagation()
-              fetchClusterPhotos(graphic.geometry.latitude, graphic.geometry.longitude, mapView.zoom)
+              fetchClusterPhotos(graphic.geometry.latitude, graphic.geometry.longitude, instance.view.zoom)
             }
           }
         })
@@ -246,16 +210,16 @@ onMounted(async () => {
 
       // Pointer cursor + hover highlight on features
       let cursorOn = false, highlightHandle: any = null
-      const layerView = await mapView.whenLayerView(layer)
+      const layerView = await instance.view.whenLayerView(layer)
       layerView.highlightOptions = {
         color: [255, 193, 7],
         fillOpacity: 0.25,
         haloOpacity: 0.5,
       }
-      mapView.on('pointer-move', (event: any) => {
+      instance.view.on('pointer-move', (event: any) => {
         const el = mapContainer.value
         if (!el) return
-        mapView.hitTest(event).then((response: any) => {
+        instance.view.hitTest(event).then((response: any) => {
           const over = response.results?.length > 0
           if (over !== cursorOn) {
             cursorOn = over
@@ -269,28 +233,32 @@ onMounted(async () => {
         })
       })
     }
+
+    // Check for lat/lng query params to jump to a specific location
+    const params = new URLSearchParams(window.location.search)
+    const qlat = params.get('lat')
+    const qlng = params.get('lng')
+    if (qlat && qlng) {
+      const lat = parseFloat(qlat)
+      const lng = parseFloat(qlng)
+      if (!isNaN(lat) && !isNaN(lng)) {
+        instance.view.goTo({ center: [lng, lat], zoom: 16 }, { duration: 1000 })
+      }
+    }
   } catch { /* */ }
-  finally { loading.value = false }
 })
 
-onUnmounted(() => {
-  mapView?.destroy()
-  map = null
-  mapView = null
-})
+onUnmounted(() => destroy())
 </script>
 
 <template>
   <div class="map-root">
-    <!-- Map container -->
     <div ref="mapContainer" class="map-container"></div>
 
-    <!-- Loading overlay -->
     <div v-if="loading" class="map-loading">
       <el-icon class="is-loading" :size="32"><Loading /></el-icon>
     </div>
 
-    <!-- Floating toolbar -->
     <div v-show="!loading && !clusterView" class="map-toolbar">
       <span class="map-toolbar-info">{{ pointCount }} 个位置点</span>
       <div style="flex:1" />
@@ -300,7 +268,6 @@ onUnmounted(() => {
       </el-radio-group>
     </div>
 
-    <!-- Cluster photo list overlay -->
     <div v-if="clusterView" class="cluster-overlay" @touchstart="onTouchStart" @touchmove="onTouchMove" @touchend="onTouchEnd">
       <div class="cluster-overlay-header">
         <PhotoGridToolbar :count="clusterView.photos.length">
@@ -334,25 +301,19 @@ onUnmounted(() => {
 </template>
 
 <style>
-/* Map fills parent, remove el-main padding */
 .app-main:has(.map-root) { padding: 0; }
 .map-root { position: absolute; inset: 0; outline: none; }
 .map-container { width: 100%; height: 100%; }
-/* Kill ArcGIS blue focus outline */
 .esri-view .esri-view-surface:focus::after,
 .esri-view .esri-view-surface:focus-visible::after {
   outline: none !important;
 }
-
-/* Map container */
 .map-loading {
   position: absolute; inset: 0;
   display: flex; align-items: center; justify-content: center;
   background: var(--el-bg-color-page);
   z-index: 20; pointer-events: none;
 }
-
-/* Floating toolbar */
 .map-toolbar {
   position: absolute;
   bottom: 20px; left: 16px; right: 16px;
@@ -365,18 +326,9 @@ onUnmounted(() => {
   pointer-events: auto;
 }
 .map-toolbar-info { font-size: 13px; color: var(--el-text-color-secondary); }
-
-/* Popup styling */
 .map-popup button { cursor: pointer; }
-
-/* Override ArcGIS popup max-width for photo popups */
 .esri-popup__main-container { max-width: 280px !important; }
-
-/* Hide ArcGIS attribution */
 .esri-attribution { display: none !important; }
-
-
-/* Cluster photo list overlay */
 .cluster-overlay {
   position: absolute; inset: 0; z-index: 30;
   display: flex; flex-direction: column;
@@ -395,16 +347,8 @@ onUnmounted(() => {
   flex: 1; overflow-y: auto;
   padding: 12px 16px;
 }
-.cluster-group-header {
-  padding: 6px 0 4px 0;
-}
-.cluster-photo-grid {
-  display: grid;
-  gap: 4px;
-  padding-bottom: 8px;
-}
-
-/* Thumb cell styles (shared with TimelineView) */
+.cluster-group-header { padding: 6px 0 4px 0; }
+.cluster-photo-grid { display: grid; gap: 4px; padding-bottom: 8px; }
 .thumb-cell {
   aspect-ratio: 1;
   overflow: hidden;

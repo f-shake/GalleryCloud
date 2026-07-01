@@ -1,15 +1,28 @@
 <script setup lang="ts">
 import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
+import { useRouter } from 'vue-router'
 import client from '../api/client'
 import { ElMessage } from 'element-plus'
 import { thumbUrl } from '../composables/useThumbnailUrl'
 import { usePhotoViewStore } from '../stores/photoViewStore'
+import { useAuthStore } from '../stores/authStore'
+import MapEmbed from '../components/MapEmbed.vue'
 
+const router = useRouter()
 const store = usePhotoViewStore()
+const auth = useAuthStore()
 
 const photo = ref<any>(null)
 const favorited = ref(false)
 const showInfo = ref(false)
+const layoutMode = ref<'split' | 'full'>('full')
+watch(showInfo, (val) => {
+  if (val) {
+    layoutMode.value = 'split'
+  } else {
+    setTimeout(() => { layoutMode.value = 'full' }, 350)
+  }
+})
 const phase = ref<'start' | 'expand' | 'show' | 'done' | 'exit'>('start')
 const showBar = ref(false)
 const gridSrc = ref('')
@@ -57,7 +70,13 @@ const carouselStyle = computed(() => {
 const infoDragY = ref(0); const infoSnapping = ref(false); let _infoTouchStartY = 0
 function onInfoTouchStart(e: TouchEvent) { _infoTouchStartY = e.touches[0].clientY; infoDragY.value = 0; infoSnapping.value = false }
 function onInfoTouchMove(e: TouchEvent) { const dy = e.touches[0].clientY - _infoTouchStartY; if (dy > 0) { infoDragY.value = dy; e.preventDefault() } }
-function onInfoTouchEnd() { if (infoDragY.value > 60) { infoDragY.value = 0; showInfo.value = false } else { infoSnapping.value = true; infoDragY.value = 0; setTimeout(() => { infoSnapping.value = false }, 250) } }
+function onInfoTouchEnd() { if (infoDragY.value > 60) { showInfo.value = false; infoDragY.value = 0 } else { infoSnapping.value = true; requestAnimationFrame(() => { infoDragY.value = 0 }); setTimeout(() => { infoSnapping.value = false }, 250) } }
+
+// Mouse drag on info panel (desktop)
+let _infoMouseStartY = 0
+function onInfoMouseDown(e: MouseEvent) { _infoMouseStartY = e.clientY; infoDragY.value = 0; infoSnapping.value = false; window.addEventListener('mousemove', onInfoMouseMove); window.addEventListener('mouseup', onInfoMouseUp) }
+function onInfoMouseMove(e: MouseEvent) { const dy = e.clientY - _infoMouseStartY; if (dy > 0) infoDragY.value = dy }
+function onInfoMouseUp() { window.removeEventListener('mousemove', onInfoMouseMove); window.removeEventListener('mouseup', onInfoMouseUp); if (infoDragY.value > 60) { showInfo.value = false; infoDragY.value = 0 } else { infoSnapping.value = true; requestAnimationFrame(() => { infoDragY.value = 0 }); setTimeout(() => { infoSnapping.value = false }, 250) } }
 
 // Swan-down to dismiss + swipe nav
 const dismissY = ref(0)
@@ -71,6 +90,7 @@ let swipeDx = 0
 
 const vw = window.innerWidth
 const vh = window.innerHeight
+const navTop = computed(() => showInfo.value ? '15vh' : '50%')
 
 const startTransform = computed(() => {
   const s = store.startRect ?? { x: 0, y: 0, width: 1, height: 1 }
@@ -84,7 +104,9 @@ const startTransform = computed(() => {
 })
 
 const imgStyle = computed(() => {
-  const base = { width: vw + 'px', height: vh + 'px' }
+  const base = layoutMode.value === 'split'
+    ? { width: '100%', height: '100%' }
+    : { width: vw + 'px', height: vh + 'px' }
   if (phase.value === 'start' || phase.value === 'exit')
     return { ...base, transform: startTransform.value }
   const parts: string[] = []
@@ -184,6 +206,14 @@ function toggleFav() {
   const id = store.photoId!
   favorited.value ? client.delete(`/favorites/${id}`).then(() => favorited.value = false)
     : client.post(`/favorites/${id}`).then(() => favorited.value = true)
+}
+
+function onBackdropClick() {
+  if (showInfo.value) {
+    showInfo.value = false
+  } else {
+    doClose()
+  }
 }
 
 function doClose() {
@@ -383,17 +413,30 @@ function getExt(mime: string): string {
   const map: Record<string, string> = { 'image/jpeg': '.jpg', 'image/png': '.png', 'image/webp': '.webp', 'image/heic': '.heic', 'image/avif': '.avif' }
   return map[mime] || ''
 }
+
+const displayPath = computed(() => {
+  if (!photo.value?.filePath) return ''
+  const root = auth.user?.roots?.find(r => r.id === photo.value?.rootId)
+  const rootName = root ? root.rootPath.replace(/[/\\]$/, '').split(/[/\\]/).pop() || '' : ''
+  return rootName ? rootName + '/' + photo.value.filePath : photo.value.filePath
+})
+
+function jumpToMap() {
+  if (!photo.value?.latitude || !photo.value?.longitude) return
+  store.close()
+  router.push({ path: '/map', query: { lat: photo.value.latitude.toFixed(6), lng: photo.value.longitude.toFixed(6) } })
+}
 </script>
 
 <template>
   <Teleport to="body">
-    <div v-if="store.photoId" :class="['pv-bg', backdropOn ? 'pv-bg--on' : '']" @click="doClose" />
+    <div v-if="store.photoId" :class="['pv-bg', backdropOn ? 'pv-bg--on' : '']" @click="onBackdropClick" />
 
     <!-- Image area with zoom/pan -->
     <div
       v-if="store.photoId"
       class="pv-img-wrap"
-      :class="{ 'pv-img-wrap--zoomable': zoomable }"
+      :class="{ 'pv-img-wrap--zoomable': zoomable, 'pv-img-wrap--shrunk': showInfo }"
       @wheel="onWheel"
       @mousedown="onMouseDown"
       @mousemove="onMouseMove"
@@ -415,8 +458,8 @@ function getExt(mime: string): string {
     </div>
 
     <!-- Desktop nav arrows -->
-    <div v-if="showBar && store.hasPrev" class="pv-nav pv-nav--prev" @click.stop="commitSlide(1)"><el-icon :size="28"><ArrowLeft /></el-icon></div>
-    <div v-if="showBar && store.hasNext" class="pv-nav pv-nav--next" @click.stop="commitSlide(-1)"><el-icon :size="28"><ArrowRight /></el-icon></div>
+    <div v-if="showBar && store.hasPrev" class="pv-nav pv-nav--prev" :style="{ top: navTop }" @click.stop="commitSlide(1)"><el-icon :size="28"><ArrowLeft /></el-icon></div>
+    <div v-if="showBar && store.hasNext" class="pv-nav pv-nav--next" :style="{ top: navTop }" @click.stop="commitSlide(-1)"><el-icon :size="28"><ArrowRight /></el-icon></div>
 
     <!-- Top bar -->
     <div v-if="showBar" class="pv-topbar">
@@ -429,24 +472,32 @@ function getExt(mime: string): string {
       <el-button circle :icon="'InfoFilled'" @click="showInfo = !showInfo" class="glass-btn" />
     </div>
 
-    <!-- Info -->
+    <!-- Info panel — full height with map embed -->
     <Transition name="info-slide">
-      <div v-if="showInfo && photo" class="pv-info" @click.stop
+      <div v-if="showInfo && photo" class="pv-info" :class="{ 'pv-info--snapping': infoSnapping }" @click.stop
         @touchstart.passive="onInfoTouchStart" @touchmove="onInfoTouchMove" @touchend="onInfoTouchEnd"
-        :style="infoDragY > 0 || infoSnapping ? { transform: `translateY(${infoDragY}px)`, transition: infoSnapping ? 'transform .25s ease' : 'none' } : {}">
-        <div class="pv-info-handle" /><div style="height:8px" />
-        <h4 style="margin:0 0 12px;font-size:15px">照片信息</h4>
-        <div class="info-grid">
-          <div><span>文件名</span><b>{{ photo.fileName }}</b></div>
-          <div><span>拍摄时间</span><b>{{ photo.takenAt || '未知' }}</b></div>
-          <div><span>尺寸</span><b>{{ photo.width }} × {{ photo.height }}</b></div>
-          <div><span>格式</span><b>{{ photo.fileFormat }}</b></div>
-          <div><span>设备</span><b>{{ photo.deviceModel || '未知' }}</b></div>
-          <div><span>文件大小</span><b>{{ (photo.fileSize / 1024 / 1024).toFixed(1) }} MB</b></div>
-          <div><span>GPS</span><b>{{ photo.latitude ? `${photo.latitude.toFixed(4)}, ${photo.longitude!.toFixed(4)}` : '无' }}</b></div>
+        @mousedown="onInfoMouseDown"
+        :style="infoDragY > 0 ? { transform: `translateY(${infoDragY}px)` } : undefined">
+        <div class="pv-info-handle" @click.stop="showInfo = false" />
+        <div class="pv-info-body">
+          <h4 style="margin:0 0 12px;font-size:15px;flex-shrink:0">照片信息</h4>
+          <div class="info-grid" style="flex-shrink:0">
+            <div style="grid-column:1/-1"><span>文件路径</span><b style="word-break:break-all;font-size:12px">{{ displayPath }}</b></div>
+            <div><span>文件名</span><b>{{ photo.fileName }}</b></div>
+            <div><span>拍摄时间</span><b>{{ photo.takenAt || '未知' }}</b></div>
+            <div><span>尺寸</span><b>{{ photo.width }} × {{ photo.height }}</b></div>
+            <div><span>格式</span><b>{{ photo.fileFormat }}</b></div>
+            <div><span>设备</span><b>{{ photo.deviceModel || '未知' }}</b></div>
+            <div><span>文件大小</span><b>{{ (photo.fileSize / 1024 / 1024).toFixed(1) }} MB</b></div>
+            <div style="grid-column:1/-1">
+              <span>GPS</span>
+              <b v-if="photo.latitude">{{ Number(photo.latitude).toFixed(6) }}, {{ Number(photo.longitude).toFixed(6) }}</b>
+              <b v-else>无</b>
+            </div>
+          </div>
+          <MapEmbed :latitude="photo.latitude" :longitude="photo.longitude" style="flex:1;min-height:0;margin-top:12px" />
         </div>
-      </div>
-    </Transition>
+      </div></Transition>
   </Teleport>
 </template>
 
@@ -460,14 +511,17 @@ function getExt(mime: string): string {
 .pv-bg--on { background: var(--el-bg-color); pointer-events: auto; }
 
 .pv-img-wrap {
-  position: fixed; inset: 0; z-index: 9999;
+  position: fixed; top: 0; right: 0; left: 0; z-index: 9999;
+  height: 100%;
   display: flex; align-items: center; justify-content: center;
   overflow: hidden;
   pointer-events: none;
   cursor: grab;
+  transition: height .3s ease;
 }
 .pv-img-wrap--zoomable { pointer-events: auto; touch-action: manipulation; }
 .pv-img-wrap--zoomable:active { cursor: grabbing; }
+.pv-img-wrap--shrunk { height: 30%; overflow: hidden; }
 
 .pv-placeholder {
   width: 100%; height: 100%;
@@ -505,25 +559,39 @@ function getExt(mime: string): string {
 .fav-active { color: #f59e0b !important; background: rgba(245,158,11,.25) !important; }
 
 .pv-info {
-  position: fixed; bottom: 0; left: 0; right: 0; z-index: 10000;
-  background: var(--el-bg-color); backdrop-filter: blur(20px);
-  padding: 20px 24px; border-radius: 16px 16px 0 0;
-  color: var(--el-text-color-primary); max-height: 60vh; overflow-y: auto;
-  border-top: 1px solid var(--el-border-color-light);
+  position: fixed; left: 0; right: 0; bottom: 0; height: 70%; z-index: 10000;
+  background: var(--el-bg-color);
+  display: flex; flex-direction: column;
+  padding: 12px 0 0;
+  color: var(--el-text-color-primary);
+  overflow: hidden;
+  border-radius: 16px 16px 0 0;
+  box-shadow: 0 -4px 20px rgba(0,0,0,.1);
 }
-.info-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; font-size: 12px; }
+.pv-info--snapping { transition: transform .25s ease; }
+.pv-info-body {
+  flex: 1;
+  display: flex; flex-direction: column;
+  padding: 0 20px 20px;
+  overflow-y: auto;
+  min-height: 0;
+}
+.info-grid {
+  display: grid; grid-template-columns: 1fr 1fr; gap: 8px; font-size: 12px;
+  flex-shrink: 0;
+}
 .info-grid div { display: flex; flex-direction: column; gap: 2px; }
 .info-grid span { color: var(--el-text-color-secondary); font-size: 11px; }
 .info-grid b { color: var(--el-text-color-primary); font-size: 13px; }
 
-.info-slide-enter-active { transition: transform .25s ease, opacity .25s ease; }
-.info-slide-leave-active { transition: transform .2s ease, opacity .2s ease; }
-.info-slide-enter-from,
-.info-slide-leave-to { transform: translateY(100%); opacity: 0; }
 
-/* Info panel */
-.pv-info { padding-top: 12px !important; touch-action: pan-y; }
-.pv-info-handle { width: 36px; height: 5px; border-radius: 3px; background: var(--el-border-color); margin: 0 auto; }
+.pv-info { padding-top: 12px !important; }
+.pv-info-handle { width: 36px; height: 5px; border-radius: 3px; background: var(--el-border-color); margin: 0 auto 8px; flex-shrink: 0; }
+
+.info-slide-enter-active { transition: transform .25s ease; }
+.info-slide-leave-active { transition: transform .2s ease; }
+.info-slide-enter-from,
+.info-slide-leave-to { transform: translateY(100%); }
 
 /* Desktop nav arrows */
 .pv-nav {

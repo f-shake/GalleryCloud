@@ -14,6 +14,6 @@ export function useScanStatus() {
 }
 
 async function poll() {
-  try { const r = await client.get('/admin/scan/status'); isScanning.value = r.data.isRunning }
+  try { const r = await client.get('/user/scan/status'); isScanning.value = r.data.isRunning }
   catch { /* */ }
 }
