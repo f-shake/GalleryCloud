@@ -69,6 +69,8 @@ public class PhotosController : ControllerBase
             photo.Id, photo.FileName, photo.FileFormat, photo.FilePath, photo.RootId,
             photo.Width, photo.Height, photo.Orientation,
             photo.TakenAt, photo.DeviceModel,
+            photo.ExposureTime, photo.Iso, photo.Aperture,
+            photo.FocalLength, photo.FocalLength35mm,
             photo.Latitude, photo.Longitude,
             photo.FileSize, photo.Md5Hash,
             photo.CreatedAt, photo.UpdatedAt

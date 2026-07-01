@@ -77,6 +77,19 @@ public class UserPanelController : ControllerBase
         });
     }
 
+    [HttpPost("scan/refresh-exif")]
+    public async Task<IActionResult> RefreshExif()
+    {
+        if (!_userContext.IsAuthenticated || _userContext.IsAdmin)
+            return Unauthorized();
+
+        if (_scanService.Status.IsRunning)
+            return Conflict(new ErrorResult("Scan is already running"));
+
+        _ = Task.Run(() => _scanService.RefreshExifAsync(_userContext.UserId));
+        return Ok(new MessageResult("EXIF refresh started"));
+    }
+
     [HttpGet("scan/logs")]
     public async Task<IActionResult> GetScanLogs([FromQuery] int limit = 50)
     {

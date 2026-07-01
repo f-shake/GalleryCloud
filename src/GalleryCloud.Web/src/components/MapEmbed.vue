@@ -109,3 +109,7 @@ onUnmounted(() => destroy())
   width: 100%;
 }
 </style>
+
+<style>
+.esri-attribution { display: none !important; }
+</style>

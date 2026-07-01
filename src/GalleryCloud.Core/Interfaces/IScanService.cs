@@ -18,4 +18,5 @@ public interface IScanService
     Task TriggerFullScanAsync(string userId, CancellationToken ct = default);
     Task TriggerIncrementalScanAsync(string userId, CancellationToken ct = default);
     Task TriggerFullScanForAllUsersAsync(CancellationToken ct = default);
+    Task RefreshExifAsync(string userId, CancellationToken ct = default);
 }

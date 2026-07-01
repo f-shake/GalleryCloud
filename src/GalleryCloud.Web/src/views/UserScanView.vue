@@ -9,6 +9,7 @@ const logs = ref<ScanLog[]>([])
 const loading = ref(true)
 const cancelling = ref(false)
 const triggering = ref(false)
+const refreshing = ref(false)
 
 // Thumbnail state
 const thumbStatus = ref<ThumbnailGenerationStatus>({ isRunning: false, processed: 0, total: 0, estimatedPercent: 0 })
@@ -30,14 +31,14 @@ onUnmounted(() => { if (timer) clearInterval(timer) })
 
 const wasRunning = ref(false)
 const thumbWasRunning = ref(false)
-const busy = computed(() => status.value.isRunning || cancelling.value || triggering.value || thumbStatus.value.isRunning)
+const busy = computed(() => status.value.isRunning || cancelling.value || triggering.value || refreshing.value || thumbStatus.value.isRunning)
 
 async function poll() {
   try { const r = await client.get('/user/scan/status'); status.value = r.data }
   catch { /* */ }
   if (!status.value.isRunning) {
     if (wasRunning.value) loadLogs()
-    cancelling.value = false; triggering.value = false
+    cancelling.value = false; triggering.value = false; refreshing.value = false
   }
   wasRunning.value = status.value.isRunning
 
@@ -62,6 +63,12 @@ async function triggerScan() {
   triggering.value = true
   try { await client.post('/user/scan/trigger') } catch { /* */ }
 }
+async function triggerRefreshExif() {
+  refreshing.value = true
+  try { await client.post('/user/scan/refresh-exif') }
+  catch { /* */ }
+}
+
 async function cancelScan() {
   cancelling.value = true
   try { await client.post('/user/scan/cancel') } catch { /* */ }
@@ -126,6 +133,9 @@ async function clearCache() {
           <div style="display:flex;gap:8px">
             <el-button type="primary" @click="triggerScan" :disabled="busy" :loading="status.isRunning">
               触发全量扫描
+            </el-button>
+            <el-button @click="triggerRefreshExif" :disabled="busy" :loading="refreshing">
+              刷新EXIF
             </el-button>
             <el-button v-if="status.isRunning" type="danger" @click="cancelScan" :disabled="cancelling" :loading="cancelling">
               中断扫描

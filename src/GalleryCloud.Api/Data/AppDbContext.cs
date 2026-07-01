@@ -59,6 +59,11 @@ public class AppDbContext : DbContext
             e.Property(x => x.FileName).HasMaxLength(512).IsRequired();
             e.Property(x => x.FileFormat).HasMaxLength(16).IsRequired();
             e.Property(x => x.DeviceModel).HasMaxLength(256);
+            e.Property(x => x.ExposureTime).HasMaxLength(32);
+            e.Property(x => x.Iso);
+            e.Property(x => x.Aperture).HasMaxLength(16);
+            e.Property(x => x.FocalLength).HasMaxLength(16);
+            e.Property(x => x.FocalLength35mm);
             e.Property(x => x.Md5Hash).HasMaxLength(32);
             e.Property(x => x.FileModifiedAt);
 

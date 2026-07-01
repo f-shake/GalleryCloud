@@ -236,6 +236,11 @@ public class ScanService : IScanService
                     Orientation = exif.Orientation,
                     TakenAt = exif.TakenAt?.ToUniversalTime(),
                     DeviceModel = exif.DeviceModel,
+                    ExposureTime = exif.ExposureTime,
+                    Iso = exif.Iso,
+                    Aperture = exif.Aperture,
+                    FocalLength = exif.FocalLength,
+                    FocalLength35mm = exif.FocalLength35mm,
                     Latitude = exif.Latitude,
                     Longitude = exif.Longitude,
                     IsDeleted = false,
@@ -318,6 +323,68 @@ public class ScanService : IScanService
         _logger.LogInformation(
             "Scan complete for root {RootId}: {Total} files, {New} new, {Skipped} skipped, {Deleted} deleted, {Errors} errors",
             root.Id, allFiles.Count, newAdded, skipped, softDeleted, errors);
+    }
+
+    public async Task RefreshExifAsync(string userId, CancellationToken ct = default)
+    {
+        Status = new ScanStatus { IsRunning = true, Mode = "refreshexif", UserId = userId, StartedAt = DateTime.UtcNow };
+
+        try
+        {
+            using var scope = _scopeFactory.CreateScope();
+            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+
+            var photos = await db.Photos
+                .Where(p => p.UserId == userId && !p.IsDeleted)
+                .ToListAsync(ct);
+
+            int total = photos.Count;
+            int processed = 0;
+            Status = Status with { TotalFiles = total };
+
+            foreach (var photo in photos)
+            {
+                if (ct.IsCancellationRequested) break;
+
+                var root = await db.UserRoots.FindAsync(photo.RootId);
+                if (root == null) { processed++; continue; }
+
+                var fullPath = Path.GetFullPath(Path.Combine(root.RootPath, photo.FilePath));
+                if (!File.Exists(fullPath)) { processed++; continue; }
+
+                try
+                {
+                    var exif = ExifService.Extract(fullPath);
+                    photo.Width = exif.Width;
+                    photo.Height = exif.Height;
+                    photo.Orientation = exif.Orientation;
+                    photo.TakenAt = exif.TakenAt?.ToUniversalTime();
+                    photo.DeviceModel = exif.DeviceModel;
+                    photo.ExposureTime = exif.ExposureTime;
+                    photo.Iso = exif.Iso;
+                    photo.Aperture = exif.Aperture;
+                    photo.FocalLength = exif.FocalLength;
+                    photo.FocalLength35mm = exif.FocalLength35mm;
+                    photo.Latitude = exif.Latitude;
+                    photo.Longitude = exif.Longitude;
+                    photo.UpdatedAt = DateTime.UtcNow;
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "Error refreshing EXIF for {Path}", fullPath);
+                }
+
+                processed++;
+                Status = Status with { ProcessedFiles = processed };
+            }
+
+            await db.SaveChangesAsync(ct);
+            _logger.LogInformation("EXIF refresh complete: {Count} photos updated for user {User}", total, userId);
+        }
+        finally
+        {
+            Status = new ScanStatus();
+        }
     }
 
     private static bool IsExcluded(string filePath, string rootPath, List<string> globPatterns)

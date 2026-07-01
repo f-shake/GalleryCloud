@@ -12,6 +12,11 @@ public class ExifService
         int Orientation,
         DateTime? TakenAt,
         string? DeviceModel,
+        string? ExposureTime,
+        int? Iso,
+        string? Aperture,
+        string? FocalLength,
+        int? FocalLength35mm,
         double? Latitude,
         double? Longitude
     );
@@ -33,6 +38,11 @@ public class ExifService
         int orientation = 1;
         DateTime? takenAt = null;
         string? deviceModel = null;
+        string? exposureTime = null;
+        int? iso = null;
+        string? aperture = null;
+        string? focalLength = null;
+        int? focalLength35mm = null;
         double? latitude = null;
         double? longitude = null;
 
@@ -54,6 +64,20 @@ public class ExifService
 
                 if (tag == ExifTag.Model && entry is IExifValue<string> modelEntry)
                     deviceModel = modelEntry.Value?.Trim();
+
+                if (tag == ExifTag.ExposureTime && entry is IExifValue<Rational> expEntry)
+                    exposureTime = FormatExposure(expEntry.Value);
+
+                if (tag == ExifTag.ISOSpeedRatings && entry is IExifValue<ushort> isoEntry)
+                    iso = isoEntry.Value;
+
+                if (tag == ExifTag.FNumber && entry is IExifValue<Rational> fNumEntry)
+                    aperture = $"f/{fNumEntry.Value.ToDouble():F1}";
+
+                if (tag == ExifTag.FocalLength && entry is IExifValue<Rational> flEntry)
+                    focalLength = $"{flEntry.Value.ToDouble():F0}mm";
+                if (tag == ExifTag.FocalLengthIn35mmFilm && entry is IExifValue<ushort> fl35Entry)
+                    focalLength35mm = fl35Entry.Value;
 
                 if (tag == ExifTag.GPSLatitude && entry is IExifValue<Rational[]> gLatEntry)
                     gpsLat = gLatEntry.Value;
@@ -77,7 +101,7 @@ public class ExifService
 
         return new ExifData(
             imageInfo.Width, imageInfo.Height, orientation,
-            takenAt, deviceModel, latitude, longitude);
+            takenAt, deviceModel, exposureTime, iso, aperture, focalLength, focalLength35mm, latitude, longitude);
     }
 
     private static DateTime? ParseExifDate(string? dateStr)
@@ -101,5 +125,17 @@ public class ExifService
             result = -result;
 
         return result;
+    }
+
+    private static string FormatExposure(Rational rational)
+    {
+        if (rational.Denominator == 0) return rational.ToString();
+        // Show as fraction (e.g. 1/100) if denominator is reasonable
+        if (rational.Denominator > 1 && rational.Numerator == 1)
+            return $"{rational.Numerator}/{rational.Denominator}";
+        var val = rational.ToDouble();
+        if (val < 1)
+            return $"1/{Math.Round(1 / val)}";
+        return val.ToString("F1");
     }
 }

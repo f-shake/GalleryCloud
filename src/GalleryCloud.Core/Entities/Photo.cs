@@ -13,6 +13,11 @@ public class Photo
     public int Orientation { get; set; } = 1;
     public DateTime? TakenAt { get; set; }
     public string? DeviceModel { get; set; }
+    public string? ExposureTime { get; set; }
+    public int? Iso { get; set; }
+    public string? Aperture { get; set; }
+    public string? FocalLength { get; set; }
+    public int? FocalLength35mm { get; set; }
     public double? Latitude { get; set; }
     public double? Longitude { get; set; }
     public string? Md5Hash { get; set; }
