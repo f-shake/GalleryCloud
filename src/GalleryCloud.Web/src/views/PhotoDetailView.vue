@@ -49,14 +49,14 @@ const gridError = ref(false)
 
 function commitSlide(direction: number) {
   if (slideSnapping.value) return // guard against double-tap
-  const target = direction > 0 ? 0 : -2 * vw
+  const target = direction > 0 ? 0 : -2 * vw.value
   slideSnapping.value = true; slideOffset.value = target
   setTimeout(() => {
     if (direction < 0) store.navigateNext(); else store.navigatePrev()
     // Reset carousel instantly after navigation (no animation on reset)
     requestAnimationFrame(() => {
       slideSnapping.value = false
-      slideOffset.value = CAROUSEL_BASE * vw
+      slideOffset.value = CAROUSEL_BASE * vw.value
     })
   }, 300)
 }
@@ -99,25 +99,35 @@ let isSwipingHorizontal = false
 let swipeHandled = false
 let swipeDx = 0
 
-const vw = window.innerWidth
-const vh = window.innerHeight
+const vw = ref(window.innerWidth)
+const vh = ref(window.innerHeight)
 const navTop = computed(() => { if (!showInfo.value) return '50%'; return window.innerWidth <= 767 ? '15vh' : '30vh' })
+
+function onResize() {
+  const oldVw = vw.value
+  vw.value = window.innerWidth
+  vh.value = window.innerHeight
+  // Scale slideOffset proportionally to keep carousel aligned
+  if (oldVw > 0 && !slideSnapping.value) {
+    slideOffset.value = (slideOffset.value / oldVw) * vw.value
+  }
+}
 
 const startTransform = computed(() => {
   const s = store.startRect ?? { x: 0, y: 0, width: 1, height: 1 }
-  const sx = s.width / vw
-  const sy = s.height / vh
+  const sx = s.width / vw.value
+  const sy = s.height / vh.value
   const scx = s.x + s.width / 2
   const scy = s.y + s.height / 2
-  const ecx = vw / 2
-  const ecy = vh / 2
+  const ecx = vw.value / 2
+  const ecy = vh.value / 2
   return `translate(${scx - ecx}px, ${scy - ecy}px) scale(${sx}, ${sy})`
 })
 
 const imgStyle = computed(() => {
   const base = layoutMode.value === 'split'
     ? { width: '100%', height: '100%' }
-    : { width: vw + 'px', height: vh + 'px' }
+    : { width: vw.value + 'px', height: vh.value + 'px' }
   if (phase.value === 'start' || phase.value === 'exit')
     return { ...base, transform: startTransform.value }
   const parts: string[] = []
@@ -146,9 +156,9 @@ const zoomable = computed(() => (phase.value === 'done' || phase.value === 'show
 function clampOffset() {
   if (scale.value <= 1) { offsetX.value = 0; offsetY.value = 0; return }
   const maxX = 0
-  const minX = vw * (1 - scale.value)
+  const minX = vw.value * (1 - scale.value)
   const maxY = 0
-  const minY = vh * (1 - scale.value)
+  const minY = vh.value * (1 - scale.value)
   offsetX.value = Math.max(minX, Math.min(maxX, offsetX.value))
   offsetY.value = Math.max(minY, Math.min(maxY, offsetY.value))
 }
@@ -191,7 +201,7 @@ watch(() => store.open, async (val) => {
 
   try { const res = await client.get(`/photos/${id}`); if (sid === store.session) photo.value = res.data } catch { /* */ }
   try { const r = await client.get(`/favorites/check/${id}`); if (sid === store.session) favorited.value = r.data.isFavorited } catch { /* */ }
-  slideOffset.value = CAROUSEL_BASE * vw
+  slideOffset.value = CAROUSEL_BASE * vw.value
 })
 
 // Navigation: photoId changes without close → load new photo immediately
@@ -204,7 +214,7 @@ watch(() => store.photoId, async (newId, oldId) => {
   const sid = store.session
   gridSrc.value = thumbUrl(newId, 'grid', 400)
   previewReady.value = false; favorited.value = false
-  phase.value = 'show'; showBar.value = true; slideOffset.value = CAROUSEL_BASE * vw
+  phase.value = 'show'; showBar.value = true; slideOffset.value = CAROUSEL_BASE * vw.value
   const previewImg = new Image()
   previewImg.onload = () => { if (sid === store.session) { previewSrc.value = previewImg.src; previewReady.value = true; gridError.value = false; phase.value = 'done' } }
   previewImg.onerror = () => { if (sid === store.session) phase.value = 'done' }
@@ -243,8 +253,14 @@ function onKeydown(e: KeyboardEvent) {
   if (e.key === 'ArrowRight' && store.hasNext && !slideSnapping.value) { commitSlide(-1); return }
 }
 
-onMounted(() => window.addEventListener('keydown', onKeydown))
-onUnmounted(() => window.removeEventListener('keydown', onKeydown))
+onMounted(() => {
+  window.addEventListener('keydown', onKeydown)
+  window.addEventListener('resize', onResize)
+})
+onUnmounted(() => {
+  window.removeEventListener('keydown', onKeydown)
+  window.removeEventListener('resize', onResize)
+})
 
 // ── Zoom (mouse wheel) ──────────────────────────────────────
 function onWheel(e: WheelEvent) {
@@ -291,7 +307,7 @@ function onImgClick(e: MouseEvent) {
   const dist = Math.hypot(e.clientX - lastClickX, e.clientY - lastClickY)
   if (now - lastClickTime < 300 && dist < 50) {
     if (scale.value > 1) {
-      animateZoomTo(1, vw / 2, vh / 2)
+      animateZoomTo(1, vw.value / 2, vh.value / 2)
     } else {
       animateZoomTo(2, e.clientX, e.clientY)
     }
@@ -378,7 +394,7 @@ function onTouchMove(e: TouchEvent) {
     const dx = e.touches[0].clientX - swipeStartX
     const dy = e.touches[0].clientY - swipeStartY
     if (!swipeHandled && Math.abs(dx) > 10 && Math.abs(dx) > Math.abs(dy)) { isSwipingHorizontal = true; swipeHandled = true }
-    if (isSwipingHorizontal) { if (e.cancelable) e.preventDefault(); dismissY.value = 0; slideOffset.value = CAROUSEL_BASE * vw + dx; swipeDx = dx }
+    if (isSwipingHorizontal) { if (e.cancelable) e.preventDefault(); dismissY.value = 0; slideOffset.value = CAROUSEL_BASE * vw.value + dx; swipeDx = dx }
     else if (dy > 0) { if (e.cancelable) e.preventDefault(); dismissY.value = dy * 0.8 }
     else if (dy < -10 && !swipeHandled) { showInfo.value = true; swipeHandled = true }
   }
@@ -389,8 +405,8 @@ function onTouchEnd() {
     isSwipingDown = false
     if (isSwipingHorizontal) {
       dismissing.value = false
-      if (Math.abs(swipeDx) > vw * 0.15) { commitSlide(swipeDx > 0 ? 1 : -1) }
-      else { slideSnapping.value = true; slideOffset.value = CAROUSEL_BASE * vw; setTimeout(() => { slideSnapping.value = false }, 300) }
+      if (Math.abs(swipeDx) > vw.value * 0.15) { commitSlide(swipeDx > 0 ? 1 : -1) }
+      else { slideSnapping.value = true; slideOffset.value = CAROUSEL_BASE * vw.value; setTimeout(() => { slideSnapping.value = false }, 300) }
     } else if (dismissY.value > 100) {
       doClose()
     } else {

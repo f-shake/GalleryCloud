@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted, watch, nextTick } from 'vue'
+import { ref, onMounted, onUnmounted, watch, nextTick } from 'vue'
 import { useVirtualizer } from '@tanstack/vue-virtual'
 import { usePhotoGrid } from '../composables/usePhotoGrid'
 import { useTimeline, type RowItem } from '../composables/useTimeline'
@@ -127,11 +127,15 @@ async function rebuildRows() {
 
 watch([columns, groupLevel], rebuildRows)
 
+function onTlResize() { virtualizer.value?.measure() }
+
 onMounted(async () => {
   await tl.init()
   await rebuildRows()
   ready.value = true
+  window.addEventListener('resize', onTlResize)
 })
+onUnmounted(() => window.removeEventListener('resize', onTlResize))
 
 function onPhotoClick(photoId: string, e: MouseEvent) {
   const img = (e.currentTarget as HTMLElement).querySelector('img')
