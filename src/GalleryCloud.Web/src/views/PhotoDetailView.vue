@@ -96,7 +96,7 @@ let swipeDx = 0
 
 const vw = window.innerWidth
 const vh = window.innerHeight
-const navTop = computed(() => showInfo.value ? '15vh' : '50%')
+const navTop = computed(() => { if (!showInfo.value) return '50%'; return window.innerWidth <= 767 ? '15vh' : '30vh' })
 
 const startTransform = computed(() => {
   const s = store.startRect ?? { x: 0, y: 0, width: 1, height: 1 }
@@ -580,7 +580,7 @@ function jumpToMap() {
 }
 .pv-img-wrap--zoomable { pointer-events: auto; touch-action: manipulation; }
 .pv-img-wrap--zoomable:active { cursor: grabbing; }
-.pv-img-wrap--shrunk { height: 30%; overflow: hidden; }
+.pv-img-wrap--shrunk { height: 60%; overflow: hidden; }
 
 .pv-placeholder {
   width: 100%; height: 100%;
@@ -651,7 +651,7 @@ function jumpToMap() {
 .info-split { display: flex; flex: 1; min-height: 0; gap: 12px; }
 .info-left { display: flex; flex-direction: column; gap: 8px; width: 50%; overflow-y: auto; }
 .info-right { display: flex; flex-direction: column; width: 50%; min-height: 0; }
-@media (max-width: 767px) { .pv-info { height: 70%; } .info-split { flex-direction: column; } .info-left, .info-right { width: 100%; } .info-right { min-height: 200px; } }
+@media (max-width: 767px) { .pv-info { height: 70%; } .pv-img-wrap--shrunk { height: 30%; } .info-split { flex-direction: column; } .info-left, .info-right { width: 100%; } .info-right { min-height: 200px; } }
 .info-section-title { font-size: 13px; font-weight: 600; color: var(--el-text-color-secondary); margin-bottom: 8px; }
 .info-row { display: flex; flex-direction: column; gap: 2px; font-size: 12px; }
 .info-row span { color: var(--el-text-color-secondary); font-size: 11px; }
