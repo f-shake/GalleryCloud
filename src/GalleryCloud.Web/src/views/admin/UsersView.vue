@@ -182,7 +182,7 @@ async function toggleUser(u: UserRow) {
         <el-form-item label="显示名"><el-input v-model="form.displayName" /></el-form-item>
         <el-form-item label="根目录">
           <div style="width:100%">
-            <div v-for="(p, i) in editRootPaths" :key="i" style="display:flex;gap:4px;margin-bottom:4px;align-items:center">
+            <div v-for="(_, i) in editRootPaths" :key="i" style="display:flex;gap:4px;margin-bottom:4px;align-items:center">
               <el-input v-model="editRootPaths[i]" placeholder="输入目录路径或点击浏览选择" />
               <el-button type="primary" @click="openFolderBrowser({ mode: 'edit', index: i })" >浏览</el-button>
               <el-button @click="removeRoot(i)" :icon="'Delete'" circle size="small" />

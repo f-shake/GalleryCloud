@@ -146,7 +146,7 @@ function onClose() {
           size="small"
           type="primary"
           text
-          @click.stop="selectEntry(entry); currentPath = entry.fullPath; selectCurrent()"
+          @click.stop="currentPath = entry.fullPath; selectCurrent()"
         >
           选择
         </el-button>

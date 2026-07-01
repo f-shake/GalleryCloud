@@ -24,11 +24,12 @@ $skipCopy = $BackendOnly -or $NoCopy
 # 1. Build frontend
 if (-not $skipFrontend) {
     Write-Host "`n[1/3] Building frontend..." -ForegroundColor Green
-    Push-Location "$ScriptDir\src\GalleryCloud.Web"
-    npm ci
-    npm run build
-    if ($LASTEXITCODE -ne 0) { throw "Frontend build failed" }
-    Pop-Location
+    try { Push-Location "$ScriptDir\src\GalleryCloud.Web"
+        npm ci
+        if ($LASTEXITCODE -ne 0) { throw "npm ci failed" }
+        npm run build
+        if ($LASTEXITCODE -ne 0) { throw "Frontend build failed" }
+    } finally { Pop-Location }
 } else {
     Write-Host "`n[1/3] Skipping frontend build" -ForegroundColor DarkGray
 }
@@ -36,16 +37,18 @@ if (-not $skipFrontend) {
 # 2. Publish backend (self-contained single file)
 if (-not $skipBackend) {
     Write-Host "`n[2/3] Publishing backend..." -ForegroundColor Green
-    dotnet publish "$ScriptDir\src\GalleryCloud.Api\GalleryCloud.Api.csproj" `
-        -c $Configuration `
-        -r $Runtime `
-        --self-contained true `
-        -p:PublishSingleFile=true `
-        -p:IncludeNativeLibrariesForSelfExtract=true `
-        -p:EnableCompressionInSingleFile=true `
-        -p:DebugType=embedded `
-        -o "$ScriptDir\$OutputDir"
-    if ($LASTEXITCODE -ne 0) { throw "Backend publish failed" }
+    try { Push-Location "$ScriptDir\src\GalleryCloud.Api"
+        dotnet publish "$ScriptDir\src\GalleryCloud.Api\GalleryCloud.Api.csproj" `
+            -c $Configuration `
+            -r $Runtime `
+            --self-contained true `
+            -p:PublishSingleFile=true `
+            -p:IncludeNativeLibrariesForSelfExtract=true `
+            -p:EnableCompressionInSingleFile=true `
+            -p:DebugType=embedded `
+            -o "$ScriptDir\$OutputDir"
+        if ($LASTEXITCODE -ne 0) { throw "Backend publish failed" }
+    } finally { Pop-Location }
 } else {
     Write-Host "`n[2/3] Skipping backend publish" -ForegroundColor DarkGray
 }
