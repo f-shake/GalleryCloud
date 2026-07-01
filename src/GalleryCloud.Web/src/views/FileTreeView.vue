@@ -7,7 +7,7 @@ import { thumbUrl } from '../composables/useThumbnailUrl'
 import { usePhotoViewStore } from '../stores/photoViewStore'
 import { useScanStatus } from '../composables/useScanStatus'
 
-interface FolderNode { name: string; path: string; photoCount: number; subFolders: FolderNode[] }
+interface FolderNode { name: string; path: string; rootId?: string; photoCount: number; subFolders: FolderNode[] }
 
 const viewStore = usePhotoViewStore()
 const { columns, zoomIn, zoomOut } = usePhotoGrid()
@@ -30,6 +30,7 @@ function onTouchEnd() {
 }
 const tree = ref<FolderNode[]>([])
 const selPath = ref('')
+const selRootId = ref('')
 const photos = ref<any[]>([])
 const loading = ref(false)
 const treeLoading = ref(true)
@@ -40,6 +41,10 @@ onMounted(async () => {
   finally { treeLoading.value = false }
 })
 
+function nodeKey(node: FolderNode): string {
+  return node.rootId ? node.rootId + ':' + node.path : node.path
+}
+
 function onPhotoClick(id: string, e: MouseEvent) {
   const img = (e.currentTarget as HTMLElement).querySelector('img')
   const r = img ? img.getBoundingClientRect() : (e.currentTarget as HTMLElement).getBoundingClientRect()
@@ -48,13 +53,20 @@ function onPhotoClick(id: string, e: MouseEvent) {
 
 async function onNodeClick(node: FolderNode) {
   selPath.value = node.path
+  selRootId.value = node.rootId || ''
   loading.value = true
-  try { const r = await client.get(`/folders/${encodeURI(node.path)}`); photos.value = r.data }
+  try {
+    const params = new URLSearchParams()
+    if (node.rootId) params.set('rootId', node.rootId)
+    const qs = params.toString() ? '?' + params.toString() : ''
+    const r = await client.get(`/folders/${encodeURI(node.path)}${qs}`)
+    photos.value = r.data
+  }
   catch { /* */ }
   finally { loading.value = false }
 }
 
-const defaultExpanded = computed(() => tree.value.slice(0, 10).map(n => n.path))
+const defaultExpanded = computed(() => tree.value.map(n => nodeKey(n)))
 </script>
 
 <template>
@@ -63,7 +75,7 @@ const defaultExpanded = computed(() => tree.value.slice(0, 10).map(n => n.path))
       <el-tree
         :data="tree"
         :props="{ children: 'subFolders', label: 'name' }"
-        node-key="path"
+        :node-key="nodeKey"
         :default-expanded-keys="defaultExpanded"
         @node-click="onNodeClick"
         :loading="treeLoading"
@@ -82,13 +94,13 @@ const defaultExpanded = computed(() => tree.value.slice(0, 10).map(n => n.path))
       <div style="margin-bottom:12px">
         <PhotoGridToolbar :count="photos.length">
           <template #left>
-            <span style="font-size:13px;color:var(--el-text-color-secondary)">{{ selPath || '选择文件夹' }}</span>
+            <span style="font-size:13px;color:var(--el-text-color-secondary)">{{ selPath || (selRootId ? '' : '选择文件夹') }}</span>
           </template>
         </PhotoGridToolbar>
       </div>
-      <el-empty v-if="!selPath && !isScanning" description="选择左侧文件夹" />
+      <el-empty v-if="!selPath && !selRootId && !isScanning" description="选择左侧文件夹" />
       <div v-else-if="loading" style="text-align:center;padding:32px"><el-icon class="is-loading" :size="24"><Loading /></el-icon></div>
-      <div v-else-if="photos.length" :style="{ display:'grid', gridTemplateColumns:`repeat(${columns}, 1fr)`, gap:'4px' }">
+      <div v-else-if="photos.length" class="photo-grid" :style="{ display:'grid', gridTemplateColumns:`repeat(${columns}, 1fr)`, gap:'4px' }">
         <div v-for="p in photos" :key="p.id" class="thumb-cell" @click="onPhotoClick(p.id, $event)">
           <img v-lazy-img="thumbUrl(p.id, 'grid', 400)" class="thumb-img" />
         </div>
@@ -116,7 +128,9 @@ const defaultExpanded = computed(() => tree.value.slice(0, 10).map(n => n.path))
     width: 100%; flex: 0 0 33%; min-height: 120px;
     border-right: none;
     border-bottom: 1px solid var(--el-border-color-light);
+    padding: 4px 0;
   }
-  .ft-photo-panel { flex: 1; overflow-y: auto; }
+  .ft-photo-panel { flex: 1; overflow-y: auto; padding: 8px 12px; }
+  .ft-photo-panel .photo-grid { margin: 0 -12px; width: calc(100% + 24px); }
 }
 </style>

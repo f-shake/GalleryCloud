@@ -259,14 +259,13 @@ onUnmounted(() => destroy())
       <el-icon class="is-loading" :size="32"><Loading /></el-icon>
     </div>
 
-    <div v-show="!loading && !clusterView" class="map-toolbar">
-      <span class="map-toolbar-info">{{ pointCount }} 个位置点</span>
-      <div style="flex:1" />
-      <el-radio-group v-model="basemap" size="small" @change="switchBasemap">
-        <el-radio-button value="normal">普通</el-radio-button>
-        <el-radio-button value="satellite">卫星</el-radio-button>
-      </el-radio-group>
-    </div>
+    <button v-show="!loading && !clusterView" class="map-toggle-btn" @click="basemap === 'normal' ? (basemap='satellite', switchBasemap('satellite')) : (basemap='normal', switchBasemap('normal'))" :title="basemap === 'normal' ? '卫星图' : '普通图'">
+      <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="12" cy="12" r="10"/>
+        <line x1="2" y1="12" x2="22" y2="12"/>
+        <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/>
+      </svg>
+    </button>
 
     <div v-if="clusterView" class="cluster-overlay" @touchstart="onTouchStart" @touchmove="onTouchMove" @touchend="onTouchEnd">
       <div class="cluster-overlay-header">
@@ -314,18 +313,21 @@ onUnmounted(() => destroy())
   background: var(--el-bg-color-page);
   z-index: 20; pointer-events: none;
 }
-.map-toolbar {
+.map-toggle-btn {
   position: absolute;
-  bottom: 20px; left: 16px; right: 16px;
+  bottom: 20px; right: 16px;
   z-index: 10;
-  display: flex; align-items: center; gap: 8px;
-  padding: 6px 12px;
+  display: flex; align-items: center; justify-content: center;
+  width: 40px; height: 40px;
   background: var(--el-bg-color-overlay);
-  border-radius: 8px;
+  border: 1px solid var(--el-border-color-light);
+  border-radius: 10px;
   box-shadow: 0 2px 8px rgba(0,0,0,.12);
-  pointer-events: auto;
+  cursor: pointer;
+  color: var(--el-text-color-primary);
+  transition: background .2s;
 }
-.map-toolbar-info { font-size: 13px; color: var(--el-text-color-secondary); }
+.map-toggle-btn:hover { background: var(--el-fill-color-light); }
 .map-popup button { cursor: pointer; }
 .esri-popup__main-container { max-width: 280px !important; }
 .esri-attribution { display: none !important; }
@@ -349,10 +351,13 @@ onUnmounted(() => destroy())
 }
 .cluster-group-header { padding: 6px 0 4px 0; }
 .cluster-photo-grid { display: grid; gap: 4px; padding-bottom: 8px; }
+@media (max-width: 767px) {
+  .cluster-overlay-body { padding: 12px 0; }
+  .cluster-group-header { padding: 6px 16px 4px; }
+}
 .thumb-cell {
   aspect-ratio: 1;
   overflow: hidden;
-  border-radius: 4px;
   cursor: pointer;
   background: var(--el-fill-color-light);
 }

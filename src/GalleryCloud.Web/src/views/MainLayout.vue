@@ -229,6 +229,7 @@ html, body, #app { margin:0; height:100%; }
   overflow-y: auto;
   scrollbar-width: none;
   position: relative; /* anchor for absolute children */
+  padding: 0;
 }
 .app-main::-webkit-scrollbar { display: none; }
 .scan-alert { margin: 8px 16px 0; border-radius: 8px; }

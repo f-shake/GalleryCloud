@@ -59,7 +59,8 @@ public record PhotoListItem(
     long FileSize,
     string? FilePath,
     bool? IsDeleted,
-    string? DeviceModel = null
+    string? DeviceModel = null,
+    string? RootId = null
 );
 
 public record MessageResult(string Message);
@@ -136,6 +137,7 @@ public class FolderNode
 {
     public string Name { get; set; } = "";
     public string Path { get; set; } = "";
+    public string? RootId { get; set; }
     public int PhotoCount { get; set; }
     public List<FolderNode> SubFolders { get; set; } = new();
 }
