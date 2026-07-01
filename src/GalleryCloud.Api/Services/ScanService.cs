@@ -60,11 +60,13 @@ public class ScanService : IScanService
             var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
             var users = await db.Users.Where(u => !u.IsDeleted).ToListAsync(cts.Token);
 
+            int cumulativeTotal = 0;
+            int cumulativeProcessed = 0;
             foreach (var user in users)
             {
                 if (cts.Token.IsCancellationRequested) break;
                 Status = Status with { UserId = user.Id };
-                await RunScanAsync(user.Id, ScanMode.Full, cts.Token);
+                (cumulativeTotal, cumulativeProcessed) = await RunScanAsync(user.Id, ScanMode.Full, cumulativeTotal, cumulativeProcessed, cts.Token);
             }
         }
         catch (OperationCanceledException)
@@ -95,7 +97,7 @@ public class ScanService : IScanService
 
         try
         {
-            await RunScanAsync(userId, mode, cts.Token);
+            await RunScanAsync(userId, mode, 0, 0, cts.Token);
         }
         catch (OperationCanceledException)
         {
@@ -112,7 +114,8 @@ public class ScanService : IScanService
         }
     }
 
-    private async Task RunScanAsync(string userId, ScanMode mode, CancellationToken ct)
+    private async Task<(int Total, int Processed)> RunScanAsync(string userId, ScanMode mode,
+        int cumulativeTotal, int cumulativeProcessed, CancellationToken ct)
     {
         using var scope = _scopeFactory.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
@@ -124,74 +127,107 @@ public class ScanService : IScanService
         if (roots.Count == 0)
         {
             _logger.LogWarning("No enabled roots found for user {UserId}", userId);
-            return;
+            return (0, 0);
         }
 
-        foreach (var root in roots)
-        {
-            if (ct.IsCancellationRequested) break;
-            await ScanRootAsync(db, root, mode, ct);
-        }
-    }
-
-    private async Task ScanRootAsync(AppDbContext db, UserRoot root, ScanMode mode, CancellationToken ct)
-    {
-        using var innerScope = _scopeFactory.CreateScope();
-        var thumbDb = innerScope.ServiceProvider.GetRequiredService<ThumbnailDbContext>();
-        var rootPath = Path.GetFullPath(root.RootPath);
-        if (!Directory.Exists(rootPath))
-        {
-            _logger.LogWarning("Root path does not exist: {RootPath} (rootId={RootId})", rootPath, root.Id);
-            return;
-        }
-
+        // First pass: enumerate files across all roots to know the grand total upfront
         var formatsStr = await _settings.GetAsync(SettingKeys.ScanSupportedFormats) ?? ".jpg,.jpeg,.heic,.avif,.png,.webp";
         var supportedFormats = formatsStr.Split(',', StringSplitOptions.RemoveEmptyEntries)
             .Select(f => f.Trim().ToLowerInvariant())
             .ToHashSet();
-
         var excludeStr = await _settings.GetAsync(SettingKeys.ScanExcludePatterns) ?? "**/thumbnails/**";
         var excludeGlobs = excludeStr.Split(',', StringSplitOptions.RemoveEmptyEntries)
             .Select(p => p.Trim()).ToList();
 
-        var parallelThreads = await _settings.GetAsync(SettingKeys.ThumbnailParallelThreads, 2);
-        var semaphore = new SemaphoreSlim(Math.Max(1, parallelThreads));
-
-        // Enumerate all files
-        _logger.LogInformation("Enumerating files in {RootPath}...", rootPath);
-        Status = Status with { TotalFiles = 0, ProcessedFiles = -1 };
-        var allFiles = new List<string>();
+        int grandTotal = 0;
+        var filesByRoot = new Dictionary<string, List<string>>();
         var enumOptions = new EnumerationOptions
         {
             RecurseSubdirectories = true,
             ReturnSpecialDirectories = false,
         };
 
-        foreach (var fmt in supportedFormats)
+        foreach (var root in roots)
         {
-            ct.ThrowIfCancellationRequested();
-            try
+            if (ct.IsCancellationRequested) break;
+            var rootPath = Path.GetFullPath(root.RootPath);
+            if (!Directory.Exists(rootPath))
             {
-                var files = Directory.GetFiles(rootPath, $"*{fmt}", enumOptions)
-                    .Where(f => !IsExcluded(f, rootPath, excludeGlobs))
-                    .ToList();
-                allFiles.AddRange(files);
+                _logger.LogWarning("Root path does not exist: {RootPath} (rootId={RootId})", rootPath, root.Id);
+                continue;
             }
-            catch (Exception ex)
+
+            var rootFiles = new List<string>();
+            filesByRoot[root.Id] = rootFiles;
+
+            foreach (var fmt in supportedFormats)
             {
-                _logger.LogWarning(ex, "Error scanning format {Format}", fmt);
+                ct.ThrowIfCancellationRequested();
+                try
+                {
+                    var files = Directory.GetFiles(rootPath, $"*{fmt}", enumOptions)
+                        .Where(f => !IsExcluded(f, rootPath, excludeGlobs))
+                        .ToList();
+                    rootFiles.AddRange(files);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "Error scanning format {Format} in {Root}", fmt, rootPath);
+                }
             }
+
+            grandTotal += rootFiles.Count;
         }
 
-        _logger.LogInformation("Found {Count} files to scan for root {RootId}", allFiles.Count, root.Id);
-        Status = Status with { TotalFiles = allFiles.Count, ProcessedFiles = 0 };
+        if (grandTotal == 0)
+        {
+            _logger.LogWarning("No files found for user {UserId}", userId);
+            return (0, 0);
+        }
+
+        // Set the grand total so the progress bar goes 0→100 once
+        Status = Status with { TotalFiles = cumulativeTotal + grandTotal };
+        _logger.LogInformation("Enumeration complete: grandTotal={GrandTotal}, cumulativeTotal={Cum}, TotalFiles={Total}",
+            grandTotal, cumulativeTotal, cumulativeTotal + grandTotal);
+
+        // Second pass: process each root with the pre-enumerated file list
+        foreach (var root in roots)
+        {
+            if (ct.IsCancellationRequested) break;
+            if (!filesByRoot.TryGetValue(root.Id, out var rootFiles) || rootFiles.Count == 0)
+                continue;
+
+            var result = await ScanRootAsync(db, root, mode, cumulativeTotal, cumulativeProcessed,
+                rootFiles, ct);
+            cumulativeTotal += result.Total;
+            cumulativeProcessed += result.Processed;
+            Status = Status with { ProcessedFiles = cumulativeProcessed };
+            _logger.LogInformation("Progress after root {RootId}: ProcessedFiles={Cum}", root.Id[..8], cumulativeProcessed);
+        }
+
+        return (cumulativeTotal, cumulativeProcessed);
+    }
+
+    private async Task<(int Total, int Processed)> ScanRootAsync(AppDbContext db, UserRoot root, ScanMode mode,
+        int cumulativeTotal, int cumulativeProcessed, List<string> allFiles, CancellationToken ct)
+    {
+        using var innerScope = _scopeFactory.CreateScope();
+        var thumbDb = innerScope.ServiceProvider.GetRequiredService<ThumbnailDbContext>();
+        var rootPath = Path.GetFullPath(root.RootPath);
+
+        var parallelThreads = await _settings.GetAsync(SettingKeys.ThumbnailParallelThreads, 2);
+        var semaphore = new SemaphoreSlim(Math.Max(1, parallelThreads));
+
+        _logger.LogInformation("Processing {Count} files for root {RootId}", allFiles.Count, root.Id);
+        var rootTotal = allFiles.Count;
+        Status = Status with { TotalFiles = cumulativeTotal + rootTotal };
 
         var log = new ScanLog
         {
             UserId = root.UserId,
             StartedAt = DateTime.UtcNow,
             Mode = mode == ScanMode.Full ? "full" : "incremental",
-            TotalFound = allFiles.Count
+            TotalFound = rootTotal
         };
         db.ScanLogs.Add(log);
 
@@ -256,7 +292,8 @@ public class ScanService : IScanService
                 newPhotos.Add(photo);
                 var added = Interlocked.Increment(ref newAdded);
                 if (added % 100 == 0)
-                    _logger.LogInformation("Scanned {Count}/{Total} for root {RootId}", added, allFiles.Count, root.Id);
+                    _logger.LogInformation("Scanned {Count}/{RootTotal} in root {RootId}, cumulative ProcessedFiles={Cumulative}",
+                        added, rootTotal, root.Id[..8], cumulativeProcessed + added);
             }
             catch (Exception ex)
             {
@@ -267,11 +304,12 @@ public class ScanService : IScanService
             {
                 semaphore.Release();
                 var current = Interlocked.Increment(ref processedCount);
-                Status = Status with { ProcessedFiles = current };
+                Status = Status with { ProcessedFiles = cumulativeProcessed + current };
             }
         });
 
-        Status = Status with { ProcessedFiles = processedCount };
+        var totalProcessed = cumulativeProcessed + processedCount;
+        Status = Status with { ProcessedFiles = totalProcessed };
 
         // Upsert new/updated photos
         foreach (var photo in newPhotos)
@@ -329,7 +367,9 @@ public class ScanService : IScanService
         await db.SaveChangesAsync(ct);
         _logger.LogInformation(
             "Scan complete for root {RootId}: {Total} files, {New} new, {Skipped} skipped, {Deleted} deleted, {Errors} errors",
-            root.Id, allFiles.Count, newAdded, skipped, softDeleted, errors);
+            root.Id, rootTotal, newAdded, skipped, softDeleted, errors);
+
+        return (rootTotal, processedCount);
     }
 
     public async Task RefreshExifAsync(string userId, CancellationToken ct = default)

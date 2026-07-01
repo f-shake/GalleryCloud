@@ -121,6 +121,10 @@ public class ExifService
 
         var result = parts[0].ToDouble() + parts[1].ToDouble() / 60.0 + parts[2].ToDouble() / 3600.0;
 
+        // SQLite cannot store NaN or Infinity — damaged EXIF can produce these
+        if (double.IsNaN(result) || double.IsInfinity(result))
+            return null;
+
         if (reference == "S" || reference == "W")
             result = -result;
 
