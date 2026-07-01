@@ -32,8 +32,8 @@ let clusterLayer: FeatureLayer | null = null
 let dotLayer: FeatureLayer | null = null      // many-dots mode (fast path)
 let dotGL: GraphicsLayer | null = null          // density-based dot layer
 let thumbGL: GraphicsLayer | null = null        // density-based bubble layer
-let extentWatcher: (() => void) | null = null
-let pointModeGen = 0
+let extentHandle: any = null
+let extentTimer: any = null
 
 function openPhoto(photoId: string, screenPoint?: { x: number; y: number }) {
   const rect = screenPoint
@@ -42,60 +42,6 @@ function openPhoto(photoId: string, screenPoint?: { x: number; y: number }) {
   viewStore.show(photoId, rect, '')
 }
 
-function thumbnailBubbleUrl(photoId: string): Promise<string> {
-  return new Promise((resolve) => {
-    const imgUrl = thumbUrl(photoId, 'grid', 60)
-    const img = new Image()
-    img.onload = () => {
-      const canvas = document.createElement('canvas')
-      canvas.width = 56; canvas.height = 68
-      const ctx = canvas.getContext('2d')!
-      const R = 8, x = 1, y = 1, w = 54, h = 54
-
-      function roundRect(c: CanvasRenderingContext2D, rx: number, ry: number, rw: number, rh: number, rr: number) {
-        c.beginPath()
-        c.moveTo(rx + rr, ry)
-        c.lineTo(rx + rw - rr, ry)
-        c.quadraticCurveTo(rx + rw, ry, rx + rw, ry + rr)
-        c.lineTo(rx + rw, ry + rh - rr)
-        c.quadraticCurveTo(rx + rw, ry + rh, rx + rw - rr, ry + rh)
-        c.lineTo(rx + rr, ry + rh)
-        c.quadraticCurveTo(rx, ry + rh, rx, ry + rh - rr)
-        c.lineTo(rx, ry + rr)
-        c.quadraticCurveTo(rx, ry, rx + rr, ry)
-        c.closePath()
-      }
-
-      ctx.shadowColor = 'rgba(0,0,0,.25)'
-      ctx.shadowBlur = 6
-      ctx.shadowOffsetY = 2
-      roundRect(ctx, x, y, w, h, R)
-      ctx.fillStyle = '#fff'
-      ctx.fill()
-      ctx.shadowColor = 'transparent'
-      ctx.save()
-      roundRect(ctx, x, y, w, h, R)
-      ctx.clip()
-      ctx.drawImage(img, x, y, w, h)
-      ctx.restore()
-      roundRect(ctx, x, y, w, h, R)
-      ctx.strokeStyle = 'rgba(0,0,0,.12)'
-      ctx.lineWidth = 1
-      ctx.stroke()
-      ctx.beginPath()
-      ctx.moveTo(20, 55); ctx.lineTo(28, 66); ctx.lineTo(36, 55)
-      ctx.closePath()
-      ctx.fillStyle = '#fff'
-      ctx.fill()
-      ctx.strokeStyle = 'rgba(0,0,0,.12)'
-      ctx.lineWidth = 1
-      ctx.stroke()
-      resolve(canvas.toDataURL())
-    }
-    img.onerror = () => resolve(thumbUrl(photoId, 'grid', 120))
-    img.src = imgUrl
-  })
-}
 
 function makeGraphics(points: MapPoint[]) {
   return points.map((p, i) => new Graphic({
@@ -188,8 +134,7 @@ function getExtentBounds(): { xmin: number; xmax: number; ymin: number; ymax: nu
   return { xmin, xmax, ymin, ymax }
 }
 
-async function updatePointMode() {
-  const gen = ++pointModeGen
+function updatePointMode() {
   if (!dotLayer || !dotGL || !thumbGL || !mapInst) return
 
   const bounds = getExtentBounds()
@@ -246,19 +191,22 @@ async function updatePointMode() {
         size: 8,
         outline: { color: [255, 255, 255], width: 1.5 },
       }),
+      attributes: { photoId: d.pt.id },
     }))
   }
 
-  // Show bubbles for sparse points
+  // Show raw thumbnails for sparse points
   if (sparse.length > 0) {
     thumbGL.visible = true
-    const urls = await Promise.all(sparse.map(s => thumbnailBubbleUrl(s.pt.id)))
-    if (gen !== pointModeGen) return // stale — discard
-    for (let i = 0; i < sparse.length; i++) {
+    for (const s of sparse) {
       thumbGL.add(new Graphic({
-        geometry: new Point({ longitude: sparse[i].pt.longitude, latitude: sparse[i].pt.latitude }),
-        symbol: new PictureMarkerSymbol({ url: urls[i], width: 56, height: 68 }),
-        attributes: { photoId: sparse[i].pt.id },
+        geometry: new Point({ longitude: s.pt.longitude, latitude: s.pt.latitude }),
+        symbol: new PictureMarkerSymbol({
+          url: thumbUrl(s.pt.id, 'grid', 120),
+          width: 48,
+          height: 48,
+        }),
+        attributes: { photoId: s.pt.id },
       }))
     }
   } else {
@@ -268,9 +216,10 @@ async function updatePointMode() {
 
 function switchMode(newMode: 'cluster' | 'point') {
   mode.value = newMode
+  localStorage.setItem('mapMode', newMode)
   if (!clusterLayer || !dotLayer || !dotGL || !thumbGL || !mapInst) return
 
-  if (extentWatcher) { extentWatcher(); extentWatcher = null }
+  if (extentHandle) { extentHandle.remove(); extentHandle = null }
 
   if (newMode === 'cluster') {
     clusterLayer.visible = true
@@ -280,7 +229,10 @@ function switchMode(newMode: 'cluster' | 'point') {
   } else {
     clusterLayer.visible = false
     updatePointMode()
-    extentWatcher = reactiveWatch(() => mapInst!.view.extent, () => updatePointMode())
+    extentHandle = reactiveWatch(() => mapInst!.view.extent, () => {
+      clearTimeout(extentTimer)
+      extentTimer = setTimeout(() => updatePointMode(), 250)
+    })
   }
 }
 
@@ -331,6 +283,12 @@ function onPhotoClick(photoId: string, e: MouseEvent) {
 
 function closeClusterView() { clusterView.value = null }
 
+function toggleBasemap() {
+  basemap.value = basemap.value === 'normal' ? 'satellite' : 'normal'
+  localStorage.setItem('mapBasemap', basemap.value)
+  switchBasemap(basemap.value)
+}
+
 let pinchStart = 0, pinchEnd = 0
 function onTouchStart(e: TouchEvent) {
   if (e.touches.length === 2) {
@@ -354,7 +312,15 @@ onMounted(async () => {
     ])
 
     const c = cfg.data
-    basemap.value = updateTileUrls(c.tileUrlNormal, c.tileUrlSatellite, c.defaultBasemap)
+    updateTileUrls(c.tileUrlNormal, c.tileUrlSatellite, c.defaultBasemap)
+
+    // Restore saved basemap preference
+    const savedBasemap = localStorage.getItem('mapBasemap')
+    if (savedBasemap === 'normal' || savedBasemap === 'satellite') {
+      basemap.value = savedBasemap
+    } else {
+      basemap.value = c.defaultBasemap === 'satellite' ? 'satellite' : 'normal'
+    }
 
     const points: MapPoint[] = Array.isArray(pts.data) ? pts.data : []
     allPoints = points
@@ -363,6 +329,9 @@ onMounted(async () => {
     const instance = await initMap()
     if (!instance) return
     mapInst = instance
+
+    // Apply saved/restored basemap
+    switchBasemap(basemap.value)
 
     if (points.length > 0) {
       clusterLayer = buildClusterLayer(points)
@@ -379,9 +348,16 @@ onMounted(async () => {
       instance.map.add(thumbGL)
       thumbGL.visible = false
 
+      // Restore saved mode preference
+      const savedMode = localStorage.getItem('mapMode')
+      if (savedMode === 'point') {
+        switchMode('point')
+      }
+
       // Click handler
       instance.view.on('click', (event: any) => {
-        const sp = { x: event.screenPoint.x, y: event.screenPoint.y }
+        const cr = mapContainer.value!.getBoundingClientRect()
+        const sp = { x: event.screenPoint.x + cr.left, y: event.screenPoint.y + cr.top }
         instance.view.hitTest(event).then((response: any) => {
           const hit = response.results?.[0]
           if (hit?.type !== 'graphic') return
@@ -398,9 +374,8 @@ onMounted(async () => {
             }
             openPhoto(photoId, sp)
           } else {
-            if (graphic.layer === thumbGL) {
-              openPhoto(photoId, sp)
-            }
+            // Point mode: both bubbles and dots open the photo
+            openPhoto(photoId, sp)
           }
         })
       })
@@ -443,7 +418,8 @@ onMounted(async () => {
 })
 
 onUnmounted(() => {
-  if (extentWatcher) extentWatcher()
+  if (extentHandle) extentHandle.remove()
+  clearTimeout(extentTimer)
   destroyMap()
   mapInst = null
   clusterLayer = null
@@ -473,7 +449,7 @@ onUnmounted(() => {
           <circle cx="12" cy="12" r="4" fill="currentColor"/>
         </svg>
       </button>
-      <button class="map-btn" @click="basemap === 'normal' ? (basemap='satellite', switchBasemap('satellite')) : (basemap='normal', switchBasemap('normal'))" :title="basemap === 'normal' ? '卫星图' : '普通图'">
+      <button class="map-btn" @click="toggleBasemap" :title="basemap === 'normal' ? '卫星图' : '普通图'">
         <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
           <circle cx="12" cy="12" r="10"/>
           <line x1="2" y1="12" x2="22" y2="12"/>
