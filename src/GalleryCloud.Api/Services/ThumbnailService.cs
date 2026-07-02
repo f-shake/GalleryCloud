@@ -92,13 +92,54 @@ public class ThumbnailService : IThumbnailService
     // ── Background consumer ────────────────────────────────────
     public async Task ConsumeChannelAsync(CancellationToken ct)
     {
-        var parallelThreads = await _settings.GetAsync(SettingKeys.ThumbnailParallelThreads, 4);
-        var semaphore = new SemaphoreSlim(Math.Max(1, parallelThreads));
+        var inflight = new List<Task>(32);
+        var currentParallel = Math.Max(1, await _settings.GetAsync(SettingKeys.ThumbnailParallelThreads, 4));
 
         await foreach (var (photoId, size, width) in _channel.Reader.ReadAllAsync(ct))
         {
-            await semaphore.WaitAsync(ct);
-            _ = GenerateOneAsync(photoId, size, width, semaphore, ct);
+            // Re-read setting each iteration so changes take effect without restart
+            currentParallel = Math.Max(1, await _settings.GetAsync(SettingKeys.ThumbnailParallelThreads, 4));
+
+            // Remove completed tasks
+            inflight.RemoveAll(t => t.IsCompleted);
+
+            // Wait if at capacity
+            while (inflight.Count >= currentParallel)
+            {
+                var done = await Task.WhenAny(inflight);
+                inflight.Remove(done);
+            }
+
+            // EnqueueAsync already handles dedup via _queuedIds — just process
+            var task = Task.Run(() => ProcessChannelItemAsync(photoId, size, width, ct), ct);
+            inflight.Add(task);
+        }
+
+        await Task.WhenAll(inflight);
+    }
+
+    private async Task ProcessChannelItemAsync(string photoId, ThumbnailSize size, int width, CancellationToken ct)
+    {
+        Interlocked.Increment(ref _inProgressCount);
+        var perPhotoLock = _photoLocks.GetOrAdd(photoId, _ => new SemaphoreSlim(1, 1));
+        await perPhotoLock.WaitAsync(ct);
+        try
+        {
+            var memKey = $"thumb:{photoId}:{size.ToString().ToLowerInvariant()}";
+            if (_memoryCache.TryGetValue(memKey, out byte[]? _))
+                return;
+
+            await InternalGenerateAsync(photoId, size, width, ct);
+        }
+        catch (OperationCanceledException) { }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Background thumbnail failed [{Size}] {PhotoId}", size, photoId[..8]);
+        }
+        finally
+        {
+            Interlocked.Decrement(ref _inProgressCount);
+            perPhotoLock.Release();
         }
     }
 
