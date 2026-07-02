@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted } from 'vue'
+import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import client from '../api/client'
 import { thumbUrl } from '../composables/useThumbnailUrl'
 import { usePhotoGrid } from '../composables/usePhotoGrid'
@@ -18,7 +18,7 @@ import PhotoGridToolbar from '../components/PhotoGridToolbar.vue'
 interface MapPoint { id: string; latitude: number; longitude: number; fileName: string; takenAt: string | null }
 
 const viewStore = usePhotoViewStore()
-const { columns, zoomIn, zoomOut } = usePhotoGrid()
+const { columns, groupLevel, zoomIn, zoomOut } = usePhotoGrid()
 const mapContainer = ref<HTMLDivElement | null>(null)
 const { loading, initMap, switchBasemap, updateTileUrls, destroy: destroyMap } = useMap(mapContainer)
 const pointCount = ref(0)
@@ -247,19 +247,46 @@ function getRadiusFromZoom(zoom: number): number {
 }
 
 function groupByDate(photos: any[]) {
+  const level = groupLevel.value
   const groups: { label: string; photos: any[] }[] = []
-  let lastLabel = ''
-  for (const p of photos) {
-    const label = p.takenAt ? p.takenAt.substring(0, 7) : '未知日期'
-    if (label !== lastLabel) {
-      groups.push({ label, photos: [p] })
-      lastLabel = label
-    } else {
-      groups[groups.length - 1].photos.push(p)
+  if (level === 'none' || photos.length === 0) {
+    groups.push({ label: '', photos })
+    return groups
+  }
+  let lastKey = ''
+  let currentLabel = ''
+  let currentBatch: any[] = []
+  function flush() {
+    if (currentBatch.length > 0) {
+      groups.push({ label: currentLabel, photos: currentBatch.splice(0) })
     }
   }
+  for (const p of photos) {
+    if (!p.takenAt) { currentBatch.push(p); continue }
+    const d = new Date(p.takenAt)
+    const key = level === 'month'
+      ? `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
+      : `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+    if (key !== lastKey && lastKey !== '') flush()
+    lastKey = key
+    currentLabel = level === 'month'
+      ? `${d.getFullYear()}年${d.getMonth() + 1}月`
+      : `${d.getFullYear()}年${d.getMonth() + 1}月${d.getDate()}日`
+    currentBatch.push(p)
+  }
+  flush()
   return groups
 }
+
+// Re-group when zoom level changes
+watch(groupLevel, () => {
+  if (clusterView.value && clusterView.value.photos.length > 0) {
+    clusterView.value = {
+      ...clusterView.value,
+      groups: groupByDate(clusterView.value.photos),
+    }
+  }
+})
 
 function fetchClusterPhotos(lat: number, lng: number, zoom: number) {
   const r2 = getRadiusFromZoom(zoom) ** 2
@@ -486,7 +513,7 @@ onUnmounted(() => {
       </div>
       <div class="cluster-overlay-body" v-loading="clusterView.loading">
         <template v-for="(group, _gi) in clusterView.groups" :key="_gi">
-          <div class="cluster-group-header">
+          <div v-if="group.label" class="cluster-group-header">
             <el-tag type="info" size="large">{{ group.label }}</el-tag>
           </div>
           <div class="cluster-photo-grid" :style="{ gridTemplateColumns: `repeat(${columns}, 1fr)` }">

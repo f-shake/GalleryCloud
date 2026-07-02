@@ -10,7 +10,7 @@ import { useScanStatus } from '../composables/useScanStatus'
 interface FolderNode { name: string; path: string; rootId?: string; photoCount: number; subFolders: FolderNode[]; _key: string }
 
 const viewStore = usePhotoViewStore()
-const { columns, zoomIn, zoomOut } = usePhotoGrid()
+const { columns, groupLevel, zoomIn, zoomOut } = usePhotoGrid()
 const { isScanning } = useScanStatus()
 
 // Pinch zoom for photo grid
@@ -34,6 +34,42 @@ const selRootId = ref('')
 const photos = ref<any[]>([])
 const loading = ref(false)
 const treeLoading = ref(true)
+
+// Group photos using same logic as timeline
+const photoGroups = computed(() => {
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const _ = columns.value // re-evaluate when columns change
+  const level = groupLevel.value
+  const groups: { label: string; photos: any[] }[] = []
+  const items = photos.value
+  if (level === 'none' || items.length === 0) {
+    if (items.length > 0) groups.push({ label: '', photos: items })
+    return groups
+  }
+  let lastKey = ''
+  let currentLabel = ''
+  let currentBatch: any[] = []
+  function flush() {
+    if (currentBatch.length > 0) {
+      groups.push({ label: currentLabel, photos: currentBatch.splice(0) })
+    }
+  }
+  for (const p of items) {
+    if (!p.takenAt) { currentBatch.push(p); continue }
+    const d = new Date(p.takenAt)
+    const key = level === 'month'
+      ? `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
+      : `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+    if (key !== lastKey && lastKey !== '') flush()
+    lastKey = key
+    currentLabel = level === 'month'
+      ? `${d.getFullYear()}年${d.getMonth() + 1}月`
+      : `${d.getFullYear()}年${d.getMonth() + 1}月${d.getDate()}日`
+    currentBatch.push(p)
+  }
+  flush()
+  return groups
+})
 
 onMounted(async () => {
   try {
@@ -108,17 +144,23 @@ const defaultExpanded = computed(() => tree.value.map(n => n._key))
       </div>
       <el-empty v-if="!selPath && !selRootId && !isScanning" description="选择左侧文件夹" />
       <div v-else-if="loading" style="text-align:center;padding:32px"><el-icon class="is-loading" :size="24"><Loading /></el-icon></div>
-      <div v-else-if="photos.length" class="photo-grid" :style="{ display:'grid', gridTemplateColumns:`repeat(${columns}, 1fr)`, gap:'4px' }">
-        <div v-for="p in photos" :key="p.id" class="thumb-cell" @click="onPhotoClick(p.id, $event)">
-          <img v-lazy-img="thumbUrl(p.id, 'grid', 400)" class="thumb-img" />
+      <template v-for="(g, gi) in photoGroups" :key="gi">
+        <div v-if="g.label" class="ft-group-header">
+          <el-tag type="info" size="large">{{ g.label }}</el-tag>
         </div>
-      </div>
+        <div class="photo-grid" :style="{ display:'grid', gridTemplateColumns:`repeat(${columns}, 1fr)`, gap:'4px' }">
+          <div v-for="p in g.photos" :key="p.id" class="thumb-cell" @click="onPhotoClick(p.id, $event)">
+            <img v-lazy-img="thumbUrl(p.id, 'grid', 400)" class="thumb-img" />
+          </div>
+        </div>
+      </template>
     </div>
   </div>
 </template>
 
 <style>
 .el-tree-node__content { overflow: hidden; }
+.ft-group-header { padding: 6px 0 4px 0; }
 
 /* Desktop: side-by-side layout */
 .ft-layout { display: flex; height: 100%; }

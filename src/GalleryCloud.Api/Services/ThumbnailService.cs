@@ -139,6 +139,7 @@ public class ThumbnailService : IThumbnailService
         finally
         {
             Interlocked.Decrement(ref _inProgressCount);
+            _queuedIds.TryRemove($"{photoId}:{size.ToString().ToLowerInvariant()}", out _);
             perPhotoLock.Release();
         }
     }
