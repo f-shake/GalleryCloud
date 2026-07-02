@@ -39,7 +39,7 @@ function openPhoto(photoId: string, screenPoint?: { x: number; y: number }) {
   const rect = screenPoint
     ? { x: screenPoint.x, y: screenPoint.y, width: 1, height: 1 }
     : { x: 0, y: 0, width: 0, height: 0 }
-  viewStore.show(photoId, rect, '')
+  viewStore.show(photoId, rect, '', allPoints.map(p => ({ id: p.id, takenAt: p.takenAt })))
 }
 
 
@@ -279,7 +279,8 @@ function fetchClusterPhotos(lat: number, lng: number, zoom: number) {
 function onPhotoClick(photoId: string, e: MouseEvent) {
   const img = (e.currentTarget as HTMLElement).querySelector('img')
   const r = img ? img.getBoundingClientRect() : (e.currentTarget as HTMLElement).getBoundingClientRect()
-  viewStore.show(photoId, { x: r.x, y: r.y, width: r.width, height: r.height }, img?.src)
+  viewStore.show(photoId, { x: r.x, y: r.y, width: r.width, height: r.height }, img?.src,
+    allPoints.map(p => ({ id: p.id, takenAt: p.takenAt })))
 }
 
 function closeClusterView() { clusterView.value = null }

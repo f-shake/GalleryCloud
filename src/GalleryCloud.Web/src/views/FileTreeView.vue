@@ -7,7 +7,7 @@ import { thumbUrl } from '../composables/useThumbnailUrl'
 import { usePhotoViewStore } from '../stores/photoViewStore'
 import { useScanStatus } from '../composables/useScanStatus'
 
-interface FolderNode { name: string; path: string; rootId?: string; photoCount: number; subFolders: FolderNode[] }
+interface FolderNode { name: string; path: string; rootId?: string; photoCount: number; subFolders: FolderNode[]; _key: string }
 
 const viewStore = usePhotoViewStore()
 const { columns, zoomIn, zoomOut } = usePhotoGrid()
@@ -36,19 +36,27 @@ const loading = ref(false)
 const treeLoading = ref(true)
 
 onMounted(async () => {
-  try { const r = await client.get('/folders'); tree.value = r.data }
+  try {
+    const r = await client.get('/folders')
+    tree.value = addKeys(r.data)
+  }
   catch { /* */ }
   finally { treeLoading.value = false }
 })
 
-function nodeKey(node: FolderNode): string {
-  return node.rootId ? node.rootId + ':' + node.path : node.path
+function addKeys(nodes: FolderNode[]): FolderNode[] {
+  return nodes.map(n => ({
+    ...n,
+    _key: n.rootId ? n.rootId + ':' + n.path : n.path,
+    subFolders: addKeys(n.subFolders)
+  }))
 }
 
 function onPhotoClick(id: string, e: MouseEvent) {
   const img = (e.currentTarget as HTMLElement).querySelector('img')
   const r = img ? img.getBoundingClientRect() : (e.currentTarget as HTMLElement).getBoundingClientRect()
-  viewStore.show(id, { x: r.x, y: r.y, width: r.width, height: r.height }, img?.src)
+  viewStore.show(id, { x: r.x, y: r.y, width: r.width, height: r.height }, img?.src,
+    photos.value.map((p: any) => ({ id: p.id, takenAt: p.takenAt })))
 }
 
 async function onNodeClick(node: FolderNode) {
@@ -66,7 +74,7 @@ async function onNodeClick(node: FolderNode) {
   finally { loading.value = false }
 }
 
-const defaultExpanded = computed(() => tree.value.map(n => nodeKey(n)))
+const defaultExpanded = computed(() => tree.value.map(n => n._key))
 </script>
 
 <template>
@@ -75,7 +83,7 @@ const defaultExpanded = computed(() => tree.value.map(n => nodeKey(n)))
       <el-tree
         :data="tree"
         :props="{ children: 'subFolders', label: 'name' }"
-        :node-key="nodeKey"
+        node-key="_key"
         :default-expanded-keys="defaultExpanded"
         @node-click="onNodeClick"
         :loading="treeLoading"
