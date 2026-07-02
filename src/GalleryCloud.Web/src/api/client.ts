@@ -17,13 +17,16 @@ client.interceptors.request.use((config) => {
   return config
 })
 
-// Don't hard-redirect on 401 — let the store/router handle it
+let redirecting = false
+
 client.interceptors.response.use(
   (response) => response,
   (error) => {
-    if (error.response?.status === 401) {
+    if (error.response?.status === 401 && !redirecting) {
+      redirecting = true
       localStorage.removeItem('token')
       localStorage.removeItem('user')
+      window.location.href = '/login'
     }
     return Promise.reject(error)
   }
