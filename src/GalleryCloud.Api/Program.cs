@@ -7,7 +7,6 @@ using GalleryCloud.Core.Interfaces;
 using GalleryCloud.Core.Settings;
 using Microsoft.EntityFrameworkCore;
 using Serilog;
-
 // Serilog: 控制台输出 + 按天滚动文件到 App_Data/logs/
 Log.Logger = new LoggerConfiguration()
     .MinimumLevel.Information()
@@ -41,6 +40,9 @@ builder.Services.AddMemoryCache();
 
 // Core services
 builder.Services.AddScoped<IAuthService, AuthService>();
+builder.Services.AddScoped<IUserService, UserService>();
+builder.Services.AddScoped<IStatsService, StatsService>();
+builder.Services.AddSingleton<IFilesystemBrowserService, FilesystemBrowserService>();
 builder.Services.AddSingleton<ISettingService, SettingService>();
 builder.Services.AddScoped<UserContext>();
 builder.Services.AddScoped<IUserContext>(sp => sp.GetRequiredService<UserContext>());

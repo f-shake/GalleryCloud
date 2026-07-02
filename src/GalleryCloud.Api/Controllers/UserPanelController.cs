@@ -1,6 +1,7 @@
 using GalleryCloud.Api.Data;
 using GalleryCloud.Api.Dtos;
 using GalleryCloud.Api.Services;
+using GalleryCloud.Core.Dtos;
 using GalleryCloud.Core.Interfaces;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -16,15 +17,17 @@ public class UserPanelController : ControllerBase
     private readonly IScanService _scanService;
     private readonly IAuthService _authService;
     private readonly IThumbnailService _thumbnailService;
+    private readonly IStatsService _statsService;
 
     public UserPanelController(AppDbContext db, UserContext userContext, IScanService scanService,
-        IAuthService authService, IThumbnailService thumbnailService)
+        IAuthService authService, IThumbnailService thumbnailService, IStatsService statsService)
     {
         _db = db;
         _userContext = userContext;
         _scanService = scanService;
         _authService = authService;
         _thumbnailService = thumbnailService;
+        _statsService = statsService;
     }
 
     // ==================== Scan ====================
@@ -202,19 +205,6 @@ public class UserPanelController : ControllerBase
         if (!_userContext.IsAuthenticated || _userContext.IsAdmin)
             return Unauthorized();
 
-        var totalPhotos = await _db.Photos.CountAsync(p => p.UserId == _userContext.UserId && !p.IsDeleted);
-        var totalSize = await _db.Photos.Where(p => p.UserId == _userContext.UserId && !p.IsDeleted).SumAsync(p => (long?)p.FileSize) ?? 0;
-        var photosWithGps = await _db.Photos.CountAsync(p => p.UserId == _userContext.UserId && !p.IsDeleted && p.Latitude != null);
-        var formatDistribution = await _db.Photos
-            .Where(p => p.UserId == _userContext.UserId && !p.IsDeleted)
-            .GroupBy(p => p.FileFormat)
-            .Select(g => new FormatCountItem(g.Key, g.Count()))
-            .ToListAsync();
-
-        return Ok(new AdminStats(
-            totalPhotos, 0, totalSize,
-            Math.Round(totalSize / (1024.0 * 1024 * 1024), 2),
-            photosWithGps, formatDistribution
-        ));
+        return Ok(await _statsService.GetUserStatsAsync(_userContext.UserId!));
     }
 }

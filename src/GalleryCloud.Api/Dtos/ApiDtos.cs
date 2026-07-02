@@ -77,13 +77,9 @@ public record SearchResponse(int Total, int Page, int Limit, List<PhotoListItem>
 
 public record LoginRequest(string Username, string Password);
 
-public record UserResponse(string Id, string Username, string? DisplayName, List<UserRootDto> Roots);
+public record UserResponse(string Id, string Username, string? DisplayName, List<global::GalleryCloud.Core.Dtos.UserRootDto> Roots);
 
 public record AuthResult(string Token, UserResponse User);
-
-public record UserRootDto(string Id, string RootPath, bool IsEnabled, DateTime CreatedAt);
-
-public record CreateUserRootRequest(string RootPath);
 
 // ============================================================
 // Tags
@@ -146,24 +142,7 @@ public class FolderNode
 // Admin
 // ============================================================
 
-public record CreateUserRequest(string Username, string Password, string? DisplayName, List<string> RootPaths);
-
-public record UpdateUserRequest(string? Password, string? DisplayName, bool? IsActive, List<string>? RootPaths = null);
-
-public record UserListItem(string Id, string Username, string? DisplayName, bool IsActive, DateTime CreatedAt, List<UserRootDto> Roots);
-
 public record ThumbnailGenerationRequest(List<string>? Sizes);
-
-public record FormatCountItem(string Format, int Count);
-
-public record AdminStats(
-    long TotalPhotos,
-    int TotalUsers,
-    long TotalSize,
-    double TotalSizeGb,
-    int PhotosWithGps,
-    List<FormatCountItem> FormatDistribution
-);
 
 public record ScanLogItem(string Id, string UserId, DateTime StartedAt, DateTime? FinishedAt, int TotalFound, int NewAdded, int SoftDeleted, string Mode);
 
@@ -190,11 +169,3 @@ public record RenameRequest(string NewFileName);
 // ============================================================
 
 public record ChangePasswordRequest(string OldPassword, string NewPassword);
-
-// ============================================================
-// Filesystem browser (admin)
-// ============================================================
-
-public record FsEntryDto(string Name, string FullPath, bool IsDrive);
-
-public record FsBrowseResult(string CurrentPath, List<FsEntryDto> Entries, string? ParentPath, bool IsRoot);

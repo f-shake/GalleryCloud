@@ -361,6 +361,16 @@ public class ThumbnailService : IThumbnailService
         };
     }
 
+    public async Task<int> ClearCacheAsync()
+    {
+        using var scope = _scopeFactory.CreateScope();
+        var thumbDb = scope.ServiceProvider.GetRequiredService<ThumbnailDbContext>();
+        var count = await thumbDb.ThumbnailCaches.CountAsync();
+        thumbDb.ThumbnailCaches.RemoveRange(thumbDb.ThumbnailCaches);
+        await thumbDb.SaveChangesAsync();
+        return count;
+    }
+
     // ── Fill missing ────────────────────────────────────────────
     public async Task FillMissingAsync(List<string>? sizes = null, CancellationToken ct = default)
     {

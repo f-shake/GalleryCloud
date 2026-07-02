@@ -1,5 +1,6 @@
 using GalleryCloud.Api.Data;
 using GalleryCloud.Api.Dtos;
+using GalleryCloud.Core.Dtos;
 using GalleryCloud.Api.Services;
 using GalleryCloud.Core.Interfaces;
 using Microsoft.AspNetCore.Mvc;

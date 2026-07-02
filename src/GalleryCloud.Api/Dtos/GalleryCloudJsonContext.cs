@@ -1,6 +1,7 @@
 using System.Text.Json.Serialization;
 using GalleryCloud.Core.Interfaces;
 using GalleryCloud.Core.Entities;
+using GalleryCloud.Core.Dtos;
 using Microsoft.AspNetCore.Mvc;
 
 namespace GalleryCloud.Api.Dtos;
