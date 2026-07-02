@@ -459,6 +459,15 @@ onUnmounted(() => {
       </button>
     </div>
 
+    <div v-show="!loading && !clusterView" class="map-zoom-buttons">
+      <button class="map-btn" @click="mapInst?.view.zoomIn()" title="放大">
+        <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+      </button>
+      <button class="map-btn" @click="mapInst?.view.zoomOut()" title="缩小">
+        <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="5" y1="12" x2="19" y2="12"/></svg>
+      </button>
+    </div>
+
     <div v-if="clusterView" class="cluster-overlay" @touchstart="onTouchStart" @touchmove="onTouchMove" @touchend="onTouchEnd">
       <div class="cluster-overlay-header">
         <PhotoGridToolbar :count="clusterView.photos.length">
@@ -524,6 +533,17 @@ onUnmounted(() => {
   transition: background .2s;
 }
 .map-btn:hover { background: var(--el-fill-color-light); }
+.map-zoom-buttons {
+  position: absolute;
+  bottom: 20px;
+  left: 16px;
+  z-index: 10;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.map-zoom-buttons .map-btn { width: 36px; height: 36px; border-radius: 8px; }
+.esri-zoom { display: none !important; }
 .esri-popup__main-container { max-width: 280px !important; }
 .esri-attribution { display: none !important; }
 .cluster-overlay {
