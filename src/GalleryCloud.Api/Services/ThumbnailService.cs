@@ -12,6 +12,7 @@ using SixLabors.ImageSharp.Formats;
 using SixLabors.ImageSharp.Formats.Jpeg;
 using SixLabors.ImageSharp.Formats.Webp;
 using SixLabors.ImageSharp.Processing;
+using ImageMagick;
 
 namespace GalleryCloud.Api.Services;
 
@@ -162,42 +163,58 @@ public class ThumbnailService : IThumbnailService
             isPreview ? 70 : 60);
         var fmt = await _settings.GetAsync(isPreview ? SettingKeys.PreviewFormat : SettingKeys.ThumbnailFormat, "jpeg");
 
+        // Select processing engine
+        var engine = await _settings.GetAsync(SettingKeys.ImageProcessingEngine, "ImageSharp");
+
         // Decode + process
         var sw = System.Diagnostics.Stopwatch.StartNew();
-        using var image = await Image.LoadAsync(fullPath, ct);
-        var decodeMs = sw.ElapsedMilliseconds;
-        int srcW = image.Width, srcH = image.Height;
-
-        image.Mutate(x => x.AutoOrient());
-
-        bool isWebp = fmt.Equals("webp", StringComparison.OrdinalIgnoreCase);
-        IImageEncoder encoder = isWebp
-            ? new WebpEncoder { Quality = quality }
-            : new JpegEncoder { Quality = quality };
+        byte[] resultBytes;
+        int srcW, srcH;
+        long decodeMs, encodeMs;
         string format = fmt.ToLowerInvariant();
 
-        if (isPreview)
+        if (engine.Equals("MagickNET", StringComparison.OrdinalIgnoreCase))
         {
-            var maxRes = await _settings.GetAsync(SettingKeys.PreviewMaxResolution, 5000);
-            var longerSide = Math.Max(image.Width, image.Height);
-            if (longerSide > maxRes)
-            {
-                var scale = (double)maxRes / longerSide;
-                image.Mutate(x => x.Resize((int)(image.Width * scale), (int)(image.Height * scale)));
-            }
+            (resultBytes, srcW, srcH, decodeMs, encodeMs) = await ProcessWithMagickNetAsync(
+                fullPath, isPreview, quality, fmt, width, ct);
         }
         else
         {
-            var targetW = Math.Min(width, image.Width);
-            image.Mutate(x => x.Resize(targetW, 0));
-        }
+            using var image = await Image.LoadAsync(fullPath, ct);
+            decodeMs = sw.ElapsedMilliseconds;
+            srcW = image.Width;
+            srcH = image.Height;
 
-        // Encode to memory
-        sw.Restart();
-        using var ms = new MemoryStream();
-        await image.SaveAsync(ms, encoder, ct);
-        var encodeMs = sw.ElapsedMilliseconds;
-        var resultBytes = ms.ToArray();
+            image.Mutate(x => x.AutoOrient());
+
+            bool isWebp = fmt.Equals("webp", StringComparison.OrdinalIgnoreCase);
+            IImageEncoder encoder = isWebp
+                ? new WebpEncoder { Quality = quality }
+                : new JpegEncoder { Quality = quality };
+
+            if (isPreview)
+            {
+                var maxRes = await _settings.GetAsync(SettingKeys.PreviewMaxResolution, 5000);
+                var longerSide = Math.Max(image.Width, image.Height);
+                if (longerSide > maxRes)
+                {
+                    var scale = (double)maxRes / longerSide;
+                    image.Mutate(x => x.Resize((int)(image.Width * scale), (int)(image.Height * scale)));
+                }
+            }
+            else
+            {
+                var targetW = Math.Min(width, image.Width);
+                image.Mutate(x => x.Resize(targetW, 0));
+            }
+
+            // Encode to memory
+            sw.Restart();
+            using var ms = new MemoryStream();
+            await image.SaveAsync(ms, encoder, ct);
+            encodeMs = sw.ElapsedMilliseconds;
+            resultBytes = ms.ToArray();
+        }
 
         // Store in thumbnail DB
         sw.Restart();
@@ -230,6 +247,52 @@ public class ThumbnailService : IThumbnailService
             sizeKey, photoId[..8], srcW, srcH, decodeMs, encodeMs, dbMs, Math.Max(0, remaining), Math.Max(0, _inProgressCount));
 
         return new MemoryStream(resultBytes);
+    }
+
+    // ── Magick.NET processing ──────────────────────────────────────
+
+    private async Task<(byte[] Data, int Width, int Height, long DecodeMs, long EncodeMs)> ProcessWithMagickNetAsync(
+        string fullPath, bool isPreview, int quality, string fmt, int width, CancellationToken ct)
+    {
+        ct.ThrowIfCancellationRequested();
+        var sw = System.Diagnostics.Stopwatch.StartNew();
+
+        using var image = new MagickImage(fullPath);
+        ct.ThrowIfCancellationRequested();
+
+        int srcW = (int)image.Width, srcH = (int)image.Height;
+        image.AutoOrient();
+
+        if (isPreview)
+        {
+            var maxRes = await _settings.GetAsync(SettingKeys.PreviewMaxResolution, 5000);
+            var longerSide = Math.Max((int)image.Width, (int)image.Height);
+            if (longerSide > maxRes)
+            {
+                var scale = (double)maxRes / longerSide;
+                image.Resize(new MagickGeometry((uint)(image.Width * scale), (uint)(image.Height * scale))
+                    { IgnoreAspectRatio = false });
+            }
+        }
+        else
+        {
+            var targetW = Math.Min((uint)width, image.Width);
+            image.Resize(new MagickGeometry(targetW, 0) { IgnoreAspectRatio = false });
+        }
+
+        image.Quality = (uint)quality;
+        var format = fmt.Equals("webp", StringComparison.OrdinalIgnoreCase)
+            ? MagickFormat.WebP
+            : MagickFormat.Jpeg;
+
+        // Now measure encode separately — decode includes lazy pixel decode triggered above
+        var decodeMs = sw.ElapsedMilliseconds;
+        sw.Restart();
+        using var ms = new MemoryStream();
+        await image.WriteAsync(ms, format, ct);
+        var encodeMs = sw.ElapsedMilliseconds;
+
+        return (ms.ToArray(), srcW, srcH, decodeMs, encodeMs);
     }
 
     // ── Cancel ──────────────────────────────────────────────────
@@ -304,25 +367,25 @@ public class ThumbnailService : IThumbnailService
 
         lock (_regLock) { RegenerationStatus = new ThumbnailGenerationStatus { IsRunning = true, Total = missing.Count, Processed = 0 }; }
         var parallel = await _settings.GetAsync(SettingKeys.ThumbnailParallelThreads, 4);
-        var semaphore = new SemaphoreSlim(Math.Max(1, parallel));
+        var parallelOptions = new ParallelOptions
+        {
+            MaxDegreeOfParallelism = Math.Max(1, parallel),
+            CancellationToken = cts.Token
+        };
 
-        var tasks = missing.Select(async item =>
+        await Parallel.ForEachAsync(missing, parallelOptions, async (item, ct) =>
         {
             var (pid, sz, w) = item;
-            try { await semaphore.WaitAsync(cts.Token); }
-            catch { return; }
             try
             {
-                if (cts.Token.IsCancellationRequested) return;
                 Interlocked.Increment(ref _inProgressCount);
-                try { await InternalGenerateAsync(pid, sz, w, cts.Token); }
+                try { await InternalGenerateAsync(pid, sz, w, ct); }
                 catch { }
                 finally { Interlocked.Decrement(ref _inProgressCount); }
                 RegenerationStatus = RegenerationStatus with { Processed = RegenerationStatus.Processed + 1 };
             }
-            finally { semaphore.Release(); }
+            catch (OperationCanceledException) { }
         });
-        await Task.WhenAll(tasks);
 
         lock (_regLock) { RegenerationStatus = new(); }
     }
@@ -365,25 +428,25 @@ public class ThumbnailService : IThumbnailService
 
         lock (_regLock) { RegenerationStatus = new ThumbnailGenerationStatus { IsRunning = true, Total = workItems.Count, Processed = 0 }; }
         var parallel = await _settings.GetAsync(SettingKeys.ThumbnailParallelThreads, 4);
-        var semaphore = new SemaphoreSlim(Math.Max(1, parallel));
+        var parallelOptions = new ParallelOptions
+        {
+            MaxDegreeOfParallelism = Math.Max(1, parallel),
+            CancellationToken = cts.Token
+        };
 
-        var tasks = workItems.Select(async item =>
+        await Parallel.ForEachAsync(workItems, parallelOptions, async (item, ct) =>
         {
             var (pid, sz, w) = item;
-            try { await semaphore.WaitAsync(cts.Token); }
-            catch { return; }
             try
             {
-                if (cts.Token.IsCancellationRequested) return;
                 Interlocked.Increment(ref _inProgressCount);
-                try { await InternalGenerateAsync(pid, sz, w, cts.Token); }
+                try { await InternalGenerateAsync(pid, sz, w, ct); }
                 catch { }
                 finally { Interlocked.Decrement(ref _inProgressCount); }
                 RegenerationStatus = RegenerationStatus with { Processed = RegenerationStatus.Processed + 1 };
             }
-            finally { semaphore.Release(); }
+            catch (OperationCanceledException) { }
         });
-        await Task.WhenAll(tasks);
 
         lock (_regLock) { RegenerationStatus = new(); }
     }

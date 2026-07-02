@@ -45,10 +45,10 @@ export function useMap(containerRef: Ref<HTMLDivElement | null>) {
     })
   }
 
-  function updateTileUrls(normal?: string, satellite?: string, defaultBasemap?: string) {
+  function updateTileUrls(normal?: string, satellite?: string) {
     if (normal) tileUrlNormal = normal
     if (satellite) tileUrlSatellite = satellite
-    return defaultBasemap === 'satellite' ? 'satellite' as const : 'normal' as const
+    return 'normal' as const
   }
 
   function destroy() {

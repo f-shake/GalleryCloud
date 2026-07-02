@@ -27,9 +27,9 @@ public class SettingService : ISettingService
         [SettingKeys.PreviewFormat] = "jpeg",
         [SettingKeys.PreviewQuality] = "70",
         [SettingKeys.PreviewMaxResolution] = "5000",
+        [SettingKeys.ImageProcessingEngine] = "MagickNET",
         [SettingKeys.MapTileUrlNormal] = "https://tile.openstreetmap.org/{z}/{x}/{y}.png",
         [SettingKeys.MapTileUrlSatellite] = "https://mt1.google.com/vt/lyrs=s&x={x}&y={y}&z={z}",
-        [SettingKeys.MapDefaultBasemap] = "normal",
     };
 
     public SettingService(IServiceScopeFactory scopeFactory)

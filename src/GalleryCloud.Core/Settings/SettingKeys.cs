@@ -22,8 +22,10 @@ public static class SettingKeys
     public const string PreviewQuality = "preview.quality";
     public const string PreviewMaxResolution = "preview.maxResolution";
 
+    // Processing
+    public const string ImageProcessingEngine = "image.processingEngine";
+
     // Map
     public const string MapTileUrlNormal = "map.tileUrlNormal";
     public const string MapTileUrlSatellite = "map.tileUrlSatellite";
-    public const string MapDefaultBasemap = "map.defaultBasemap";
 }

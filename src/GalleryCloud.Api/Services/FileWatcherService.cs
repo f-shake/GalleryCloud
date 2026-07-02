@@ -181,7 +181,8 @@ public class FileWatcherService : BackgroundService
         {
             if (!File.Exists(fullPath)) return;
 
-            var exif = ExifService.Extract(fullPath);
+            var exifEngine = await _settings.GetAsync(SettingKeys.ImageProcessingEngine, "ImageSharp");
+            var exif = ExifService.Extract(fullPath, exifEngine);
             var fileInfo = new FileInfo(fullPath);
 
             var photo = await db.Photos

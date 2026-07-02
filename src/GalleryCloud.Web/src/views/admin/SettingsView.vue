@@ -5,6 +5,7 @@ import client from '../../api/client'
 
 const settings = ref<Record<string, string>>({})
 const loading = ref(true)
+const cpuCores = navigator.hardwareConcurrency || 4
 
 interface FieldConfig {
   key: string; label: string; hint?: string
@@ -30,11 +31,17 @@ const sections: { title: string; fields: FieldConfig[] }[] = [
     ],
   },
   {
+    title: '图片处理',
+    fields: [
+      { key: 'image.processingEngine', label: '处理引擎', type: 'select', options: [{ v: 'ImageSharp', l: 'ImageSharp' }, { v: 'MagickNET', l: 'Magick.NET' }] },
+    ],
+  },
+  {
     title: '缩略图',
     fields: [
       { key: 'thumbnail.format', label: '格式', type: 'select', options: [{ v: 'jpeg', l: 'JPEG' }, { v: 'webp', l: 'WebP' }], hint: '切换后已有缩略图仍可用，新生成使用新格式' },
       { key: 'thumbnail.quality', label: '质量', type: 'slider', hint: '10-100，数值越高文件越大' },
-      { key: 'thumbnail.parallelThreads', label: '并行线程', type: 'number', hint: '1 ~ CPU 核心数', placeholder: '4' },
+      { key: 'thumbnail.parallelThreads', label: '并行线程', type: 'number', hint: `1 ~ ${cpuCores}（CPU 线程数）`, placeholder: '4' },
       { key: 'thumbnail.maxMemoryCacheMb', label: '内存缓存 (MB)', type: 'number', placeholder: '512' },
     ],
   },
@@ -49,7 +56,6 @@ const sections: { title: string; fields: FieldConfig[] }[] = [
   {
     title: '地图',
     fields: [
-      { key: 'map.defaultBasemap', label: '默认底图', type: 'select', options: [{ v: 'normal', l: '普通' }, { v: 'satellite', l: '卫星' }], hint: '地图页面的初始底图类型' },
       { key: 'map.tileUrlNormal', label: '普通底图 XYZ URL', hint: '需支持 {z}/{x}/{y} 占位符' },
       { key: 'map.tileUrlSatellite', label: '卫星底图 XYZ URL', hint: '需支持 {z}/{x}/{y} 占位符' },
     ],
@@ -104,7 +110,7 @@ async function save() {
                 :model-value="Number(settings[f.key]) || 0"
                 @update:model-value="settings[f.key] = String($event)"
                 :min="f.key.includes('quality') ? 10 : 1"
-                :max="f.key.includes('quality') ? 100 : 32768"
+                :max="f.key === 'thumbnail.parallelThreads' ? cpuCores : (f.key.includes('quality') ? 100 : 32768)"
               />
               <el-input v-else v-model="settings[f.key]" :placeholder="f.placeholder" />
               <div v-if="f.hint && f.type !== 'switch'" class="field-hint">{{ f.hint }}</div>

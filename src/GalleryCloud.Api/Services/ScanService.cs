@@ -217,6 +217,7 @@ public class ScanService : IScanService
 
         var parallelThreads = await _settings.GetAsync(SettingKeys.ThumbnailParallelThreads, 2);
         var semaphore = new SemaphoreSlim(Math.Max(1, parallelThreads));
+        var exifEngine = await _settings.GetAsync(SettingKeys.ImageProcessingEngine, "ImageSharp");
 
         _logger.LogInformation("Processing {Count} files for root {RootId}", allFiles.Count, root.Id);
         var rootTotal = allFiles.Count;
@@ -263,7 +264,7 @@ public class ScanService : IScanService
                     }
                 }
 
-                var exif = ExifService.Extract(fullPath);
+                var exif = ExifService.Extract(fullPath, exifEngine);
                 var fileInfo2 = new FileInfo(fullPath);
                 var photo = new Photo
                 {
@@ -392,6 +393,7 @@ public class ScanService : IScanService
             int total = photos.Count;
             int processed = 0;
             Status = Status with { TotalFiles = total };
+            var exifEngine = await _settings.GetAsync(SettingKeys.ImageProcessingEngine, "ImageSharp");
 
             foreach (var photo in photos)
             {
@@ -405,7 +407,7 @@ public class ScanService : IScanService
 
                 try
                 {
-                    var exif = ExifService.Extract(fullPath);
+                    var exif = ExifService.Extract(fullPath, exifEngine);
                     photo.Width = exif.Width;
                     photo.Height = exif.Height;
                     photo.Orientation = exif.Orientation;

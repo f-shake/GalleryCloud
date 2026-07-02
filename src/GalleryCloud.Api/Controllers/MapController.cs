@@ -88,8 +88,7 @@ public class MapController : ControllerBase
             await settings.GetAsync(SettingKeys.MapTileUrlNormal,
                 "https://tile.openstreetmap.org/{z}/{x}/{y}.png"),
             await settings.GetAsync(SettingKeys.MapTileUrlSatellite,
-                "https://mt1.google.com/vt/lyrs=s&x={x}&y={y}&z={z}"),
-            await settings.GetAsync(SettingKeys.MapDefaultBasemap, "normal")
+                "https://mt1.google.com/vt/lyrs=s&x={x}&y={y}&z={z}")
         ));
     }
 

@@ -313,14 +313,14 @@ onMounted(async () => {
     ])
 
     const c = cfg.data
-    updateTileUrls(c.tileUrlNormal, c.tileUrlSatellite, c.defaultBasemap)
+    updateTileUrls(c.tileUrlNormal, c.tileUrlSatellite)
 
     // Restore saved basemap preference
     const savedBasemap = localStorage.getItem('mapBasemap')
     if (savedBasemap === 'normal' || savedBasemap === 'satellite') {
       basemap.value = savedBasemap
     } else {
-      basemap.value = c.defaultBasemap === 'satellite' ? 'satellite' : 'normal'
+      basemap.value = 'normal'
     }
 
     const points: MapPoint[] = Array.isArray(pts.data) ? pts.data : []

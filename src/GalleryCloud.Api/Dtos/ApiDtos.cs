@@ -127,7 +127,7 @@ public record ClustersResponse(List<ClusterResult> Clusters, int Zoom);
 
 public record MapPointItem(string Id, double? Latitude, double? Longitude, string FileName, DateTime? TakenAt);
 
-public record BasemapConfig(string TileUrlNormal, string TileUrlSatellite, string DefaultBasemap);
+public record BasemapConfig(string TileUrlNormal, string TileUrlSatellite);
 
 // ============================================================
 // Folders
