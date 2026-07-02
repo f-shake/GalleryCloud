@@ -361,18 +361,20 @@ onMounted(async () => {
         const sp = { x: event.screenPoint.x + cr.left, y: event.screenPoint.y + cr.top }
         instance.view.hitTest(event).then((response: any) => {
           const hit = response.results?.[0]
-          if (hit?.type !== 'graphic') return
+          if (hit?.type !== 'graphic' && hit?.type !== 'feature') return
           const graphic = hit.graphic
+
+          // Cluster click — no photoId, just aggregateId + cluster_count
+          const clusterCount = graphic.attributes?.cluster_count
+          if (clusterCount > 0 && graphic.geometry?.latitude != null) {
+            fetchClusterPhotos(graphic.geometry.latitude, graphic.geometry.longitude, instance.view.zoom)
+            return
+          }
+
           const photoId = graphic.attributes?.photoId
           if (!photoId) return
 
           if (mode.value === 'cluster') {
-            const clusterCount = graphic.attributes?.cluster_count
-            if (clusterCount > 0 && graphic.geometry?.latitude != null) {
-              event.stopPropagation()
-              fetchClusterPhotos(graphic.geometry.latitude, graphic.geometry.longitude, instance.view.zoom)
-              return
-            }
             openPhoto(photoId, sp)
           } else {
             // Point mode: both bubbles and dots open the photo
