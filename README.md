@@ -20,7 +20,7 @@ npm run dev
 ## 一键发布
 
 ```powershell
-.\publish.ps1                        # 全量构建（前端 + 后端 AOT + 复制静态资源）
+.\publish.ps1                        # 全量构建（前端 + 后端 + 复制静态资源）
 .\publish.ps1 -BackendOnly           # 只构建后端
 .\publish.ps1 -FrontendOnly          # 只构建前端
 .\publish.ps1 -NoCopy                # 全量构建但跳过 wwwroot 复制
@@ -39,7 +39,8 @@ dotnet ef migrations add <名称>
 | 层级 | 技术 |
 |------|------|
 | 后端 | .NET 10 + EF Core + SQLite |
-| 图像 | SixLabors.ImageSharp 3.x |
+| 图像 | SixLabors.ImageSharp 3.x / Magick.NET（可切换） |
+| 元数据 | MetadataExtractor |
 | 前端 | Vue 3 + TypeScript + Element Plus |
 | 地图 | ArcGIS JS API |
 | 认证 | JWT |
@@ -66,17 +67,16 @@ dotnet ef migrations add <名称>
 
 ## 配置
 
-启动后所有运行时可调参数在管理后台 → 设置中修改，无需重启。
+启动后所有运行时可调参数在管理后台 → 设置中修改，图片处理引擎（ImageSharp / Magick.NET）也在此切换。
 
 ## 下一步计划
 
-- [ ] **Service 层拆分** — 将 AdminController/PhotosController 中的业务逻辑（用户管理、照片移动/重命名、文件夹树构建）抽取到独立的 Service 类中
-- [ ] **查询辅助** — 提炼通用查询方法（如 `UserPhotos()`），消除各 Controller 中重复的过滤条件（活跃根目录、软删除等）
-- [ ] **多用户共用根目录** — 同一物理路径被多个用户使用时，图片记录和缩略图去重，避免重复存储
+- [ ] **Service 层拆分** — 将 AdminController/PhotosController 中的业务逻辑抽取到独立的 Service 类中
+- [ ] **查询辅助** — 提炼通用查询方法，消除各 Controller 中重复的过滤条件
+- [ ] **多用户共用根目录** — 同一物理路径被多个用户使用时，图片记录和缩略图去重
 - [ ] **缩略图清理** — 照片被软删除或根目录移除时，清理对应的缩略图缓存数据
 - [ ] **照片回收站** — 软删除的照片保留一段可恢复期，过期后自动清理
 - [ ] **WebSocket 推送** — 扫描进度、缩略图生成状态、文件变更实时推送到前端，替代轮询
-- [ ] **Magick.NET 替换 ImageSharp** — 解决 HEIC/HEIF 等格式不支持问题，同时提升缩略图生成性能和格式兼容性
 
 ## 许可证
 

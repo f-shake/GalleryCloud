@@ -285,6 +285,9 @@ function onPhotoClick(photoId: string, e: MouseEvent) {
 
 function closeClusterView() { clusterView.value = null }
 
+function mapZoomIn() { mapInst?.view.zoomIn() }
+function mapZoomOut() { mapInst?.view.zoomOut() }
+
 function toggleBasemap() {
   basemap.value = basemap.value === 'normal' ? 'satellite' : 'normal'
   localStorage.setItem('mapBasemap', basemap.value)
@@ -463,10 +466,10 @@ onUnmounted(() => {
     </div>
 
     <div v-show="!loading && !clusterView" class="map-zoom-buttons">
-      <button class="map-btn" @click="mapInst?.view.zoomIn()" title="放大">
+      <button class="map-btn" @click="mapZoomIn" title="放大">
         <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
       </button>
-      <button class="map-btn" @click="mapInst?.view.zoomOut()" title="缩小">
+      <button class="map-btn" @click="mapZoomOut" title="缩小">
         <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="5" y1="12" x2="19" y2="12"/></svg>
       </button>
     </div>

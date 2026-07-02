@@ -64,10 +64,6 @@ if (-not $skipCopy) {
     Write-Host "`n[3/3] Keeping existing wwwroot" -ForegroundColor DarkGray
 }
 
-# Create data directory
-$DataDir = "$ScriptDir\$OutputDir\data"
-New-Item -ItemType Directory -Force -Path $DataDir | Out-Null
-
 # Copy appsettings.json if not exists
 if (-not (Test-Path "$ScriptDir\$OutputDir\appsettings.json")) {
     Copy-Item "$ScriptDir\src\GalleryCloud.Api\appsettings.json" "$ScriptDir\$OutputDir\appsettings.json"
