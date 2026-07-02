@@ -51,6 +51,7 @@ async function poll() {
   if (!thumbStatus.value.isRunning && thumbWasRunning.value) {
     thumbBusy.value = false
     thumbMode.value = null
+    cancellingThumb.value = false
   }
   thumbWasRunning.value = thumbStatus.value.isRunning
 }

@@ -27,6 +27,9 @@
 
   <ItemGroup>
     <Watch Remove="App_Data\**" />
+    <Watch Remove="**\*.db" />
+    <Watch Remove="**\*.db-wal" />
+    <Watch Remove="**\*.db-shm" />
   </ItemGroup>
 
 </Project>

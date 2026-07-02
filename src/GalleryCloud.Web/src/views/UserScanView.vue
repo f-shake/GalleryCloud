@@ -53,6 +53,7 @@ async function poll() {
   if (!thumbStatus.value.isRunning && thumbWasRunning.value) {
     thumbBusy.value = false
     thumbMode.value = null
+    cancellingThumb.value = false
   }
   thumbWasRunning.value = thumbStatus.value.isRunning
 }
@@ -135,9 +136,9 @@ async function clearCache() {
 </script>
 
 <template>
-  <div style="padding:16px">
+  <div style="padding:16px;display:flex;flex-direction:column;gap:16px;height:100%">
     <!-- ==================== Scan ==================== -->
-    <el-card style="margin-bottom:16px">
+    <el-card>
       <template #header>
         <div style="display:flex;justify-content:space-between;align-items:center">
           <span>扫描状态</span>
@@ -162,25 +163,8 @@ async function clearCache() {
       <div v-else style="color:var(--el-text-color-secondary);font-size:13px">空闲</div>
     </el-card>
 
-    <!-- ==================== Scan History ==================== -->
-    <el-card header="扫描历史">
-      <el-table :data="logs" v-loading="loading" stripe size="small">
-        <el-table-column prop="startedAt" label="开始时间" :formatter="(r:any) => r.startedAt?.replace('T',' ')?.substring(0,19)" />
-        <el-table-column prop="mode" label="模式" width="80">
-          <template #default="{ row }"><el-tag :type="row.mode === 'full' ? 'primary' : 'success'" size="small">{{ row.mode === 'full' ? '全量' : '增量' }}</el-tag></template>
-        </el-table-column>
-        <el-table-column prop="totalFound" label="发现" width="80" />
-        <el-table-column prop="newAdded" label="新增" width="80">
-          <template #default="{ row }"><span style="color:var(--el-color-success)">+{{ row.newAdded }}</span></template>
-        </el-table-column>
-        <el-table-column prop="softDeleted" label="删除" width="80">
-          <template #default="{ row }"><span style="color:var(--el-color-danger)">-{{ row.softDeleted }}</span></template>
-        </el-table-column>
-      </el-table>
-    </el-card>
-
     <!-- ==================== Thumbnail Status ==================== -->
-    <el-card style="margin-top:16px">
+    <el-card>
       <template #header>
         <div style="display:flex;justify-content:space-between;align-items:center">
           <span>缩略图状态</span>
@@ -220,6 +204,28 @@ async function clearCache() {
         <template v-else>
           还缺 <b style="color:var(--el-color-warning)">{{ (thumbStats.missingGrid + thumbStats.missingPreview).toLocaleString() }}</b> 个缩略图，点击「补全缩略图」生成
         </template>
+      </div>
+    </el-card>
+
+    <!-- ==================== Scan History (fills remaining space) ==================== -->
+    <el-card style="flex:1;display:flex;flex-direction:column;overflow:hidden">
+      <template #header>
+        <span>扫描历史</span>
+      </template>
+      <div style="flex:1;overflow:auto">
+        <el-table :data="logs" v-loading="loading" stripe size="small" style="width:100%">
+          <el-table-column prop="startedAt" label="开始时间" :formatter="(r:any) => r.startedAt?.replace('T',' ')?.substring(0,19)" />
+          <el-table-column prop="mode" label="模式" width="80">
+            <template #default="{ row }"><el-tag :type="row.mode === 'full' ? 'primary' : 'success'" size="small">{{ row.mode === 'full' ? '全量' : '增量' }}</el-tag></template>
+          </el-table-column>
+          <el-table-column prop="totalFound" label="发现" width="80" />
+          <el-table-column prop="newAdded" label="新增" width="80">
+            <template #default="{ row }"><span style="color:var(--el-color-success)">+{{ row.newAdded }}</span></template>
+          </el-table-column>
+          <el-table-column prop="softDeleted" label="删除" width="80">
+            <template #default="{ row }"><span style="color:var(--el-color-danger)">-{{ row.softDeleted }}</span></template>
+          </el-table-column>
+        </el-table>
       </div>
     </el-card>
 

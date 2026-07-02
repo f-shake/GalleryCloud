@@ -284,10 +284,155 @@ public class ThumbnailService : IThumbnailService
 
         CacheInMemory($"thumb:{photoId}:{sizeKey}", resultBytes);
         var remaining = Interlocked.Decrement(ref _queueCount);
-        _logger.LogInformation("缩略图完成 [{Size}] {PhotoId} 原图{W}x{H} 解码:{Decode}ms 编码:{Encode}ms DB:{Db}ms 排队:{Queue} 并行:{Parallel}",
-            sizeKey, photoId[..8], srcW, srcH, decodeMs, encodeMs, dbMs, Math.Max(0, remaining), Math.Max(0, _inProgressCount));
+        _logger.LogInformation("已生成缩略图 [{Size}] {PhotoId} 原图{W}x{H} 解码:{Decode}ms 编码:{Encode}ms DB:{Db}ms 排队:{Queue} 并行:{Parallel}",
+            sizeKey switch { "preview" => "pre", "grid" => "grd", _ => sizeKey }, photoId[..8], srcW, srcH, decodeMs, encodeMs, dbMs, Math.Max(0, remaining), Math.Max(0, _inProgressCount));
 
         return new MemoryStream(resultBytes);
+    }
+
+    // ── Batch generate: one decode, multiple sizes ───────────────
+
+    private async Task InternalGenerateBatchAsync(string photoId,
+        List<(ThumbnailSize Size, int Width)> sizes, CancellationToken ct)
+    {
+        ct.ThrowIfCancellationRequested();
+        using var scope = _scopeFactory.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        var thumbDb = scope.ServiceProvider.GetRequiredService<ThumbnailDbContext>();
+
+        var photo = await db.Photos.FirstOrDefaultAsync(p => p.Id == photoId && !p.IsDeleted, ct);
+        if (photo == null) return;
+        var root = await db.UserRoots.FirstOrDefaultAsync(r => r.Id == photo.RootId, ct);
+        if (root == null) return;
+        var fullPath = Path.GetFullPath(Path.Combine(root.RootPath, photo.FilePath));
+        if (!File.Exists(fullPath)) return;
+
+        // Read all settings upfront
+        var engine = await _settings.GetAsync(SettingKeys.ImageProcessingEngine, "ImageSharp");
+        var maxRes = await _settings.GetAsync(SettingKeys.PreviewMaxResolution, 5000);
+        var gridQuality = await _settings.GetAsync(SettingKeys.ThumbnailQuality, 60);
+        var previewQuality = await _settings.GetAsync(SettingKeys.PreviewQuality, 70);
+        var gridFmt = (await _settings.GetAsync(SettingKeys.ThumbnailFormat, "jpeg")).ToLowerInvariant();
+        var previewFmt = (await _settings.GetAsync(SettingKeys.PreviewFormat, "jpeg")).ToLowerInvariant();
+
+        var sw = System.Diagnostics.Stopwatch.StartNew();
+
+        if (engine.Equals("MagickNET", StringComparison.OrdinalIgnoreCase))
+        {
+            using var image = new MagickImage(fullPath);
+            long decodeMs = sw.ElapsedMilliseconds;
+            var srcW = (int)image.Width;
+            var srcH = (int)image.Height;
+            image.AutoOrient();
+
+            foreach (var (size, width) in sizes)
+            {
+                var isPreview = size == ThumbnailSize.Preview;
+                var sizeKey = size.ToString().ToLowerInvariant();
+
+                using var cloned = image.Clone();
+                if (isPreview)
+                {
+                    var longerSide = Math.Max((int)cloned.Width, (int)cloned.Height);
+                    if (longerSide > maxRes)
+                    {
+                        var scale = (double)maxRes / longerSide;
+                        cloned.Resize(new MagickGeometry((uint)(cloned.Width * scale), (uint)(cloned.Height * scale)) { IgnoreAspectRatio = false });
+                    }
+                }
+                else
+                {
+                    var targetW = Math.Min((uint)width, cloned.Width);
+                    cloned.Resize(new MagickGeometry(targetW, 0) { IgnoreAspectRatio = false });
+                }
+
+                var quality = isPreview ? previewQuality : gridQuality;
+                cloned.Quality = (uint)quality;
+                var fmt = isPreview ? previewFmt : gridFmt;
+                var format = fmt == "webp" ? MagickFormat.WebP : MagickFormat.Jpeg;
+
+                sw.Restart();
+                using var ms = new MemoryStream();
+                await cloned.WriteAsync(ms, format, ct);
+                var encodeMs = sw.ElapsedMilliseconds;
+                var resultBytes = ms.ToArray();
+
+                sw.Restart();
+                await SaveCacheRecordAsync(thumbDb, photoId, sizeKey, fmt, resultBytes, ct);
+                var dbMs = sw.ElapsedMilliseconds;
+
+                CacheInMemory($"thumb:{photoId}:{sizeKey}", resultBytes);
+                _logger.LogInformation("已生成缩略图 [{Size}] {PhotoId} 原图{W}x{H} 解码:{Decode}ms 编码:{Encode}ms DB:{Db}ms",
+                    sizeKey switch { "preview" => "pre", "grid" => "grd", _ => sizeKey }, photoId[..8], srcW, srcH, decodeMs, encodeMs, dbMs);
+            }
+        }
+        else
+        {
+            using var image = await Image.LoadAsync(fullPath, ct);
+            long decodeMs = sw.ElapsedMilliseconds;
+            var srcW = image.Width;
+            var srcH = image.Height;
+            image.Mutate(x => x.AutoOrient());
+
+            foreach (var (size, width) in sizes)
+            {
+                var isPreview = size == ThumbnailSize.Preview;
+                var sizeKey = size.ToString().ToLowerInvariant();
+                var quality = isPreview ? previewQuality : gridQuality;
+                var fmt = isPreview ? previewFmt : gridFmt;
+                var isWebp = fmt == "webp";
+                IImageEncoder encoder = isWebp ? new WebpEncoder { Quality = quality } : new JpegEncoder { Quality = quality };
+
+                sw.Restart();
+                using var processed = image.Clone(ctx =>
+                {
+                    if (isPreview)
+                    {
+                        var longerSide = Math.Max(ctx.GetCurrentSize().Width, ctx.GetCurrentSize().Height);
+                        if (longerSide > maxRes)
+                        {
+                            var scale = (double)maxRes / longerSide;
+                            ctx.Resize((int)(ctx.GetCurrentSize().Width * scale), (int)(ctx.GetCurrentSize().Height * scale));
+                        }
+                    }
+                    else
+                    {
+                        ctx.Resize(Math.Min(width, ctx.GetCurrentSize().Width), 0);
+                    }
+                });
+
+                using var ms = new MemoryStream();
+                await processed.SaveAsync(ms, encoder, ct);
+                var encodeMs = sw.ElapsedMilliseconds;
+                var resultBytes = ms.ToArray();
+
+                sw.Restart();
+                await SaveCacheRecordAsync(thumbDb, photoId, sizeKey, fmt, resultBytes, ct);
+                var dbMs = sw.ElapsedMilliseconds;
+
+                CacheInMemory($"thumb:{photoId}:{sizeKey}", resultBytes);
+                _logger.LogInformation("已生成缩略图 [{Size}] {PhotoId} 原图{W}x{H} 解码:{Decode}ms 编码:{Encode}ms DB:{Db}ms",
+                    sizeKey switch { "preview" => "pre", "grid" => "grd", _ => sizeKey }, photoId[..8], srcW, srcH, decodeMs, encodeMs, dbMs);
+            }
+        }
+    }
+
+    private async Task SaveCacheRecordAsync(ThumbnailDbContext thumbDb, string photoId, string sizeKey, string format, byte[] data, CancellationToken ct)
+    {
+        var record = await thumbDb.ThumbnailCaches
+            .FirstOrDefaultAsync(t => t.PhotoId == photoId && t.Size == sizeKey, ct);
+        if (record == null)
+        {
+            record = new ThumbnailCache { PhotoId = photoId, Size = sizeKey, Format = format, Data = data };
+            thumbDb.ThumbnailCaches.Add(record);
+        }
+        else
+        {
+            record.Data = data;
+            record.Format = format;
+            record.CreatedAt = DateTime.UtcNow;
+        }
+        await thumbDb.SaveChangesAsync(ct);
     }
 
     // ── Magick.NET processing ──────────────────────────────────────
@@ -349,9 +494,23 @@ public class ThumbnailService : IThumbnailService
         var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
         var thumbDb = scope.ServiceProvider.GetRequiredService<ThumbnailDbContext>();
 
-        var totalPhotos = await db.Photos.CountAsync(p => !p.IsDeleted);
-        var gridCached = await thumbDb.ThumbnailCaches.CountAsync(t => t.Size == "grid");
-        var previewCached = await thumbDb.ThumbnailCaches.CountAsync(t => t.Size == "preview");
+        var activeRootIds = await db.UserRoots
+            .Where(r => r.IsEnabled)
+            .Select(r => r.Id)
+            .ToListAsync();
+
+        var totalPhotos = await db.Photos
+            .CountAsync(p => !p.IsDeleted && activeRootIds.Contains(p.RootId));
+
+        var validPhotoIds = await db.Photos
+            .Where(p => !p.IsDeleted && activeRootIds.Contains(p.RootId))
+            .Select(p => p.Id)
+            .ToListAsync();
+
+        var gridCached = await thumbDb.ThumbnailCaches
+            .CountAsync(t => t.Size == "grid" && validPhotoIds.Contains(t.PhotoId));
+        var previewCached = await thumbDb.ThumbnailCaches
+            .CountAsync(t => t.Size == "preview" && validPhotoIds.Contains(t.PhotoId));
 
         return new ThumbnailStats
         {
@@ -393,20 +552,31 @@ public class ThumbnailService : IThumbnailService
         var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
         var thumbDb = scope.ServiceProvider.GetRequiredService<ThumbnailDbContext>();
 
-        var photoIds = await db.Photos.Where(p => !p.IsDeleted).Select(p => p.Id).ToListAsync(cts.Token);
+        var activeRootIds = await db.UserRoots.Where(r => r.IsEnabled).Select(r => r.Id).ToListAsync(cts.Token);
+        var photoIds = await db.Photos
+            .Where(p => !p.IsDeleted && activeRootIds.Contains(p.RootId))
+            .Select(p => p.Id).ToListAsync(cts.Token);
         var cachedKeys = await thumbDb.ThumbnailCaches
             .Select(t => new { t.PhotoId, t.Size })
             .ToListAsync(cts.Token);
         var cachedSet = new HashSet<string>(cachedKeys.Select(c => $"{c.PhotoId}:{c.Size}"));
 
-        var missing = new List<(string PhotoId, ThumbnailSize Size, int Width)>();
+        // Group by photo so each photo decodes only once
+        var missing = new List<(string PhotoId, List<(ThumbnailSize Size, int Width)> Sizes)>();
+        int totalSizeCount = 0;
         foreach (var pid in photoIds)
         {
+            var needed = new List<(ThumbnailSize Size, int Width)>();
             foreach (var (key, sz, w) in selected)
             {
                 if (!cachedSet.Contains($"{pid}:{key}"))
-                    missing.Add((pid, sz, w));
+                {
+                    needed.Add((sz, w));
+                    totalSizeCount++;
+                }
             }
+            if (needed.Count > 0)
+                missing.Add((pid, needed));
         }
 
         if (missing.Count == 0)
@@ -416,7 +586,7 @@ public class ThumbnailService : IThumbnailService
             return;
         }
 
-        lock (_regLock) { RegenerationStatus = new ThumbnailGenerationStatus { IsRunning = true, Total = missing.Count, Processed = 0 }; }
+        lock (_regLock) { RegenerationStatus = new ThumbnailGenerationStatus { IsRunning = true, Total = totalSizeCount, Processed = 0 }; }
         var parallel = await _settings.GetAsync(SettingKeys.ThumbnailParallelThreads, 4);
         var parallelOptions = new ParallelOptions
         {
@@ -424,19 +594,23 @@ public class ThumbnailService : IThumbnailService
             CancellationToken = cts.Token
         };
 
-        await Parallel.ForEachAsync(missing, parallelOptions, async (item, ct) =>
+        try
         {
-            var (pid, sz, w) = item;
-            try
+            await Parallel.ForEachAsync(missing, parallelOptions, async (item, ct) =>
             {
-                Interlocked.Increment(ref _inProgressCount);
-                try { await InternalGenerateAsync(pid, sz, w, ct); }
-                catch { }
-                finally { Interlocked.Decrement(ref _inProgressCount); }
-                RegenerationStatus = RegenerationStatus with { Processed = RegenerationStatus.Processed + 1 };
-            }
-            catch (OperationCanceledException) { }
-        });
+                var (pid, sizes) = item;
+                try
+                {
+                    Interlocked.Increment(ref _inProgressCount);
+                    try { await InternalGenerateBatchAsync(pid, sizes, ct); }
+                    catch { }
+                    finally { Interlocked.Decrement(ref _inProgressCount); }
+                    RegenerationStatus = RegenerationStatus with { Processed = RegenerationStatus.Processed + sizes.Count };
+                }
+                catch (OperationCanceledException) { }
+            });
+        }
+        catch (OperationCanceledException) { }
 
         lock (_regLock) { RegenerationStatus = new(); }
     }
@@ -471,13 +645,19 @@ public class ThumbnailService : IThumbnailService
         }
         await thumbDb.SaveChangesAsync(cts.Token);
 
-        var photoIds = await db.Photos.Where(p => !p.IsDeleted).Select(p => p.Id).ToListAsync(cts.Token);
-        var workItems = new List<(string PhotoId, ThumbnailSize Size, int Width)>();
-        foreach (var pid in photoIds)
-            foreach (var (sz, w, _) in selected)
-                workItems.Add((pid, sz, w));
+        var activeRootIds = await db.UserRoots.Where(r => r.IsEnabled).Select(r => r.Id).ToListAsync(cts.Token);
+        var photoIds = await db.Photos
+            .Where(p => !p.IsDeleted && activeRootIds.Contains(p.RootId))
+            .Select(p => p.Id).ToListAsync(cts.Token);
 
-        lock (_regLock) { RegenerationStatus = new ThumbnailGenerationStatus { IsRunning = true, Total = workItems.Count, Processed = 0 }; }
+        // Group by photo so each photo decodes only once
+        var workItems = photoIds.Select(pid => (
+            PhotoId: pid,
+            Sizes: selected.Select(s => (s.Item1, s.Item2)).ToList()
+        )).ToList();
+        int totalSizeCount = workItems.Sum(w => w.Sizes.Count);
+
+        lock (_regLock) { RegenerationStatus = new ThumbnailGenerationStatus { IsRunning = true, Total = totalSizeCount, Processed = 0 }; }
         var parallel = await _settings.GetAsync(SettingKeys.ThumbnailParallelThreads, 4);
         var parallelOptions = new ParallelOptions
         {
@@ -485,19 +665,23 @@ public class ThumbnailService : IThumbnailService
             CancellationToken = cts.Token
         };
 
-        await Parallel.ForEachAsync(workItems, parallelOptions, async (item, ct) =>
+        try
         {
-            var (pid, sz, w) = item;
-            try
+            await Parallel.ForEachAsync(workItems, parallelOptions, async (item, ct) =>
             {
-                Interlocked.Increment(ref _inProgressCount);
-                try { await InternalGenerateAsync(pid, sz, w, ct); }
-                catch { }
-                finally { Interlocked.Decrement(ref _inProgressCount); }
-                RegenerationStatus = RegenerationStatus with { Processed = RegenerationStatus.Processed + 1 };
-            }
-            catch (OperationCanceledException) { }
-        });
+                var (pid, sizes) = item;
+                try
+                {
+                    Interlocked.Increment(ref _inProgressCount);
+                    try { await InternalGenerateBatchAsync(pid, sizes, ct); }
+                    catch { }
+                    finally { Interlocked.Decrement(ref _inProgressCount); }
+                    RegenerationStatus = RegenerationStatus with { Processed = RegenerationStatus.Processed + sizes.Count };
+                }
+                catch (OperationCanceledException) { }
+            });
+        }
+        catch (OperationCanceledException) { }
 
         lock (_regLock) { RegenerationStatus = new(); }
     }

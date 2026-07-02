@@ -92,7 +92,7 @@ public class UserService : IUserService
 
     public async Task<UserListItem?> UpdateUserAsync(string id, UpdateUserRequest request)
     {
-        var user = await _db.Users.FindAsync(id);
+        var user = await _db.Users.IgnoreQueryFilters().FirstOrDefaultAsync(u => u.Id == id);
         if (user == null) return null;
 
         if (!string.IsNullOrWhiteSpace(request.Password))
@@ -148,12 +148,18 @@ public class UserService : IUserService
         }
 
         await _db.SaveChangesAsync();
-        return null; // caller only needs success indicator
+
+        var roots = await _db.UserRoots
+            .Where(r => r.UserId == id && !r.IsDeleted && r.IsEnabled)
+            .Select(r => new UserRootDto(r.Id, r.RootPath, r.IsEnabled, r.CreatedAt))
+            .ToListAsync();
+
+        return new UserListItem(id, user.Username, user.DisplayName, !user.IsDeleted, user.CreatedAt, roots);
     }
 
     public async Task<bool> DisableUserAsync(string id)
     {
-        var user = await _db.Users.FindAsync(id);
+        var user = await _db.Users.IgnoreQueryFilters().FirstOrDefaultAsync(u => u.Id == id);
         if (user == null) return false;
 
         user.IsDeleted = true;

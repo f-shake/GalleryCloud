@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import client from '../../api/client'
 import FolderBrowser from '../../components/FolderBrowser.vue'
 import type { UserRoot } from '../../types'
@@ -111,6 +111,11 @@ function removeRoot(index: number) {
 async function toggleUser(u: UserRow) {
   try {
     if (u.isActive) {
+      await ElMessageBox.confirm(`确定要删除用户「${u.username}」吗？此操作将同时软删除该用户的所有照片。`, '确认删除', {
+        confirmButtonText: '删除',
+        cancelButtonText: '取消',
+        type: 'warning',
+      })
       await client.delete(`/admin/users/${u.id}`)
     } else {
       await client.put(`/admin/users/${u.id}`, { isActive: true })
@@ -145,7 +150,7 @@ async function toggleUser(u: UserRow) {
         <template #default="{ row }">
           <el-button size="small" @click="openEdit(row)">编辑</el-button>
           <el-button size="small" :type="row.isActive ? 'danger' : 'success'" @click="toggleUser(row)">
-            {{ row.isActive ? '禁用' : '启用' }}
+            {{ row.isActive ? '删除' : '启用' }}
           </el-button>
         </template>
       </el-table-column>

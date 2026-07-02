@@ -221,7 +221,6 @@ public class ScanService : IScanService
 
         _logger.LogInformation("Processing {Count} files for root {RootId}", allFiles.Count, root.Id);
         var rootTotal = allFiles.Count;
-        Status = Status with { TotalFiles = cumulativeTotal + rootTotal };
 
         var log = new ScanLog
         {
@@ -264,8 +263,8 @@ public class ScanService : IScanService
                     }
                 }
 
-                var exif = ExifService.Extract(fullPath, exifEngine);
                 var fileInfo2 = new FileInfo(fullPath);
+                var exif = ExifService.Extract(fullPath, exifEngine, fileInfo2.LastWriteTimeUtc);
                 var photo = new Photo
                 {
                     UserId = root.UserId,
@@ -278,7 +277,7 @@ public class ScanService : IScanService
                     Width = exif.Width,
                     Height = exif.Height,
                     Orientation = exif.Orientation,
-                    TakenAt = exif.TakenAt?.ToUniversalTime(),
+                    TakenAt = exif.TakenAt,
                     DeviceModel = exif.DeviceModel,
                     ExposureTime = exif.ExposureTime,
                     Iso = exif.Iso,
@@ -407,11 +406,11 @@ public class ScanService : IScanService
 
                 try
                 {
-                    var exif = ExifService.Extract(fullPath, exifEngine);
+                    var exif = ExifService.Extract(fullPath, exifEngine, File.GetLastWriteTimeUtc(fullPath));
                     photo.Width = exif.Width;
                     photo.Height = exif.Height;
                     photo.Orientation = exif.Orientation;
-                    photo.TakenAt = exif.TakenAt?.ToUniversalTime();
+                    photo.TakenAt = exif.TakenAt;
                     photo.DeviceModel = exif.DeviceModel;
                     photo.ExposureTime = exif.ExposureTime;
                     photo.Iso = exif.Iso;

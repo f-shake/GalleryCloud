@@ -25,19 +25,20 @@ public static class ExifService
     /// <summary>
     /// 提取 EXIF 元数据。
     /// 优先使用 MetadataExtractor，失败时回退到 fallbackEngine 指定的库。
+    /// fallbackTime 在所有 EXIF 标签都缺失时作为拍摄时间使用（通常传文件修改时间）。
     /// </summary>
-    public static ExifData Extract(string filePath, string? fallbackEngine = null)
+    public static ExifData Extract(string filePath, string? fallbackEngine = null, DateTime? fallbackTime = null)
     {
         try
         {
-            return ExtractWithMetadataExtractor(filePath);
+            return ExtractWithMetadataExtractor(filePath, fallbackTime);
         }
         catch (Exception ex)
         {
             if ("MagickNET".Equals(fallbackEngine, StringComparison.OrdinalIgnoreCase))
-                return ExtractWithMagickNet(filePath);
+                return ExtractWithMagickNet(filePath, fallbackTime);
             if ("ImageSharp".Equals(fallbackEngine, StringComparison.OrdinalIgnoreCase))
-                return ExtractWithImageSharp(filePath);
+                return ExtractWithImageSharp(filePath, fallbackTime);
             // No fallback configured — rethrow
             throw new InvalidOperationException(
                 $"MetadataExtractor failed for: {filePath}. No fallback engine configured.", ex);
@@ -46,7 +47,7 @@ public static class ExifService
 
     // ── MetadataExtractor path (primary) ─────────────────────────
 
-    private static ExifData ExtractWithMetadataExtractor(string filePath)
+    private static ExifData ExtractWithMetadataExtractor(string filePath, DateTime? fallbackTime = null)
     {
         // Dimensions via MagickImageInfo — reads file header only, very fast
         var info = new MagickImageInfo(filePath);
@@ -62,9 +63,15 @@ public static class ExifService
         if (ifd0 != null && ifd0.TryGetInt32(ExifIfd0Directory.TagOrientation, out var orient))
             orientation = orient;
 
+        // 3-tier EXIF 拍摄时间降级 + 文件修改时间兜底
         DateTime? takenAt = null;
         if (subIfd != null && subIfd.TryGetDateTime(ExifSubIfdDirectory.TagDateTimeOriginal, out var dt))
             takenAt = dt;
+        if (takenAt == null && subIfd != null && subIfd.TryGetDateTime(ExifSubIfdDirectory.TagDateTimeDigitized, out dt))
+            takenAt = dt;
+        if (takenAt == null && ifd0 != null && ifd0.TryGetDateTime(ExifIfd0Directory.TagDateTime, out dt))
+            takenAt = dt;
+        takenAt ??= fallbackTime;
 
         string? deviceModel = ifd0?.GetDescription(ExifIfd0Directory.TagModel)?.Trim();
 
@@ -102,7 +109,7 @@ public static class ExifService
 
     // ── Magick.NET fallback ──────────────────────────────────────
 
-    private static ExifData ExtractWithMagickNet(string filePath)
+    private static ExifData ExtractWithMagickNet(string filePath, DateTime? fallbackTime = null)
     {
         using var image = new MagickImage(filePath);
         int width = (int)image.Width;
@@ -125,8 +132,21 @@ public static class ExifService
             var orientVal = exif.GetValue(ImageMagick.ExifTag.Orientation);
             if (orientVal != null) orientation = orientVal.Value;
 
+            // 3-tier 拍摄时间降级
             var dateVal = exif.GetValue(ImageMagick.ExifTag.DateTimeOriginal);
             if (dateVal != null) takenAt = ParseExifDate(dateVal.Value);
+
+            if (takenAt == null)
+            {
+                var digitizedVal = exif.GetValue(ImageMagick.ExifTag.DateTimeDigitized);
+                if (digitizedVal != null) takenAt = ParseExifDate(digitizedVal.Value);
+            }
+
+            if (takenAt == null)
+            {
+                var dtVal = exif.GetValue(ImageMagick.ExifTag.DateTime);
+                if (dtVal != null) takenAt = ParseExifDate(dtVal.Value);
+            }
 
             var modelVal = exif.GetValue(ImageMagick.ExifTag.Model);
             if (modelVal != null) deviceModel = modelVal.Value.Trim();
@@ -159,13 +179,15 @@ public static class ExifService
             }
         }
 
+        takenAt ??= fallbackTime;
+
         return new ExifData(width, height, orientation, takenAt, deviceModel,
             exposureTime, iso, aperture, focalLength, focalLength35mm, latitude, longitude);
     }
 
     // ── ImageSharp fallback (original Identify-based approach) ───
 
-    private static ExifData ExtractWithImageSharp(string filePath)
+    private static ExifData ExtractWithImageSharp(string filePath, DateTime? fallbackTime = null)
     {
         var imageInfo = Image.Identify(filePath);
         int width = imageInfo.Width;
@@ -200,6 +222,18 @@ public static class ExifService
                     && entry is SixLabors.ImageSharp.Metadata.Profiles.Exif.IExifValue<string> dateEntry
                     && !string.IsNullOrWhiteSpace(dateEntry.Value))
                     takenAt = ParseExifDate(dateEntry.Value);
+
+                if (takenAt == null
+                    && tag == SixLabors.ImageSharp.Metadata.Profiles.Exif.ExifTag.DateTimeDigitized
+                    && entry is SixLabors.ImageSharp.Metadata.Profiles.Exif.IExifValue<string> digitizedEntry
+                    && !string.IsNullOrWhiteSpace(digitizedEntry.Value))
+                    takenAt = ParseExifDate(digitizedEntry.Value);
+
+                if (takenAt == null
+                    && tag == SixLabors.ImageSharp.Metadata.Profiles.Exif.ExifTag.DateTime
+                    && entry is SixLabors.ImageSharp.Metadata.Profiles.Exif.IExifValue<string> dtEntry
+                    && !string.IsNullOrWhiteSpace(dtEntry.Value))
+                    takenAt = ParseExifDate(dtEntry.Value);
 
                 if (tag == SixLabors.ImageSharp.Metadata.Profiles.Exif.ExifTag.Model
                     && entry is SixLabors.ImageSharp.Metadata.Profiles.Exif.IExifValue<string> modelEntry)
@@ -248,6 +282,8 @@ public static class ExifService
                 longitude = ParseGpsCoordinate(gpsLon, gpsLonRef);
             }
         }
+
+        takenAt ??= fallbackTime;
 
         return new ExifData(width, height, orientation, takenAt, deviceModel,
             exposureTime, iso, aperture, focalLength, focalLength35mm, latitude, longitude);

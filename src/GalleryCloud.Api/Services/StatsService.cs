@@ -16,12 +16,18 @@ public class StatsService : IStatsService
 
     public async Task<AdminStats> GetAdminStatsAsync()
     {
-        var totalPhotos = await _db.Photos.CountAsync(p => !p.IsDeleted);
+        var activeRootIds = await _db.UserRoots
+            .Where(r => r.IsEnabled)
+            .Select(r => r.Id)
+            .ToListAsync();
+
+        var query = _db.Photos.Where(p => !p.IsDeleted && activeRootIds.Contains(p.RootId));
+
+        var totalPhotos = await query.CountAsync();
         var totalUsers = await _db.Users.CountAsync();
-        var totalSize = await _db.Photos.Where(p => !p.IsDeleted).SumAsync(p => p.FileSize);
-        var photosWithGps = await _db.Photos.CountAsync(p => !p.IsDeleted && p.Latitude != null);
-        var formatDistribution = await _db.Photos
-            .Where(p => !p.IsDeleted)
+        var totalSize = await query.SumAsync(p => p.FileSize);
+        var photosWithGps = await query.CountAsync(p => p.Latitude != null);
+        var formatDistribution = await query
             .GroupBy(p => p.FileFormat)
             .Select(g => new FormatCountItem(g.Key, g.Count()))
             .ToListAsync();
@@ -35,7 +41,13 @@ public class StatsService : IStatsService
 
     public async Task<AdminStats> GetUserStatsAsync(string userId)
     {
-        var query = _db.Photos.Where(p => p.UserId == userId && !p.IsDeleted);
+        var activeRootIds = await _db.UserRoots
+            .Where(r => r.UserId == userId && r.IsEnabled)
+            .Select(r => r.Id)
+            .ToListAsync();
+
+        var query = _db.Photos.Where(p => p.UserId == userId && !p.IsDeleted && activeRootIds.Contains(p.RootId));
+
         var totalPhotos = await query.CountAsync();
         var totalSize = await query.SumAsync(p => p.FileSize);
         var photosWithGps = await query.CountAsync(p => p.Latitude != null);
