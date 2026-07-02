@@ -46,6 +46,12 @@ public record PhotoDetail(
 
 public record PhotoIdentity(string Id, DateTime? TakenAt);
 
+/// <summary>
+/// 并行数组格式，消除重复 key 开销。
+/// Dates[i] 为 YYYYMMDD 整数（如 20260702），null 表示无日期。
+/// </summary>
+public record PhotoIdsResponse(List<string> Ids, List<int?> Dates);
+
 public record PhotoListItem(
     string Id,
     string FileName,

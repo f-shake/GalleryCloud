@@ -96,11 +96,22 @@ public class PhotosController : ControllerBase
         if (toYear.HasValue)
             query = (IOrderedQueryable<Core.Entities.Photo>)query.Where(p => p.TakenAt!.Value.Year <= toYear.Value);
 
+        // Return parallel flat arrays for compactness (avoids JSON object key repetition)
         var items = await query
-            .Select(p => new PhotoIdentity(p.Id, p.TakenAt))
+            .Select(p => new { p.Id, p.TakenAt })
             .ToListAsync();
 
-        return Ok(items);
+        var ids = new List<string>(items.Count);
+        var dates = new List<int?>(items.Count);
+        foreach (var item in items)
+        {
+            ids.Add(item.Id);
+            dates.Add(item.TakenAt?.Year is int y
+                ? y * 10000 + (item.TakenAt?.Month ?? 1) * 100 + (item.TakenAt?.Day ?? 1)
+                : null);
+        }
+
+        return Ok(new PhotoIdsResponse(ids, dates));
     }
 
     [HttpGet("{id}/file")]

@@ -100,8 +100,8 @@ function computeYearPositions() {
     } else if (r.type === 'row') {
       // Flat mode: detect year transitions from photo dates
       for (const p of r.photos) {
-        if (p.takenAt) {
-          const yr = new Date(p.takenAt).getFullYear()
+        if (p.takenAtDate) {
+          const yr = Math.floor(p.takenAtDate / 10000)
           if (yr > 0 && yr !== lastYear) {
             lastYear = yr
             positions.push({ year: yr, offset: acc })
@@ -122,7 +122,7 @@ function computeYearPositions() {
   const counts: number[] = new Array(positions.length).fill(0)
   let yearIdx = 0
   for (const item of tl.allItems.value) {
-    const yr = item.takenAt ? new Date(item.takenAt).getFullYear() : 0
+    const yr = item.takenAtDate ? Math.floor(item.takenAtDate / 10000) : 0
     if (yr === positions[yearIdx]?.year) {
       counts[yearIdx]++
     } else if (yearIdx + 1 < positions.length && yr === positions[yearIdx + 1].year) {
@@ -166,8 +166,9 @@ function onJumpToDate(dateStr: string) {
   for (let i = 0; i < rows.value.length; i++) {
     const r = rows.value[i]
     if (r.type === 'header' && r.date <= target) { idx = i; break }
-    if (r.type === 'row' && r.photos[0]?.takenAt) {
-      if (r.photos[0].takenAt.substring(0, 10) <= target) { idx = i; break }
+    if (r.type === 'row' && r.photos[0]?.takenAtDate) {
+      const d = String(r.photos[0].takenAtDate)
+      if (`${d.substring(0, 4)}-${d.substring(4, 6)}-${d.substring(6, 8)}` <= target) { idx = i; break }
     }
   }
   if (idx < 0 && rows.value.length > 0) idx = 0
@@ -205,7 +206,7 @@ function getDateAtScrollTop(scrollTop: number): string {
   if (cached !== undefined) return cached
   const idx = Math.min(tl.allItems.value.length - 1, beforeCount + yearOffset)
   const item = tl.allItems.value[idx]
-  const result = item?.takenAt?.substring(0, 10) ?? ''
+  const result = item?.takenAtDate ? String(item.takenAtDate).replace(/(\d{4})(\d{2})(\d{2})/, '$1-$2-$3') : ''
   _dateCache.set(bucket, result)
   return result
 }

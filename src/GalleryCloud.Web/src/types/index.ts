@@ -68,7 +68,8 @@ export interface ScanLog {
 
 export interface PhotoIdItem {
   id: string
-  takenAt: string | null
+  /** YYYYMMDD integer (e.g. 20260702) or null */
+  takenAtDate: number | null
 }
 
 export interface SystemSettingsMap {

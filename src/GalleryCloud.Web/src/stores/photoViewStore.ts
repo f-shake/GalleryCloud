@@ -4,6 +4,14 @@ import type { PhotoIdItem } from '../types'
 
 export interface ThumbRect { x: number; y: number; width: number; height: number }
 
+/** 将 "2026-07-02T12:00:00" 或 "2026-07-02" 转为 YYYYMMDD 整数 */
+export function toDateInt(dateStr: string | null | undefined): number | null {
+  if (!dateStr) return null
+  const s = dateStr.substring(0, 10)
+  if (s.length < 10) return null
+  return parseInt(s.substring(0, 4)) * 10000 + parseInt(s.substring(5, 7)) * 100 + parseInt(s.substring(8, 10))
+}
+
 let sessionId = 0
 
 export const usePhotoViewStore = defineStore('photoView', () => {
@@ -37,6 +45,7 @@ export const usePhotoViewStore = defineStore('photoView', () => {
     if (items) allItems.value = items
     open.value = true
   }
+
 
   function navigatePrev() {
     const idx = currentIndex.value

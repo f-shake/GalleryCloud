@@ -9,6 +9,7 @@ namespace GalleryCloud.Api.Dtos;
 [JsonSerializable(typeof(PhotoItem))]
 [JsonSerializable(typeof(PhotoDetail))]
 [JsonSerializable(typeof(PhotoIdentity))]
+[JsonSerializable(typeof(PhotoIdsResponse))]
 [JsonSerializable(typeof(PhotoListItem))]
 [JsonSerializable(typeof(MessageResult))]
 [JsonSerializable(typeof(ErrorResult))]

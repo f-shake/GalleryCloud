@@ -4,7 +4,7 @@ import { usePhotoGrid } from '../composables/usePhotoGrid'
 import PhotoGridToolbar from '../components/PhotoGridToolbar.vue'
 import client from '../api/client'
 import { thumbUrl } from '../composables/useThumbnailUrl'
-import { usePhotoViewStore } from '../stores/photoViewStore'
+import { usePhotoViewStore, toDateInt } from '../stores/photoViewStore'
 import { useScanStatus } from '../composables/useScanStatus'
 
 interface FolderNode { name: string; path: string; rootId?: string; photoCount: number; subFolders: FolderNode[]; _key: string }
@@ -37,8 +37,7 @@ const treeLoading = ref(true)
 
 // Group photos using same logic as timeline
 const photoGroups = computed(() => {
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  const _ = columns.value // re-evaluate when columns change
+  void columns.value // force re-evaluate when columns change
   const level = groupLevel.value
   const groups: { label: string; photos: any[] }[] = []
   const items = photos.value
@@ -92,7 +91,7 @@ function onPhotoClick(id: string, e: MouseEvent) {
   const img = (e.currentTarget as HTMLElement).querySelector('img')
   const r = img ? img.getBoundingClientRect() : (e.currentTarget as HTMLElement).getBoundingClientRect()
   viewStore.show(id, { x: r.x, y: r.y, width: r.width, height: r.height }, img?.src,
-    photos.value.map((p: any) => ({ id: p.id, takenAt: p.takenAt })))
+    photos.value.map((p: any) => ({ id: p.id, takenAtDate: toDateInt(p.takenAt) })))
 }
 
 async function onNodeClick(node: FolderNode) {

@@ -508,10 +508,17 @@ public class ThumbnailService : IThumbnailService
             .Select(p => p.Id)
             .ToListAsync();
 
-        var gridCached = await thumbDb.ThumbnailCaches
-            .CountAsync(t => t.Size == "grid" && validPhotoIds.Contains(t.PhotoId));
-        var previewCached = await thumbDb.ThumbnailCaches
-            .CountAsync(t => t.Size == "preview" && validPhotoIds.Contains(t.PhotoId));
+        // Batch queries to avoid SQLite's parameter limit (~32k)
+        const int BATCH = 500;
+        int gridCached = 0, previewCached = 0;
+        for (int i = 0; i < validPhotoIds.Count; i += BATCH)
+        {
+            var batch = validPhotoIds.Skip(i).Take(BATCH).ToList();
+            gridCached += await thumbDb.ThumbnailCaches
+                .CountAsync(t => t.Size == "grid" && batch.Contains(t.PhotoId));
+            previewCached += await thumbDb.ThumbnailCaches
+                .CountAsync(t => t.Size == "preview" && batch.Contains(t.PhotoId));
+        }
 
         return new ThumbnailStats
         {

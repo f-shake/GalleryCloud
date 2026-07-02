@@ -428,6 +428,8 @@ public class ScanService : IScanService
 
                 processed++;
                 Status = Status with { ProcessedFiles = processed };
+                if (processed % 100 == 0)
+                    _logger.LogInformation("EXIF refresh: {Processed}/{Total}", processed, total);
             }
 
             await db.SaveChangesAsync(ct);

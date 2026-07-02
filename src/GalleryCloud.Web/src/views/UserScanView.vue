@@ -156,7 +156,7 @@ async function clearCache() {
         </div>
       </template>
       <div v-if="status.isRunning" style="display:flex;gap:16px;margin-bottom:12px;flex-wrap:wrap;font-size:13px;color:var(--el-text-color-secondary)">
-        <span>模式: <b>{{ status.mode === 'full' ? '全量' : status.mode === 'incremental' ? '增量' : status.mode }}</b></span>
+        <span>模式: <b>{{ { full: '全量', incremental: '增量', refreshexif: '刷新EXIF' }[status.mode!] || status.mode }}</b></span>
         <span>已处理: <b>{{ status.processedFiles >= 0 ? status.processedFiles.toLocaleString() : '枚举文件中...' }}</b><template v-if="status.totalFiles > 0"> / {{ status.totalFiles.toLocaleString() }}</template></span>
       </div>
       <el-progress v-if="status.isRunning" :percentage="status.estimatedPercent" :stroke-width="16" striped striped-flow />

@@ -1,9 +1,9 @@
 <script setup lang="ts">
-import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
+import { ref, watch, onMounted, onUnmounted } from 'vue'
 import client from '../api/client'
 import { thumbUrl } from '../composables/useThumbnailUrl'
 import { usePhotoGrid } from '../composables/usePhotoGrid'
-import { usePhotoViewStore } from '../stores/photoViewStore'
+import { usePhotoViewStore, toDateInt } from '../stores/photoViewStore'
 import { useMap, type MapInstance } from '../composables/useMap'
 import FeatureLayer from '@arcgis/core/layers/FeatureLayer'
 import GraphicsLayer from '@arcgis/core/layers/GraphicsLayer'
@@ -39,7 +39,7 @@ function openPhoto(photoId: string, screenPoint?: { x: number; y: number }) {
   const rect = screenPoint
     ? { x: screenPoint.x, y: screenPoint.y, width: 1, height: 1 }
     : { x: 0, y: 0, width: 0, height: 0 }
-  viewStore.show(photoId, rect, '', allPoints.map(p => ({ id: p.id, takenAt: p.takenAt })))
+  viewStore.show(photoId, rect, '', allPoints.map(p => ({ id: p.id, takenAtDate: toDateInt(p.takenAt) })))
 }
 
 
@@ -307,7 +307,7 @@ function onPhotoClick(photoId: string, e: MouseEvent) {
   const img = (e.currentTarget as HTMLElement).querySelector('img')
   const r = img ? img.getBoundingClientRect() : (e.currentTarget as HTMLElement).getBoundingClientRect()
   viewStore.show(photoId, { x: r.x, y: r.y, width: r.width, height: r.height }, img?.src,
-    allPoints.map(p => ({ id: p.id, takenAt: p.takenAt })))
+    allPoints.map(p => ({ id: p.id, takenAtDate: toDateInt(p.takenAt) })))
 }
 
 function closeClusterView() { clusterView.value = null }

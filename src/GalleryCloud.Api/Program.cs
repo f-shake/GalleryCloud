@@ -7,6 +7,7 @@ using GalleryCloud.Core.Interfaces;
 using GalleryCloud.Core.Settings;
 using Microsoft.EntityFrameworkCore;
 using Serilog;
+using Microsoft.AspNetCore.ResponseCompression;
 // Serilog: 控制台输出 + 按天滚动文件到 App_Data/logs/
 Log.Logger = new LoggerConfiguration()
     .MinimumLevel.Information()
@@ -37,6 +38,13 @@ builder.Services.AddDbContext<AppDbContext>(options =>
 builder.Services.AddDbContext<ThumbnailDbContext>(options =>
     options.UseSqlite(thumbConnectionString));
 builder.Services.AddMemoryCache();
+
+builder.Services.AddResponseCompression(options =>
+{
+    options.EnableForHttps = true;
+    options.Providers.Add<BrotliCompressionProvider>();
+    options.Providers.Add<GzipCompressionProvider>();
+});
 
 // Core services
 builder.Services.AddScoped<IAuthService, AuthService>();
@@ -82,6 +90,7 @@ var settingService = app.Services.GetRequiredService<ISettingService>();
 await settingService.LoadDefaultsAsync();
 
 // Middleware pipeline — only our custom AuthMiddleware, no ASP.NET JWT Bearer
+app.UseResponseCompression();
 app.UseCors();
 app.UseMiddleware<ErrorHandlingMiddleware>();
 app.UseMiddleware<AuthMiddleware>();

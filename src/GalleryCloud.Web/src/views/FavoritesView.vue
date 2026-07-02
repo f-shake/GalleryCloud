@@ -3,7 +3,7 @@ import { onMounted, onUnmounted } from 'vue'
 import { usePhotoGrid } from '../composables/usePhotoGrid'
 import { useInfiniteQuery } from '../composables/useInfiniteQuery'
 import { thumbUrl } from '../composables/useThumbnailUrl'
-import { usePhotoViewStore } from '../stores/photoViewStore'
+import { usePhotoViewStore, toDateInt } from '../stores/photoViewStore'
 import { useScanStatus } from '../composables/useScanStatus'
 
 const viewStore = usePhotoViewStore()
@@ -17,7 +17,7 @@ function onPhotoClick(id: string, e: MouseEvent) {
   const img = (e.currentTarget as HTMLElement).querySelector('img')
   const r = img ? img.getBoundingClientRect() : (e.currentTarget as HTMLElement).getBoundingClientRect()
   viewStore.show(id, { x: r.x, y: r.y, width: r.width, height: r.height }, img?.src,
-    (photos.value as any[]).map(p => ({ id: p.id, takenAt: p.takenAt })))
+    (photos.value as any[]).map(p => ({ id: p.id, takenAtDate: toDateInt(p.takenAt) })))
 }
 
 let scrollEl: HTMLElement | null = null
