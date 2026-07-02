@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, onUnmounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted } from 'vue'
 
 const props = defineProps<{
   totalItems: number
@@ -16,18 +16,43 @@ const props = defineProps<{
 const hoverY = ref(-1)
 const hoverDate = ref('')
 const scrubberEl = ref<HTMLElement | null>(null)
+const scrubberHeight = ref(500)
+let ro: ResizeObserver | null = null
+
+onMounted(() => {
+  if (scrubberEl.value) {
+    ro = new ResizeObserver(entries => {
+      for (const e of entries) scrubberHeight.value = e.contentRect.height
+    })
+    ro.observe(scrubberEl.value)
+  }
+})
+onUnmounted(() => ro?.disconnect())
+
+const LABEL_PX = 14 // 10px font + border + padding
+const MIN_SEC_PX = 14 // sections smaller than this get hidden (keeps scrubber clean)
 
 // Use density-based year positions from parent, fall back to equal spacing
 const sections = computed(() => {
   const positions = props.yearPositions
   if (positions && positions.length > 0) {
-    // Density mode: show all year labels, spacing reflects photo counts
-    return positions.map((p, i) => ({
-      year: p.year,
-      ratio: p.ratio,
-      nextRatio: i + 1 < positions.length ? positions[i + 1].ratio : 1,
-      showLabel: true,
-    }))
+    const h = scrubberHeight.value
+    let lastShownPx = -Infinity
+    return positions.map((p, i) => {
+      const nextRatio = i + 1 < positions.length ? positions[i + 1].ratio : 1
+      const secHeight = (nextRatio - p.ratio) * h
+      const visible = secHeight >= MIN_SEC_PX || i === 0 // always show first year
+      const px = p.ratio * h
+      const showLabel = visible && (lastShownPx < 0 || (px - lastShownPx) >= LABEL_PX)
+      if (showLabel) lastShownPx = px
+      return {
+        year: p.year,
+        ratio: p.ratio,
+        nextRatio,
+        visible,
+        showLabel,
+      }
+    })
   }
   // Fallback: equal spacing from earliest/latest year (thin out labels)
   if (props.earliestYear <= 0 || props.latestYear <= 0) return []
@@ -179,7 +204,7 @@ onUnmounted(() => {
   align-items: flex-end;
   justify-content: flex-end;
   gap: 3px;
-  border-top: 1px solid var(--el-border-color-lighter);
+  border-bottom: 1px solid var(--el-border-color-lighter);
   min-height: 4px;
 }
 

@@ -83,6 +83,7 @@ const virtualizer = useVirtualizer({
 
 // Year positions for the scrubber: year → ratio of total scroll height
 const yearPositions = ref<{ year: number; ratio: number }[]>([])
+const yearPhotoCounts = ref<number[]>([])
 
 function computeYearPositions() {
   const positions: { year: number; offset: number }[] = []
@@ -116,6 +117,21 @@ function computeYearPositions() {
     year: p.year,
     ratio: p.offset / totalH,
   }))
+
+  // Count photos per year (for getDateAt to map correctly)
+  const counts: number[] = new Array(positions.length).fill(0)
+  let yearIdx = 0
+  for (const item of tl.allItems.value) {
+    const yr = item.takenAt ? new Date(item.takenAt).getFullYear() : 0
+    if (yr === positions[yearIdx]?.year) {
+      counts[yearIdx]++
+    } else if (yearIdx + 1 < positions.length && yr === positions[yearIdx + 1].year) {
+      yearIdx++
+      counts[yearIdx]++
+    }
+  }
+  yearPhotoCounts.value = counts
+  _dateCache.clear()
 }
 
 async function rebuildRows() {
@@ -158,16 +174,36 @@ function onJumpToDate(dateStr: string) {
   if (idx >= 0) virtualizer.value?.scrollToIndex(idx, { align: 'start' })
 }
 
-// Map any scrollTop to a date using all loaded items (works for unrendered positions too)
+// Map any scrollTop to a date using year positions for accurate year boundaries
 const _dateCache = new Map<number, string>()
 function getDateAtScrollTop(scrollTop: number): string {
   const totalH = virtualizer.value?.getTotalSize() ?? 0
-  if (totalH <= 0 || tl.allItems.value.length === 0) return ''
+  const ys = yearPositions.value
+  const counts = yearPhotoCounts.value
+  if (totalH <= 0 || ys.length === 0 || counts.length === 0) return ''
   const ratio = Math.max(0, Math.min(1, scrollTop / totalH))
+
+  // Find which year section this scrollTop falls in
+  let yearIdx = ys.length - 1
+  for (let i = 0; i < ys.length; i++) {
+    const nextRatio = i + 1 < ys.length ? ys[i + 1].ratio : 1
+    if (ratio >= ys[i].ratio && ratio < nextRatio) { yearIdx = i; break }
+  }
+
+  // Photos in newer years (before this one in newest-first order)
+  let beforeCount = 0
+  for (let i = 0; i < yearIdx; i++) beforeCount += counts[i]
+
+  // Progress within this year's scroll section
+  const yearStart = ys[yearIdx].ratio
+  const yearEnd = yearIdx + 1 < ys.length ? ys[yearIdx + 1].ratio : 1
+  const yearProgress = yearEnd > yearStart ? Math.max(0, Math.min(1, (ratio - yearStart) / (yearEnd - yearStart))) : 0
+  const yearOffset = Math.min(counts[yearIdx] - 1, Math.floor(yearProgress * counts[yearIdx]))
+
   const bucket = Math.floor(ratio * 1000)
   const cached = _dateCache.get(bucket)
   if (cached !== undefined) return cached
-  const idx = Math.floor(ratio * (tl.allItems.value.length - 1))
+  const idx = Math.min(tl.allItems.value.length - 1, beforeCount + yearOffset)
   const item = tl.allItems.value[idx]
   const result = item?.takenAt?.substring(0, 10) ?? ''
   _dateCache.set(bucket, result)
