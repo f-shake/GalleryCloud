@@ -36,11 +36,9 @@ onUnmounted(() => {
       <PhotoGridToolbar :count="photos.length" />
     </div>
 
-    <div ref="containerRef" class="fv-virt">
-      <el-empty v-if="!loading && photos.length === 0 && !isScanning" description="暂无收藏" />
+    <el-empty v-if="!loading && photos.length === 0 && !isScanning" description="暂无收藏" />
 
-      <PhotoGrid v-else :photos="photos as any[]" :columns="columns" @photo-click="onPhotoClick" />
-    </div>
+    <PhotoGrid v-else :photos="photos as any[]" :columns="columns" @photo-click="onPhotoClick" style="flex:1;min-height:0" />
 
     <div v-if="loading && photos.length === 0" class="fv-state-overlay"><el-icon class="is-loading" :size="24"><Loading /></el-icon></div>
     <div v-else-if="isScanning && photos.length === 0" class="fv-state-overlay" style="color:var(--el-text-color-secondary)">扫描进行中...</div>
@@ -51,10 +49,6 @@ onUnmounted(() => {
 
 <style>
 .fv-wrap { position: absolute; inset: 0; display: flex; flex-direction: column; }
-
-.fv-virt { flex: 1; overflow-y: auto; }
-.fv-virt::-webkit-scrollbar { display: none; }
-.fv-virt { scrollbar-width: none; }
 
 .fv-toolbar {
   flex-shrink: 0;

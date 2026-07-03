@@ -21,7 +21,7 @@ async function search() {
   try {
     const params: any = {}
     for (const [k, v] of Object.entries(form.value)) if (v) params[k] = v
-    const r = await client.get('/search', { params: { ...params, limit: 200 } })
+    const r = await client.get('/search', { params: { ...params } })
     photos.value = r.data.photos
     total.value = r.data.total
   } catch { /* */ }
@@ -48,9 +48,7 @@ async function search() {
       <PhotoGridToolbar :count="total" />
     </div>
 
-    <div class="sr-virt">
-      <PhotoGrid v-if="photos.length" :photos="photos" :columns="columns" @photo-click="onPhotoClick" />
-    </div>
+    <PhotoGrid v-if="photos.length" :photos="photos" :columns="columns" @photo-click="onPhotoClick" style="flex:1;min-height:0" />
 
     <div v-if="loading && photos.length === 0" class="sr-state-overlay"><el-icon class="is-loading" :size="24"><Loading /></el-icon></div>
     <el-empty v-else-if="!loading && photos.length === 0 && !isScanning" description="输入条件搜索" />
@@ -66,9 +64,6 @@ async function search() {
   padding: 4px 16px;
   background: var(--el-bg-color-page);
 }
-.sr-virt { flex: 1; overflow-y: auto; }
-.sr-virt::-webkit-scrollbar { display: none; }
-.sr-virt { scrollbar-width: none; }
 .sr-state-overlay {
   position: absolute; inset: 0;
   display: flex; align-items: center; justify-content: center;

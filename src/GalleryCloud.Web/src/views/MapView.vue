@@ -14,6 +14,7 @@ import SimpleMarkerSymbol from '@arcgis/core/symbols/SimpleMarkerSymbol'
 import PictureMarkerSymbol from '@arcgis/core/symbols/PictureMarkerSymbol'
 import { watch as reactiveWatch } from '@arcgis/core/core/reactiveUtils'
 import PhotoGridToolbar from '../components/PhotoGridToolbar.vue'
+import PhotoGrid from '../components/PhotoGrid.vue'
 
 interface MapPoint { id: string; latitude: number; longitude: number; fileName: string; takenAt: string | null }
 
@@ -531,22 +532,8 @@ onUnmounted(() => {
         </PhotoGridToolbar>
       </div>
       <div class="cluster-overlay-body" v-loading="clusterView.loading">
-        <template v-for="(group, _gi) in clusterView.groups" :key="_gi">
-          <div v-if="group.label" class="cluster-group-header">
-            <el-tag type="info" size="large">{{ group.label }}</el-tag>
-          </div>
-          <div class="cluster-photo-grid" :style="{ gridTemplateColumns: `repeat(${columns}, 1fr)` }">
-            <div
-              v-for="p in group.photos"
-              :key="p.id"
-              class="thumb-cell"
-              @click="onPhotoClick(p.id, $event)"
-            >
-              <img v-lazy-img="thumbUrl(p.id, 'grid', 300)" class="thumb-img" />
-            </div>
-          </div>
-        </template>
-        <el-empty v-if="!clusterView.loading && clusterView.photos.length === 0" description="该位置没有照片" />
+        <PhotoGrid v-if="clusterView.photos.length" :groups="clusterView.groups" :columns="columns" @photo-click="onPhotoClick" />
+        <el-empty v-else-if="!clusterView.loading" description="该位置没有照片" />
       </div>
     </div>
     </Transition>
@@ -635,14 +622,11 @@ onUnmounted(() => {
   border-bottom: 1px solid var(--el-border-color-light);
 }
 .cluster-overlay-body {
-  flex: 1; overflow-y: auto;
-  padding: 12px 16px;
+  flex: 1; overflow: hidden;
+  display: flex; flex-direction: column;
 }
-.cluster-group-header { padding: 6px 0 4px 0; }
-.cluster-photo-grid { display: grid; gap: 4px; padding-bottom: 8px; }
 @media (max-width: 767px) {
-  .cluster-overlay-body { padding: 12px 0; }
-  .cluster-group-header { padding: 6px 16px 4px; }
+  .cluster-overlay-body { padding: 0; }
 }
 .thumb-cell {
   aspect-ratio: 1;

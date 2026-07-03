@@ -131,7 +131,7 @@ const defaultExpanded = computed(() => tree.value.map(n => n._key))
       </el-tree>
     </div>
     <div class="ft-photo-panel" @touchstart="onTouchStart" @touchmove="onTouchMove" @touchend="onTouchEnd">
-      <div style="margin-bottom:12px">
+      <div style="margin-bottom:12px;flex-shrink:0">
         <PhotoGridToolbar :count="photos.length">
           <template #left>
             <span style="font-size:13px;color:var(--el-text-color-secondary)">{{ selPath || (selRootId ? '' : '选择文件夹') }}</span>
@@ -140,7 +140,7 @@ const defaultExpanded = computed(() => tree.value.map(n => n._key))
       </div>
       <el-empty v-if="!selPath && !selRootId && !isScanning" description="选择左侧文件夹" />
       <div v-else-if="loading" style="text-align:center;padding:32px"><el-icon class="is-loading" :size="24"><Loading /></el-icon></div>
-      <PhotoGrid v-else :groups="photoGroups" :columns="columns" @photo-click="onPhotoClick" />
+      <PhotoGrid v-else :groups="photoGroups" :columns="columns" @photo-click="onPhotoClick" style="flex:1;min-height:0" />
     </div>
   </div>
 </template>
@@ -155,7 +155,7 @@ const defaultExpanded = computed(() => tree.value.map(n => n._key))
   border-right: 1px solid var(--el-border-color-light);
   padding: 4px 8px;
 }
-.ft-photo-panel { flex: 1; overflow-y: auto; padding: 8px; }
+.ft-photo-panel { flex: 1; overflow: hidden; padding: 8px; display: flex; flex-direction: column; }
 
 /* Mobile: stacked layout — tree top 1/3, photos bottom */
 @media (max-width: 767px) {
@@ -166,7 +166,6 @@ const defaultExpanded = computed(() => tree.value.map(n => n._key))
     border-bottom: 1px solid var(--el-border-color-light);
     padding: 4px 0;
   }
-  .ft-photo-panel { flex: 1; overflow-y: auto; padding: 8px 12px; }
-  .ft-photo-panel .photo-grid { margin: 0 -12px; width: calc(100% + 24px); }
+  .ft-photo-panel { flex: 1; overflow: hidden; padding: 8px 12px; display: flex; flex-direction: column; }
 }
 </style>

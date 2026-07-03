@@ -29,7 +29,7 @@ public class SearchController : ControllerBase
         [FromQuery] string? tag,
         [FromQuery] bool? isDeleted = false,
         [FromQuery] int page = 1,
-        [FromQuery] int limit = 50)
+        [FromQuery] int limit = 2000)
     {
         if (!_userContext.IsAuthenticated) return Unauthorized();
 
