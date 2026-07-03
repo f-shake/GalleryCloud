@@ -19,6 +19,8 @@ let markerLayer: any = null
 let marker: any = null
 let mapInst: any = null
 let viewInst: any = null
+let initialized = false
+let initPromise: Promise<void> | null = null
 
 function buildMarker(lat: number, lng: number) {
   return new Graphic({
@@ -47,51 +49,86 @@ function updatePosition(lat: number, lng: number) {
   viewInst.goTo({ center: [lng, lat], zoom: 16 }, { duration: 300 })
 }
 
+function clearMarker() {
+  if (markerLayer && marker) {
+    markerLayer.remove(marker)
+    marker = null
+  }
+}
+
+async function ensureMapInitialized(lat: number, lng: number) {
+  if (initialized) return
+  if (lat == null || lng == null) return
+
+  // Avoid duplicate initialization if called again while in progress
+  if (initPromise) {
+    await initPromise
+    updatePosition(lat, lng)
+    return
+  }
+
+  initPromise = (async () => {
+    // Load tile URLs from API
+    try {
+      const cfg = (await client.get('/map/basemap-config')).data
+      updateTileUrls(cfg.tileUrlNormal, cfg.tileUrlSatellite)
+    } catch { /* use defaults */ }
+
+    // Restore saved basemap preference (shared with MapView)
+    const savedBasemap = localStorage.getItem('mapBasemap')
+    if (savedBasemap === 'normal' || savedBasemap === 'satellite') {
+      basemap.value = savedBasemap
+    }
+
+    const inst = await initMap([lng, lat], 16)
+    if (!inst) return
+
+    mapInst = inst.map
+    viewInst = inst.view
+    switchBasemap(basemap.value)
+
+    markerLayer = new GraphicsLayer()
+    marker = buildMarker(lat, lng)
+    markerLayer.add(marker)
+    inst.map.add(markerLayer)
+    initialized = true
+  })()
+
+  await initPromise
+  initPromise = null
+}
+
+onMounted(async () => {
+  if (props.latitude != null && props.longitude != null) {
+    await ensureMapInitialized(props.latitude, props.longitude)
+  }
+})
+
+watch(() => [props.latitude, props.longitude], async ([lat, lng]) => {
+  if (lat != null && lng != null) {
+    if (!initialized) {
+      // Transitioned from no-GPS → GPS: initialize map first, then marker is set during init
+      await ensureMapInitialized(lat, lng)
+    } else {
+      updatePosition(lat, lng)
+    }
+  } else {
+    // Transitioned from GPS → no-GPS: clear marker, keep map instance
+    clearMarker()
+  }
+})
+
 function toggleBasemap() {
   basemap.value = basemap.value === 'normal' ? 'satellite' : 'normal'
   localStorage.setItem('mapBasemap', basemap.value)
   switchBasemap(basemap.value)
 }
 
-onMounted(async () => {
-  const lat = props.latitude
-  const lng = props.longitude
-  if (lat == null || lng == null) return
-
-  // Load tile URLs from API
-  try {
-    const cfg = (await client.get('/map/basemap-config')).data
-    updateTileUrls(cfg.tileUrlNormal, cfg.tileUrlSatellite)
-  } catch { /* use defaults */ }
-
-  // Restore saved basemap preference (shared with MapView)
-  const savedBasemap = localStorage.getItem('mapBasemap')
-  if (savedBasemap === 'normal' || savedBasemap === 'satellite') {
-    basemap.value = savedBasemap
-  }
-
-  const inst = await initMap([lng, lat], 16)
-  if (!inst) return
-
-  mapInst = inst.map
-  viewInst = inst.view
-
-  // Apply saved basemap
-  switchBasemap(basemap.value)
-
-  markerLayer = new GraphicsLayer()
-  marker = buildMarker(lat, lng)
-  markerLayer.add(marker)
-  inst.map.add(markerLayer)
+onUnmounted(() => {
+  initialized = false
+  initPromise = null
+  destroy()
 })
-
-watch(() => [props.latitude, props.longitude], ([lat, lng]) => {
-  if (lat != null && lng != null && viewInst) {
-    updatePosition(lat, lng)
-  }
-})
-
-onUnmounted(() => destroy())
 </script>
 
 <template>
@@ -142,6 +179,9 @@ onUnmounted(() => destroy())
   background: var(--el-fill-color-light);
 }
 .map-embed-empty {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -149,8 +189,7 @@ onUnmounted(() => destroy())
   gap: 8px;
   color: var(--el-text-color-secondary);
   font-size: 13px;
-  height: 100%;
-  width: 100%;
+  background: var(--el-fill-color-light);
 }
 .map-embed-zoom {
   position: absolute;
