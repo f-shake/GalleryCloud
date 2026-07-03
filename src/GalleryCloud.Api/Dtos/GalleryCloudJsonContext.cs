@@ -34,6 +34,9 @@ namespace GalleryCloud.Api.Dtos;
 [JsonSerializable(typeof(DailyDensityItem))]
 [JsonSerializable(typeof(YearCountItem))]
 [JsonSerializable(typeof(MonthlyDensityItem))]
+[JsonSerializable(typeof(DateIdsResponse))]
+[JsonSerializable(typeof(DateIdItem))]
+[JsonSerializable(typeof(List<DateIdItem>))]
 
 [JsonSerializable(typeof(MapPhotoPoint))]
 [JsonSerializable(typeof(ClusterPhotoItem))]

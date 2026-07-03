@@ -12,9 +12,9 @@ const { columns: cols, zoomIn, zoomOut } = usePhotoGrid()
     <span v-if="count != null" class="pgt-count">{{ count }}张</span>
     <div style="flex:1" />
     <slot name="right" />
-    <el-button text :icon="'Minus'" @click="zoomOut" :disabled="cols >= 12" class="pgt-btn" />
+    <el-button text :icon="'ZoomOut'" @click="zoomOut" :disabled="cols >= 12" class="pgt-btn" />
     <span class="pgt-cols">{{ cols }}</span>
-    <el-button text :icon="'Plus'" @click="zoomIn" :disabled="cols <= 3" class="pgt-btn" />
+    <el-button text :icon="'ZoomIn'" @click="zoomIn" :disabled="cols <= 3" class="pgt-btn" />
   </div>
 </template>
 

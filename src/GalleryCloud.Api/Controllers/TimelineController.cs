@@ -188,7 +188,8 @@ public class TimelineController : ControllerBase
     }
 
     [HttpGet("daily-density")]
-    public async Task<IActionResult> GetDailyDensity()
+    public async Task<IActionResult> GetDailyDensity(
+        [FromQuery] string direction = "asc")
     {
         if (!_userContext.IsAuthenticated) return Unauthorized();
 
@@ -203,7 +204,53 @@ public class TimelineController : ControllerBase
             $"{x.Year}-{x.Month:D2}-{x.Day:D2}", x.count
         )).ToList();
 
+        if (direction == "desc")
+            daily.Reverse();
+
         return Ok(daily);
+    }
+
+    [HttpGet("date-ids")]
+    public async Task<IActionResult> GetDateIds([FromQuery] string date)
+    {
+        if (!_userContext.IsAuthenticated) return Unauthorized();
+        if (!DateTime.TryParse(date, out var dt))
+            return BadRequest(new ErrorResult("Invalid date"));
+
+        var start = dt.Date;
+        var end = start.AddDays(1);
+
+        var items = await _db.Photos
+            .Where(p => p.UserId == _userContext.UserId && !p.IsDeleted
+                && p.TakenAt >= start && p.TakenAt < end
+                && _db.UserRoots.Any(r => r.Id == p.RootId && !r.IsDeleted))
+            .OrderByDescending(p => p.TakenAt)
+            .Select(p => new { p.Id, p.TakenAt })
+            .ToListAsync();
+
+        var result = items.Select(item => new DateIdItem(
+            item.Id,
+            item.TakenAt?.Year is int y
+                ? y * 10000 + (item.TakenAt?.Month ?? 1) * 100 + (item.TakenAt?.Day ?? 1)
+                : null
+        )).ToList();
+
+        return Ok(new DateIdsResponse(date, result));
+    }
+
+    [HttpGet("null-date-ids")]
+    public async Task<IActionResult> GetNullDateIds()
+    {
+        if (!_userContext.IsAuthenticated) return Unauthorized();
+
+        var items = await _db.Photos
+            .Where(p => p.UserId == _userContext.UserId && !p.IsDeleted && p.TakenAt == null
+                && _db.UserRoots.Any(r => r.Id == p.RootId && !r.IsDeleted))
+            .OrderByDescending(p => p.CreatedAt)
+            .Select(p => p.Id)
+            .ToListAsync();
+
+        return Ok(items);
     }
 
     [HttpGet("years")]
@@ -211,13 +258,14 @@ public class TimelineController : ControllerBase
     {
         if (!_userContext.IsAuthenticated) return Unauthorized();
 
-        var years = await _db.Photos
+        var raw = await _db.Photos
             .Where(p => p.UserId == _userContext.UserId && !p.IsDeleted && p.TakenAt != null)
             .GroupBy(p => p.TakenAt!.Value.Year)
-            .Select(g => new YearCountItem(g.Key, g.Count()))
+            .Select(g => new { Year = g.Key, Count = g.Count() })
             .OrderByDescending(x => x.Year)
             .ToListAsync();
 
+        var years = raw.Select(x => new YearCountItem(x.Year, x.Count)).ToList();
         return Ok(years);
     }
 

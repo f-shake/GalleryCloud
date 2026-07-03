@@ -115,6 +115,13 @@ public record YearCountItem(int Year, int Count);
 
 public record MonthlyDensityItem(int Year, int[] MonthCounts);
 
+/// <summary>
+/// 单日照片 IDs（平行数组格式，同 PhotoIdsResponse）。
+/// </summary>
+public record DateIdsResponse(string Date, List<DateIdItem> Items);
+
+public record DateIdItem(string Id, int? DateInt);
+
 // ============================================================
 // Map
 // ============================================================

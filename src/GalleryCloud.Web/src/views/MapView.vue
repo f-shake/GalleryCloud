@@ -22,6 +22,7 @@ const { columns, groupLevel, zoomIn, zoomOut } = usePhotoGrid()
 const mapContainer = ref<HTMLDivElement | null>(null)
 const { loading, initMap, switchBasemap, updateTileUrls, destroy: destroyMap } = useMap(mapContainer)
 const pointCount = ref(0)
+const pointsLoading = ref(true)
 const basemap = ref<'normal' | 'satellite'>('normal')
 const mode = ref<'cluster' | 'point'>('cluster')
 let allPoints: MapPoint[] = []
@@ -238,11 +239,13 @@ function switchMode(newMode: 'cluster' | 'point') {
   }
 }
 
-async function fetchClusterPhotos(graphic: __esri.Graphic) {
+async function fetchClusterPhotos(graphic: Graphic) {
   if (!clusterLayerView || !graphic.isAggregate) return
 
-  const lat = graphic.geometry?.latitude
-  const lng = graphic.geometry?.longitude
+  const geom = graphic.geometry as Point
+  if (!geom) return
+  const lat = geom.latitude
+  const lng = geom.longitude
   if (lat == null || lng == null) return
 
   clusterView.value = { lat, lng, photos: [], groups: [], loading: true }
@@ -285,16 +288,19 @@ function groupByDate(photos: any[]) {
     }
   }
   for (const p of photos) {
-    if (!p.takenAt) { currentBatch.push(p); continue }
-    const d = new Date(p.takenAt)
+    const dateInt = toDateInt(p.takenAt)
+    if (dateInt == null) { currentBatch.push(p); continue }
+    const y = Math.floor(dateInt / 10000)
+    const m = Math.floor((dateInt % 10000) / 100)
+    const day = dateInt % 100
     const key = level === 'month'
-      ? `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
-      : `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+      ? `${y}-${String(m).padStart(2, '0')}`
+      : `${y}-${String(m).padStart(2, '0')}-${String(day).padStart(2, '0')}`
     if (key !== lastKey && lastKey !== '') flush()
     lastKey = key
     currentLabel = level === 'month'
-      ? `${d.getFullYear()}年${d.getMonth() + 1}月`
-      : `${d.getFullYear()}年${d.getMonth() + 1}月${d.getDate()}日`
+      ? `${y}年${m}月`
+      : `${y}年${m}月${day}日`
     currentBatch.push(p)
   }
   flush()
@@ -405,7 +411,7 @@ onMounted(async () => {
 
           // Cluster click — use ArcGIS native aggregateIds API
           if (graphic.isAggregate) {
-            fetchClusterPhotos(graphic as __esri.Graphic)
+            fetchClusterPhotos(graphic as Graphic)
             return
           }
 
@@ -446,6 +452,9 @@ onMounted(async () => {
       })
     }
 
+    // All layers added — loading complete (only after points have been added to the map)
+    pointsLoading.value = false
+
     const params = new URLSearchParams(window.location.search)
     const qlat = params.get('lat')
     const qlng = params.get('lng')
@@ -476,11 +485,11 @@ onUnmounted(() => {
   <div class="map-root">
     <div ref="mapContainer" class="map-container"></div>
 
-    <div v-if="loading" class="map-loading">
+    <div v-if="loading || pointsLoading" class="map-loading">
       <el-icon class="is-loading" :size="32"><Loading /></el-icon>
     </div>
 
-    <div v-show="!loading && !clusterView" class="map-buttons">
+    <div v-show="!loading && !pointsLoading && !clusterView" class="map-buttons">
       <button class="map-btn" @click="switchMode(mode === 'cluster' ? 'point' : 'cluster')" :title="mode === 'cluster' ? '显示所有点位' : '聚合显示'">
         <svg v-if="mode === 'cluster'" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
           <circle cx="8" cy="8" r="3"/>
@@ -501,7 +510,7 @@ onUnmounted(() => {
       </button>
     </div>
 
-    <div v-show="!loading && !clusterView" class="map-zoom-buttons">
+    <div v-show="!loading && !pointsLoading && !clusterView" class="map-zoom-buttons">
       <button class="map-btn" @click="mapZoomIn" title="放大">
         <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
       </button>
@@ -555,8 +564,13 @@ onUnmounted(() => {
 .map-loading {
   position: absolute; inset: 0;
   display: flex; align-items: center; justify-content: center;
-  background: var(--el-bg-color-page);
   z-index: 20; pointer-events: none;
+}
+.map-loading::before {
+  content: '';
+  position: absolute; inset: 0;
+  background: var(--el-bg-color-page);
+  opacity: 0.65;
 }
 .map-buttons {
   position: absolute;

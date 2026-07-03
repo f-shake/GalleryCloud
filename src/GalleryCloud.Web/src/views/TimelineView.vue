@@ -12,7 +12,7 @@ import PhotoGridToolbar from '../components/PhotoGridToolbar.vue'
 const { columns, groupLevel, zoomIn, zoomOut } = usePhotoGrid()
 const { isScanning } = useScanStatus()
 const tl = useTimeline()
-const { onPhotoClick } = usePhotoClick(() => tl.allItems.value)
+const { onPhotoClick } = usePhotoClick(() => tl.allLoadedItems.value)
 
 const containerRef = ref<HTMLElement | null>(null)
 const rows = ref<RowItem[]>([])
@@ -118,16 +118,12 @@ function computeYearPositions() {
     ratio: p.offset / totalH,
   }))
 
-  // Count photos per year (for getDateAt to map correctly)
+  // Count photos per year from density data (not loaded items)
   const counts: number[] = new Array(positions.length).fill(0)
-  let yearIdx = 0
-  for (const item of tl.allItems.value) {
-    const yr = item.takenAtDate ? Math.floor(item.takenAtDate / 10000) : 0
-    if (yr === positions[yearIdx]?.year) {
-      counts[yearIdx]++
-    } else if (yearIdx + 1 < positions.length && yr === positions[yearIdx + 1].year) {
-      yearIdx++
-      counts[yearIdx]++
+  for (const dd of tl.dayDensities.value) {
+    const yr = parseInt(dd.date.substring(0, 4))
+    for (let i = 0; i < positions.length; i++) {
+      if (yr === positions[i].year) { counts[i] += dd.count; break }
     }
   }
   yearPhotoCounts.value = counts
@@ -141,14 +137,52 @@ async function rebuildRows() {
   virtualizer.value?.measure()
 }
 
+// 视口驱动：加载可见日的照片 IDs
+function loadVisibleDays() {
+  const vItems = virtualizer.value?.getVirtualItems()
+  if (!vItems) return
+  const datesNeeded = new Set<string>()
+  for (const vItem of vItems) {
+    const row = rows.value[vItem.index]
+    if (row?.type === 'row') {
+      for (const dk of row.dayKeys) {
+        if (dk !== '__null__') datesNeeded.add(dk)
+      }
+    }
+  }
+  for (const date of datesNeeded) {
+    tl.loadDayIds(date)
+  }
+}
+
+// 监听虚拟项变化 → 加载可见日
+watch(
+  () => virtualizer.value?.getVirtualItems().map(i => i.index),
+  () => { loadVisibleDays() },
+  { flush: 'post' }
+)
+
+// 监听 dayDensities 加载完成 → 重建行（只有 loaded 变化时才重建）
+watch(
+  () => tl.dayDensities.value.map(d => d.loaded),
+  async (curr, prev) => {
+    if (!prev) return // 初始值，跳过
+    for (let i = 0; i < curr.length; i++) {
+      if (curr[i] && !prev[i]) { await rebuildRows(); return }
+    }
+  },
+)
+
 watch([columns, groupLevel], rebuildRows)
 
 function onTlResize() { virtualizer.value?.measure() }
 
 onMounted(async () => {
   await tl.init()
+  await tl.loadNullDateIds()
   await rebuildRows()
   ready.value = true
+  loadVisibleDays()
   window.addEventListener('resize', onTlResize)
 })
 onUnmounted(() => window.removeEventListener('resize', onTlResize))
@@ -169,13 +203,14 @@ function onJumpToDate(dateStr: string) {
   if (idx >= 0) virtualizer.value?.scrollToIndex(idx, { align: 'start' })
 }
 
-// Map any scrollTop to a date using year positions for accurate year boundaries
+// Map any scrollTop to a date using daily density data
 const _dateCache = new Map<number, string>()
 function getDateAtScrollTop(scrollTop: number): string {
   const totalH = virtualizer.value?.getTotalSize() ?? 0
   const ys = yearPositions.value
   const counts = yearPhotoCounts.value
-  if (totalH <= 0 || ys.length === 0 || counts.length === 0) return ''
+  const densities = tl.dayDensities.value
+  if (totalH <= 0 || ys.length === 0 || counts.length === 0 || densities.length === 0) return ''
   const ratio = Math.max(0, Math.min(1, scrollTop / totalH))
 
   // Find which year section this scrollTop falls in
@@ -184,6 +219,11 @@ function getDateAtScrollTop(scrollTop: number): string {
     const nextRatio = i + 1 < ys.length ? ys[i + 1].ratio : 1
     if (ratio >= ys[i].ratio && ratio < nextRatio) { yearIdx = i; break }
   }
+
+  // Cache by bucket
+  const bucket = Math.floor(ratio * 1000)
+  const cached = _dateCache.get(bucket)
+  if (cached !== undefined) return cached
 
   // Photos in newer years (before this one in newest-first order)
   let beforeCount = 0
@@ -195,12 +235,24 @@ function getDateAtScrollTop(scrollTop: number): string {
   const yearProgress = yearEnd > yearStart ? Math.max(0, Math.min(1, (ratio - yearStart) / (yearEnd - yearStart))) : 0
   const yearOffset = Math.min(counts[yearIdx] - 1, Math.floor(yearProgress * counts[yearIdx]))
 
-  const bucket = Math.floor(ratio * 1000)
-  const cached = _dateCache.get(bucket)
-  if (cached !== undefined) return cached
-  const idx = Math.min(tl.allItems.value.length - 1, beforeCount + yearOffset)
-  const item = tl.allItems.value[idx]
-  const result = item?.takenAtDate ? String(item.takenAtDate).replace(/(\d{4})(\d{2})(\d{2})/, '$1-$2-$3') : ''
+  // Find which day this offset falls in by iterating densities within the target year
+  const targetYear = ys[yearIdx].year
+  let acc = 0
+  let result = ''
+  for (const dd of densities) {
+    const yr = parseInt(dd.date.substring(0, 4))
+    if (yr !== targetYear) continue
+    acc += dd.count
+    if (acc > yearOffset) { result = dd.date; break }
+  }
+  // Fallback to last day of the year
+  if (!result) {
+    for (const dd of densities) {
+      const yr = parseInt(dd.date.substring(0, 4))
+      if (yr === targetYear) result = dd.date
+    }
+  }
+
   _dateCache.set(bucket, result)
   return result
 }
@@ -253,14 +305,19 @@ function onTouchEnd() {
           </template>
           <template v-else>
             <div :style="{ display:'grid', gridTemplateColumns:`repeat(${columns}, 1fr)`, gap:'4px', paddingBottom:'4px' }">
-              <div
-                v-for="p in (rows[vItem.index] as any).photos"
-                :key="p.id"
-                class="thumb-cell"
-                @click="onPhotoClick(p.id, $event)"
-              >
-                <img v-lazy-img="thumbUrl(p.id, 'grid', 400)" class="thumb-img" />
-              </div>
+              <template v-if="(rows[vItem.index] as any).loading">
+                <div v-for="i in ((rows[vItem.index] as any).estimatedCount || columns)" :key="'s-' + i" class="thumb-cell skeleton" />
+              </template>
+              <template v-else>
+                <div
+                  v-for="p in (rows[vItem.index] as any).photos"
+                  :key="p.id"
+                  class="thumb-cell"
+                  @click="onPhotoClick(p.id, $event)"
+                >
+                  <img v-lazy-img="thumbUrl(p.id, 'grid', 400)" class="thumb-img" />
+                </div>
+              </template>
             </div>
           </template>
         </div>
@@ -314,6 +371,11 @@ function onTouchEnd() {
   position: absolute; inset: 0;
   display: flex; align-items: center; justify-content: center;
   z-index: 5; pointer-events: none;
+}
+
+/* Skeleton cells for unloaded days — same color as thumb-cell fallback */
+.thumb-cell.skeleton {
+  border-radius: 4px;
 }
 
 /* Date header overlay — outside scroll area, absolute positioned */

@@ -65,7 +65,7 @@ public class FoldersController : ControllerBase
         // Load all user photos then filter in memory — normalize separators for cross-platform
         var allPhotos = await _db.Photos
             .Where(p => p.UserId == _userContext.UserId && !p.IsDeleted)
-            .OrderBy(p => p.FileName)
+            .OrderByDescending(p => p.TakenAt).ThenBy(p => p.FileName)
             .Select(p => new PhotoListItem(
                 p.Id, p.FileName, p.FileFormat,
                 p.Width, p.Height, p.Orientation,

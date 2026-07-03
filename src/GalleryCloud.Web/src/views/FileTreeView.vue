@@ -1,16 +1,14 @@
 <script setup lang="ts">
 import { ref, onMounted, computed } from 'vue'
 import { usePhotoGrid } from '../composables/usePhotoGrid'
+import { toDateInt } from '../stores/photoViewStore'
 import PhotoGridToolbar from '../components/PhotoGridToolbar.vue'
 import PhotoGrid from '../components/PhotoGrid.vue'
 import client from '../api/client'
-import { usePhotoViewStore } from '../stores/photoViewStore'
 import { useScanStatus } from '../composables/useScanStatus'
 import { usePhotoClick, toNavItems } from '../composables/usePhotoClick'
 
 interface FolderNode { name: string; path: string; rootId?: string; photoCount: number; subFolders: FolderNode[]; _key: string }
-
-const viewStore = usePhotoViewStore()
 const { columns, groupLevel, zoomIn, zoomOut } = usePhotoGrid()
 const { isScanning } = useScanStatus()
 
@@ -38,9 +36,9 @@ const photos = ref<any[]>([])
 const loading = ref(false)
 const treeLoading = ref(true)
 
-// Group photos using same logic as timeline
+// Group photos using YYYYMMDD integer arithmetic (same as timeline)
 const photoGroups = computed(() => {
-  void columns.value // force re-evaluate when columns change
+  void columns.value
   const level = groupLevel.value
   const groups: { label: string; photos: any[] }[] = []
   const items = photos.value
@@ -57,16 +55,19 @@ const photoGroups = computed(() => {
     }
   }
   for (const p of items) {
-    if (!p.takenAt) { currentBatch.push(p); continue }
-    const d = new Date(p.takenAt)
+    const dateInt = toDateInt(p.takenAt)
+    if (dateInt == null) { currentBatch.push(p); continue }
+    const y = Math.floor(dateInt / 10000)
+    const m = Math.floor((dateInt % 10000) / 100)
+    const day = dateInt % 100
     const key = level === 'month'
-      ? `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
-      : `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+      ? `${y}-${String(m).padStart(2, '0')}`
+      : `${y}-${String(m).padStart(2, '0')}-${String(day).padStart(2, '0')}`
     if (key !== lastKey && lastKey !== '') flush()
     lastKey = key
     currentLabel = level === 'month'
-      ? `${d.getFullYear()}年${d.getMonth() + 1}月`
-      : `${d.getFullYear()}年${d.getMonth() + 1}月${d.getDate()}日`
+      ? `${y}年${m}月`
+      : `${y}年${m}月${day}日`
     currentBatch.push(p)
   }
   flush()
