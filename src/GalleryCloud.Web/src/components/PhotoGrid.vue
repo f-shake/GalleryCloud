@@ -2,6 +2,7 @@
 import { ref, computed, watch, onMounted, nextTick } from 'vue'
 import { useVirtualizer } from '@tanstack/vue-virtual'
 import { thumbUrl } from '../composables/useThumbnailUrl'
+import { HEADER_HEIGHT, estimateGridRowSize } from '../composables/usePhotoGridLayout'
 
 interface GridPhoto { id: string; [key: string]: any }
 interface Group { label?: string; photos: GridPhoto[] }
@@ -17,8 +18,6 @@ const props = withDefaults(defineProps<{
 
 defineEmits<{ 'photo-click': [id: string, event: MouseEvent] }>()
 
-const CELL_GAP = 4
-const ROW_GAP = 4
 const containerRef = ref<HTMLElement | null>(null)
 const containerWidth = ref(0)
 
@@ -39,17 +38,12 @@ const rows = computed(() => {
   return result
 })
 
-function estimateRowSize() {
-  if (!containerWidth.value || props.columns < 1) return 100
-  return Math.floor((containerWidth.value - (props.columns - 1) * CELL_GAP) / props.columns) + ROW_GAP
-}
-
 const virtualizer = useVirtualizer({
   get count() { return rows.value.length },
   getScrollElement: () => containerRef.value,
   estimateSize: (i: number) => {
     const r = rows.value[i]
-    return r?.type === 'header' ? 46 : estimateRowSize()
+    return r?.type === 'header' ? HEADER_HEIGHT : estimateGridRowSize(containerWidth.value, props.columns)
   },
   overscan: 2,
 })

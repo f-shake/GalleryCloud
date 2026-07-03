@@ -3,6 +3,7 @@ import { ref, onMounted, onUnmounted, watch, nextTick } from 'vue'
 import { useVirtualizer } from '@tanstack/vue-virtual'
 import { usePhotoGrid } from '../composables/usePhotoGrid'
 import { useTimeline, type RowItem } from '../composables/useTimeline'
+import { HEADER_HEIGHT, estimateGridRowSize } from '../composables/usePhotoGridLayout'
 import { thumbUrl } from '../composables/useThumbnailUrl'
 import { useScanStatus } from '../composables/useScanStatus'
 import { usePhotoClick } from '../composables/usePhotoClick'
@@ -31,14 +32,9 @@ function onTlScroll() {
   }
 }
 
-const CELL_GAP = 4 // horizontal gap between cells in the grid
-const ROW_GAP = 4  // vertical gap between rows (padding-bottom on each grid)
-
 function estimateRowSize() {
   if (!containerRef.value || columns.value < 1) return 100
-  const w = containerRef.value.clientWidth
-  // Cell width accounts for horizontal gaps, then add vertical spacing
-  return Math.floor((w - (columns.value - 1) * CELL_GAP) / columns.value) + ROW_GAP
+  return estimateGridRowSize(containerRef.value.clientWidth, columns.value)
 }
 
 const currentHeader = ref('')
@@ -76,7 +72,7 @@ const virtualizer = useVirtualizer({
   getScrollElement: () => containerRef.value,
   estimateSize: (i: number) => {
     const r = rows.value[i]
-    return r?.type === 'header' ? 46 : estimateRowSize()
+    return r?.type === 'header' ? HEADER_HEIGHT : estimateRowSize()
   },
   overscan: 2,
 })
@@ -109,7 +105,7 @@ function computeYearPositions() {
         }
       }
     }
-    acc += r.type === 'header' ? 46 : estimateRowSize()
+    acc += r.type === 'header' ? HEADER_HEIGHT : estimateRowSize()
   }
 
   const totalH = acc || 1
