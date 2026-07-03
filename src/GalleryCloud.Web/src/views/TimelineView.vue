@@ -4,15 +4,15 @@ import { useVirtualizer } from '@tanstack/vue-virtual'
 import { usePhotoGrid } from '../composables/usePhotoGrid'
 import { useTimeline, type RowItem } from '../composables/useTimeline'
 import { thumbUrl } from '../composables/useThumbnailUrl'
-import { usePhotoViewStore } from '../stores/photoViewStore'
 import { useScanStatus } from '../composables/useScanStatus'
+import { usePhotoClick } from '../composables/usePhotoClick'
 import TimeScrubber from '../components/timeline/TimeScrubber.vue'
 import PhotoGridToolbar from '../components/PhotoGridToolbar.vue'
 
-const viewStore = usePhotoViewStore()
 const { columns, groupLevel, zoomIn, zoomOut } = usePhotoGrid()
 const { isScanning } = useScanStatus()
 const tl = useTimeline()
+const { onPhotoClick } = usePhotoClick(() => tl.allItems.value)
 
 const containerRef = ref<HTMLElement | null>(null)
 const rows = ref<RowItem[]>([])
@@ -152,12 +152,6 @@ onMounted(async () => {
   window.addEventListener('resize', onTlResize)
 })
 onUnmounted(() => window.removeEventListener('resize', onTlResize))
-
-function onPhotoClick(photoId: string, e: MouseEvent) {
-  const img = (e.currentTarget as HTMLElement).querySelector('img')
-  const r = img ? img.getBoundingClientRect() : (e.currentTarget as HTMLElement).getBoundingClientRect()
-  viewStore.show(photoId, { x: r.x, y: r.y, width: r.width, height: r.height }, img?.src, tl.allItems.value)
-}
 
 function onJumpToDate(dateStr: string) {
   const target = dateStr.substring(0, 10)

@@ -2,24 +2,19 @@
 import { ref } from 'vue'
 import { usePhotoGrid } from '../composables/usePhotoGrid'
 import client from '../api/client'
-import { thumbUrl } from '../composables/useThumbnailUrl'
-import { usePhotoViewStore, toDateInt } from '../stores/photoViewStore'
 import { useScanStatus } from '../composables/useScanStatus'
+import { usePhotoClick, toNavItems } from '../composables/usePhotoClick'
+import PhotoGridToolbar from '../components/PhotoGridToolbar.vue'
+import PhotoGrid from '../components/PhotoGrid.vue'
 
-const viewStore = usePhotoViewStore()
-const { columns, zoomIn, zoomOut } = usePhotoGrid()
+const { columns } = usePhotoGrid()
 const { isScanning } = useScanStatus()
 const photos = ref<any[]>([])
 const total = ref(0)
 const loading = ref(false)
 const form = ref({ q: '', from: '', to: '', format: '', device: '' })
 
-function onPhotoClick(id: string, e: MouseEvent) {
-  const img = (e.currentTarget as HTMLElement).querySelector('img')
-  const r = img ? img.getBoundingClientRect() : (e.currentTarget as HTMLElement).getBoundingClientRect()
-  viewStore.show(id, { x: r.x, y: r.y, width: r.width, height: r.height }, img?.src,
-    (photos.value as any[]).map(p => ({ id: p.id, takenAtDate: toDateInt(p.takenAt) })))
-}
+const { onPhotoClick } = usePhotoClick(() => toNavItems(photos.value))
 
 async function search() {
   loading.value = true
@@ -35,33 +30,48 @@ async function search() {
 </script>
 
 <template>
-  <div style="padding:16px">
-    <el-card style="margin-bottom:16px">
-      <el-form :model="form" @submit.prevent="search" inline>
-        <el-form-item><el-input v-model="form.q" placeholder="文件名" clearable style="width:180px" /></el-form-item>
-        <el-form-item><el-date-picker v-model="form.from" type="date" placeholder="开始日期" style="width:140px" /></el-form-item>
-        <el-form-item><el-date-picker v-model="form.to" type="date" placeholder="结束日期" style="width:140px" /></el-form-item>
-        <el-form-item><el-input v-model="form.format" placeholder="格式 jpg,heic" style="width:140px" /></el-form-item>
-        <el-form-item><el-input v-model="form.device" placeholder="设备型号" style="width:140px" /></el-form-item>
-        <el-form-item><el-button type="primary" native-type="submit" :icon="'Search'">搜索</el-button></el-form-item>
-      </el-form>
-    </el-card>
-
-    <div v-if="total > 0" style="display:flex;align-items:center;gap:8px;margin-bottom:12px">
-      <el-tag type="info">找到 {{ total }} 张照片</el-tag>
-      <div style="flex:1" />
-      <el-button-group size="small">
-        <el-button icon="Minus" @click="zoomOut" :disabled="columns >= 12" />
-        <el-button icon="Plus" @click="zoomIn" :disabled="columns <= 3" />
-      </el-button-group>
+  <div class="sr-wrap">
+    <div class="sr-form">
+      <el-card>
+        <el-form :model="form" @submit.prevent="search" inline>
+          <el-form-item><el-input v-model="form.q" placeholder="文件名" clearable style="width:180px" /></el-form-item>
+          <el-form-item><el-date-picker v-model="form.from" type="date" placeholder="开始日期" style="width:140px" /></el-form-item>
+          <el-form-item><el-date-picker v-model="form.to" type="date" placeholder="结束日期" style="width:140px" /></el-form-item>
+          <el-form-item><el-input v-model="form.format" placeholder="格式 jpg,heic" style="width:140px" /></el-form-item>
+          <el-form-item><el-input v-model="form.device" placeholder="设备型号" style="width:140px" /></el-form-item>
+          <el-form-item><el-button type="primary" native-type="submit" :icon="'Search'">搜索</el-button></el-form-item>
+        </el-form>
+      </el-card>
     </div>
 
-    <div v-if="photos.length" :style="{ display:'grid', gridTemplateColumns:`repeat(${columns}, 1fr)`, gap:'0' }">
-      <div v-for="p in photos" :key="p.id" class="thumb-cell" @click="onPhotoClick(p.id, $event)">
-        <img v-lazy-img="thumbUrl(p.id, 'grid', 400)" class="thumb-img" />
-      </div>
+    <div v-if="total > 0" class="sr-toolbar">
+      <PhotoGridToolbar :count="total" />
     </div>
 
-    <el-empty v-if="!loading && photos.length === 0 && !isScanning" description="输入条件搜索" />
+    <div class="sr-virt">
+      <PhotoGrid v-if="photos.length" :photos="photos" :columns="columns" @photo-click="onPhotoClick" />
+    </div>
+
+    <div v-if="loading && photos.length === 0" class="sr-state-overlay"><el-icon class="is-loading" :size="24"><Loading /></el-icon></div>
+    <el-empty v-else-if="!loading && photos.length === 0 && !isScanning" description="输入条件搜索" />
   </div>
 </template>
+
+<style>
+.sr-wrap { position: absolute; inset: 0; display: flex; flex-direction: column; }
+.sr-form { flex-shrink: 0; }
+.sr-toolbar {
+  flex-shrink: 0;
+  display: flex; align-items: center; gap: 8px;
+  padding: 4px 16px;
+  background: var(--el-bg-color-page);
+}
+.sr-virt { flex: 1; overflow-y: auto; }
+.sr-virt::-webkit-scrollbar { display: none; }
+.sr-virt { scrollbar-width: none; }
+.sr-state-overlay {
+  position: absolute; inset: 0;
+  display: flex; align-items: center; justify-content: center;
+  z-index: 5; pointer-events: none;
+}
+</style>

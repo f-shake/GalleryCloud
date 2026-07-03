@@ -29,6 +29,7 @@ const clusterView = ref<{ lat: number; lng: number; photos: any[]; groups: any[]
 
 let mapInst: MapInstance | null = null
 let clusterLayer: FeatureLayer | null = null
+let clusterLayerView: any = null
 let dotLayer: FeatureLayer | null = null      // many-dots mode (fast path)
 let dotGL: GraphicsLayer | null = null          // density-based dot layer
 let thumbGL: GraphicsLayer | null = null        // density-based bubble layer
@@ -237,13 +238,35 @@ function switchMode(newMode: 'cluster' | 'point') {
   }
 }
 
-function getRadiusFromZoom(zoom: number): number {
-  if (zoom <= 5) return 3.0
-  if (zoom <= 8) return 1.0
-  if (zoom <= 10) return 0.3
-  if (zoom <= 12) return 0.08
-  if (zoom <= 14) return 0.02
-  return 0.01
+async function fetchClusterPhotos(graphic: __esri.Graphic) {
+  if (!clusterLayerView || !graphic.isAggregate) return
+
+  const lat = graphic.geometry?.latitude
+  const lng = graphic.geometry?.longitude
+  if (lat == null || lng == null) return
+
+  clusterView.value = { lat, lng, photos: [], groups: [], loading: true }
+
+  try {
+    // ArcGIS native API: aggregateIds returns exactly the features in this cluster
+    const query = clusterLayerView.createQuery()
+    query.aggregateIds = [graphic.getObjectId()]
+    query.outFields = ['*']
+    query.returnGeometry = false
+    const featureSet = await clusterLayerView.queryFeatures(query)
+    // Map ObjectID back to allPoints (ObjectID = index + 1 in makeGraphics)
+    const photos: MapPoint[] = featureSet.features
+      .map((f: any) => {
+        const oid = f.getObjectId ? f.getObjectId() : f.attributes?.ObjectID
+        return oid ? allPoints[oid - 1] : null
+      })
+      .filter(Boolean)
+      .sort((a: MapPoint, b: MapPoint) => (b.takenAt || '').localeCompare(a.takenAt || ''))
+    clusterView.value = { lat, lng, photos, groups: groupByDate(photos), loading: false }
+  } catch (e) {
+    console.error('fetchClusterPhotos error:', e)
+    clusterView.value = { lat, lng, photos: [], groups: [], loading: false }
+  }
 }
 
 function groupByDate(photos: any[]) {
@@ -287,21 +310,6 @@ watch(groupLevel, () => {
     }
   }
 })
-
-function fetchClusterPhotos(lat: number, lng: number, zoom: number) {
-  const r2 = getRadiusFromZoom(zoom) ** 2
-  clusterView.value = { lat, lng, photos: [], groups: [], loading: true }
-  setTimeout(() => {
-    const nearby = allPoints
-      .filter(p => {
-        const dlat = p.latitude - lat
-        const dlng = p.longitude - lng
-        return dlat * dlat + dlng * dlng < r2
-      })
-      .sort((a, b) => (b.takenAt || '').localeCompare(a.takenAt || ''))
-    clusterView.value = { lat, lng, photos: nearby, groups: groupByDate(nearby), loading: false }
-  }, 0)
-}
 
 function onPhotoClick(photoId: string, e: MouseEvent) {
   const img = (e.currentTarget as HTMLElement).querySelector('img')
@@ -395,10 +403,9 @@ onMounted(async () => {
           if (hit?.type !== 'graphic' && hit?.type !== 'feature') return
           const graphic = hit.graphic
 
-          // Cluster click — no photoId, just aggregateId + cluster_count
-          const clusterCount = graphic.attributes?.cluster_count
-          if (clusterCount > 0 && graphic.geometry?.latitude != null) {
-            fetchClusterPhotos(graphic.geometry.latitude, graphic.geometry.longitude, instance.view.zoom)
+          // Cluster click — use ArcGIS native aggregateIds API
+          if (graphic.isAggregate) {
+            fetchClusterPhotos(graphic as __esri.Graphic)
             return
           }
 
@@ -418,6 +425,7 @@ onMounted(async () => {
       let cursorOn = false
       const highlightSet = new Set<any>()
       const layerView = await instance.view.whenLayerView(clusterLayer)
+      clusterLayerView = layerView
       instance.view.on('pointer-move', (event: any) => {
         const el = mapContainer.value
         if (!el) return
@@ -457,6 +465,7 @@ onUnmounted(() => {
   destroyMap()
   mapInst = null
   clusterLayer = null
+  clusterLayerView = null
   dotLayer = null
   dotGL = null
   thumbGL = null
@@ -501,7 +510,8 @@ onUnmounted(() => {
       </button>
     </div>
 
-    <div v-if="clusterView" class="cluster-overlay" @touchstart="onTouchStart" @touchmove="onTouchMove" @touchend="onTouchEnd">
+    <Transition name="cluster-slide">
+      <div v-if="clusterView" class="cluster-overlay" @touchstart="onTouchStart" @touchmove="onTouchMove" @touchend="onTouchEnd">
       <div class="cluster-overlay-header">
         <PhotoGridToolbar :count="clusterView.photos.length">
           <template #left>
@@ -530,6 +540,7 @@ onUnmounted(() => {
         <el-empty v-if="!clusterView.loading && clusterView.photos.length === 0" description="该位置没有照片" />
       </div>
     </div>
+    </Transition>
   </div>
 </template>
 
@@ -586,6 +597,22 @@ onUnmounted(() => {
   outline: none;
 }
 .cluster-overlay *:focus { outline: none; }
+
+.cluster-slide-enter-active {
+  transition: transform 0.3s cubic-bezier(0.25, 0.8, 0.25, 1), opacity 0.25s ease-out;
+}
+.cluster-slide-leave-active {
+  transition: transform 0.2s ease-in, opacity 0.15s ease-in;
+}
+.cluster-slide-enter-from {
+  transform: translateY(100%);
+  opacity: 0;
+}
+.cluster-slide-leave-to {
+  transform: translateY(100%);
+  opacity: 0;
+}
+
 .cluster-overlay-header {
   flex-shrink: 0;
   display: flex; align-items: center; gap: 12px;

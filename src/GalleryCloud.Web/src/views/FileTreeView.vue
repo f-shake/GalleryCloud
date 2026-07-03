@@ -2,16 +2,19 @@
 import { ref, onMounted, computed } from 'vue'
 import { usePhotoGrid } from '../composables/usePhotoGrid'
 import PhotoGridToolbar from '../components/PhotoGridToolbar.vue'
+import PhotoGrid from '../components/PhotoGrid.vue'
 import client from '../api/client'
-import { thumbUrl } from '../composables/useThumbnailUrl'
-import { usePhotoViewStore, toDateInt } from '../stores/photoViewStore'
+import { usePhotoViewStore } from '../stores/photoViewStore'
 import { useScanStatus } from '../composables/useScanStatus'
+import { usePhotoClick, toNavItems } from '../composables/usePhotoClick'
 
 interface FolderNode { name: string; path: string; rootId?: string; photoCount: number; subFolders: FolderNode[]; _key: string }
 
 const viewStore = usePhotoViewStore()
 const { columns, groupLevel, zoomIn, zoomOut } = usePhotoGrid()
 const { isScanning } = useScanStatus()
+
+const { onPhotoClick } = usePhotoClick(() => toNavItems(photos.value))
 
 // Pinch zoom for photo grid
 let pinchStart = 0, pinchEnd = 0
@@ -87,13 +90,6 @@ function addKeys(nodes: FolderNode[]): FolderNode[] {
   }))
 }
 
-function onPhotoClick(id: string, e: MouseEvent) {
-  const img = (e.currentTarget as HTMLElement).querySelector('img')
-  const r = img ? img.getBoundingClientRect() : (e.currentTarget as HTMLElement).getBoundingClientRect()
-  viewStore.show(id, { x: r.x, y: r.y, width: r.width, height: r.height }, img?.src,
-    photos.value.map((p: any) => ({ id: p.id, takenAtDate: toDateInt(p.takenAt) })))
-}
-
 async function onNodeClick(node: FolderNode) {
   selPath.value = node.path
   selRootId.value = node.rootId || ''
@@ -143,23 +139,13 @@ const defaultExpanded = computed(() => tree.value.map(n => n._key))
       </div>
       <el-empty v-if="!selPath && !selRootId && !isScanning" description="选择左侧文件夹" />
       <div v-else-if="loading" style="text-align:center;padding:32px"><el-icon class="is-loading" :size="24"><Loading /></el-icon></div>
-      <template v-for="(g, gi) in photoGroups" :key="gi">
-        <div v-if="g.label" class="ft-group-header">
-          <el-tag type="info" size="large">{{ g.label }}</el-tag>
-        </div>
-        <div class="photo-grid" :style="{ display:'grid', gridTemplateColumns:`repeat(${columns}, 1fr)`, gap:'4px' }">
-          <div v-for="p in g.photos" :key="p.id" class="thumb-cell" @click="onPhotoClick(p.id, $event)">
-            <img v-lazy-img="thumbUrl(p.id, 'grid', 400)" class="thumb-img" />
-          </div>
-        </div>
-      </template>
+      <PhotoGrid v-else :groups="photoGroups" :columns="columns" @photo-click="onPhotoClick" />
     </div>
   </div>
 </template>
 
 <style>
 .el-tree-node__content { overflow: hidden; }
-.ft-group-header { padding: 6px 0 4px 0; }
 
 /* Desktop: side-by-side layout */
 .ft-layout { display: flex; height: 100%; }

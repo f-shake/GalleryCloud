@@ -1,59 +1,71 @@
 <script setup lang="ts">
-import { onMounted, onUnmounted } from 'vue'
+import { ref, onMounted, onUnmounted } from 'vue'
 import { usePhotoGrid } from '../composables/usePhotoGrid'
 import { useInfiniteQuery } from '../composables/useInfiniteQuery'
-import { thumbUrl } from '../composables/useThumbnailUrl'
-import { usePhotoViewStore, toDateInt } from '../stores/photoViewStore'
 import { useScanStatus } from '../composables/useScanStatus'
+import { usePhotoClick, toNavItems } from '../composables/usePhotoClick'
+import PhotoGridToolbar from '../components/PhotoGridToolbar.vue'
+import PhotoGrid from '../components/PhotoGrid.vue'
 
-const viewStore = usePhotoViewStore()
-const { columns, zoomIn, zoomOut } = usePhotoGrid()
+const { columns } = usePhotoGrid()
 const { isScanning } = useScanStatus()
 const { items: photos, loading, hasMore, loadMore } = useInfiniteQuery('/favorites')
+const containerRef = ref<HTMLElement | null>(null)
+
+const { onPhotoClick } = usePhotoClick(() => toNavItems(photos.value))
 
 onMounted(() => loadMore())
 
-function onPhotoClick(id: string, e: MouseEvent) {
-  const img = (e.currentTarget as HTMLElement).querySelector('img')
-  const r = img ? img.getBoundingClientRect() : (e.currentTarget as HTMLElement).getBoundingClientRect()
-  viewStore.show(id, { x: r.x, y: r.y, width: r.width, height: r.height }, img?.src,
-    (photos.value as any[]).map(p => ({ id: p.id, takenAtDate: toDateInt(p.takenAt) })))
+function onScroll() {
+  if (!containerRef.value) return
+  const el = containerRef.value
+  if (el.scrollHeight - el.scrollTop - el.clientHeight < 500 && hasMore.value) loadMore()
 }
 
-let scrollEl: HTMLElement | null = null
 onMounted(() => {
-  scrollEl = document.querySelector('.app-main')
-  scrollEl?.addEventListener('scroll', onScroll, { passive: true })
+  containerRef.value?.addEventListener('scroll', onScroll, { passive: true })
 })
 onUnmounted(() => {
-  scrollEl?.removeEventListener('scroll', onScroll)
+  containerRef.value?.removeEventListener('scroll', onScroll)
 })
-
-function onScroll() {
-  if (!scrollEl) return
-  if (scrollEl.scrollHeight - scrollEl.scrollTop - scrollEl.clientHeight < 500 && hasMore.value) loadMore()
-}
 </script>
 
 <template>
-  <div style="padding:16px">
-    <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px">
-      <span style="font-size:13px;color:var(--el-text-color-secondary)">{{ columns }}列</span>
-      <div style="flex:1" />
-      <el-button-group size="small">
-        <el-button icon="Minus" @click="zoomOut" :disabled="columns >= 12" />
-        <el-button icon="Plus" @click="zoomIn" :disabled="columns <= 3" />
-      </el-button-group>
+  <div class="fv-wrap">
+    <div class="fv-toolbar">
+      <PhotoGridToolbar :count="photos.length" />
     </div>
 
-    <el-empty v-if="!loading && photos.length === 0 && !isScanning" description="暂无收藏" />
+    <div ref="containerRef" class="fv-virt">
+      <el-empty v-if="!loading && photos.length === 0 && !isScanning" description="暂无收藏" />
 
-    <div v-else :style="{ display:'grid', gridTemplateColumns:`repeat(${columns}, 1fr)`, gap:'0' }">
-      <div v-for="p in photos" :key="p.id" class="thumb-cell" @click="onPhotoClick(p.id, $event)">
-        <img v-lazy-img="thumbUrl(p.id, 'grid', 400)" class="thumb-img" />
-      </div>
+      <PhotoGrid v-else :photos="photos as any[]" :columns="columns" @photo-click="onPhotoClick" />
     </div>
 
-    <div v-if="loading" style="text-align:center;padding:24px"><el-icon class="is-loading" :size="24"><Loading /></el-icon></div>
+    <div v-if="loading && photos.length === 0" class="fv-state-overlay"><el-icon class="is-loading" :size="24"><Loading /></el-icon></div>
+    <div v-else-if="isScanning && photos.length === 0" class="fv-state-overlay" style="color:var(--el-text-color-secondary)">扫描进行中...</div>
+
+    <div v-if="loading && photos.length > 0" style="text-align:center;padding:24px"><el-icon class="is-loading" :size="24"><Loading /></el-icon></div>
   </div>
 </template>
+
+<style>
+.fv-wrap { position: absolute; inset: 0; display: flex; flex-direction: column; }
+
+.fv-virt { flex: 1; overflow-y: auto; }
+.fv-virt::-webkit-scrollbar { display: none; }
+.fv-virt { scrollbar-width: none; }
+
+.fv-toolbar {
+  flex-shrink: 0;
+  display: flex; align-items: center; gap: 8px;
+  padding: 4px 16px;
+  background: var(--el-bg-color-page);
+}
+
+.fv-state-overlay {
+  position: absolute; inset: 0;
+  display: flex; align-items: center; justify-content: center;
+  z-index: 5; pointer-events: none;
+}
+</style>
