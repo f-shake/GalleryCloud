@@ -1,4 +1,6 @@
 import { ref, type Ref } from 'vue'
+import '@arcgis/core/assets/esri/themes/light/main.css'
+import esriConfig from '@arcgis/core/config'
 import Map from '@arcgis/core/Map'
 import ArcMapView from '@arcgis/core/views/MapView'
 import Basemap from '@arcgis/core/Basemap'
@@ -8,6 +10,9 @@ export interface MapInstance {
   map: Map
   view: ArcMapView
 }
+
+// 确保 assets 路径在 ArcGIS 模块加载前设置
+esriConfig.assetsPath = import.meta.env.BASE_URL + 'esri-assets'
 
 export function useMap(containerRef: Ref<HTMLDivElement | null>) {
   const loading = ref(true)

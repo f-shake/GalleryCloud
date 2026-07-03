@@ -1,11 +1,11 @@
 <script setup lang="ts">
-import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
+import { ref, computed, watch, onMounted, onUnmounted, defineAsyncComponent } from 'vue'
 import client from '../api/client'
 import { ElMessage } from 'element-plus'
 import { thumbUrl } from '../composables/useThumbnailUrl'
 import { usePhotoViewStore } from '../stores/photoViewStore'
 import { useAuthStore } from '../stores/authStore'
-import MapEmbed from '../components/MapEmbed.vue'
+const MapEmbed = defineAsyncComponent(() => import('../components/MapEmbed.vue'))
 
 const store = usePhotoViewStore()
 const auth = useAuthStore()
@@ -440,7 +440,7 @@ async function downloadOriginal() {
   if (!id) return
   const token = localStorage.getItem('token') || ''
   try {
-    const res = await fetch(`/api/photos/${id}/file`, {
+    const res = await fetch(`${import.meta.env.BASE_URL}api/photos/${id}/file`, {
       headers: { Authorization: `Bearer ${token}` }
     })
     if (res.status === 404) { ElMessage.error('文件不存在或已被删除'); return }

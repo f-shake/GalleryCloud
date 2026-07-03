@@ -26,7 +26,7 @@ client.interceptors.response.use(
       redirecting = true
       localStorage.removeItem('token')
       localStorage.removeItem('user')
-      window.location.href = '/login'
+      window.location.href = import.meta.env.BASE_URL + 'login'
     }
     return Promise.reject(error)
   }

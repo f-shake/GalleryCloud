@@ -4,14 +4,10 @@ import ElementPlus from 'element-plus'
 import zhCn from 'element-plus/es/locale/lang/zh-cn'
 import 'element-plus/dist/index.css'
 import 'element-plus/theme-chalk/dark/css-vars.css'
-import '@arcgis/core/assets/esri/themes/light/main.css'
-import esriConfig from '@arcgis/core/config'
 import * as ElementPlusIconsVue from '@element-plus/icons-vue'
 import router from './router'
 import { vLazyImg } from './composables/useLazyImg'
 import App from './App.vue'
-
-esriConfig.assetsPath = import.meta.env.BASE_URL + 'esri-assets'
 
 const app = createApp(App)
 

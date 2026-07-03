@@ -53,13 +53,12 @@ if (-not $skipBackend) {
     Write-Host "`n[2/3] Skipping backend publish" -ForegroundColor DarkGray
 }
 
-# 3. Copy frontend assets to wwwroot
+# 3. Move frontend assets to wwwroot (剪切，省去复制时间)
 if (-not $skipCopy) {
-    Write-Host "`n[3/3] Copying frontend assets..." -ForegroundColor Green
+    Write-Host "`n[3/3] Moving frontend assets..." -ForegroundColor Green
     $WwwRoot = "$ScriptDir\$OutputDir\wwwroot"
     if (Test-Path $WwwRoot) { Remove-Item -Recurse -Force $WwwRoot }
-    New-Item -ItemType Directory -Force -Path $WwwRoot | Out-Null
-    Copy-Item -Recurse "$ScriptDir\src\GalleryCloud.Web\dist\*" $WwwRoot
+    Move-Item -Path "$ScriptDir\src\GalleryCloud.Web\dist" -Destination $WwwRoot
 } else {
     Write-Host "`n[3/3] Keeping existing wwwroot" -ForegroundColor DarkGray
 }
