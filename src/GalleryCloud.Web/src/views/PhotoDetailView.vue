@@ -163,7 +163,9 @@ function clampOffset() {
 
 const src = computed(() => previewReady.value ? previewSrc.value : gridSrc.value)
 
+// 预览打开时推一个历史记录，Android 返回键可关闭
 watch(() => store.open, async (val) => {
+  if (val) { window.history.pushState({ preview: true }, '') }
   if (!val || !store.photoId) return
   dismissY.value = 0; dismissing.value = false
   const id = store.photoId
@@ -239,10 +241,22 @@ function doClose() {
   if (phase.value === 'start' || slideSnapping.value) return
   dismissY.value = 0; dismissing.value = false; gridError.value = false
   showBar.value = false; showInfo.value = false
-  // Reset zoom to full-screen before exit animation
-  scale.value = 1; offsetX.value = 0; offsetY.value = 0
-  phase.value = 'exit'
-  setTimeout(() => store.close(), 350)
+
+  if (scale.value !== 1) {
+    // 放大状态：先缩回全屏，再退出到缩略图
+    zoomAnimating.value = true  // 启用过渡（pv-img--zoom-anim）
+    scale.value = 1; offsetX.value = 0; offsetY.value = 0
+    setTimeout(() => {
+      zoomAnimating.value = false
+      phase.value = 'exit'
+      setTimeout(() => store.close(), 350)
+    }, 200)
+  } else {
+    // 未放大：直接退出到缩略图
+    scale.value = 1; offsetX.value = 0; offsetY.value = 0
+    phase.value = 'exit'
+    setTimeout(() => store.close(), 350)
+  }
 }
 
 function onKeydown(e: KeyboardEvent) {
@@ -251,13 +265,19 @@ function onKeydown(e: KeyboardEvent) {
   if (e.key === 'ArrowRight' && store.hasNext && !slideSnapping.value) { commitSlide(-1); return }
 }
 
+function onPopState() {
+  if (store.open) doClose()
+}
+
 onMounted(() => {
   window.addEventListener('keydown', onKeydown)
   window.addEventListener('resize', onResize)
+  window.addEventListener('popstate', onPopState)
 })
 onUnmounted(() => {
   window.removeEventListener('keydown', onKeydown)
   window.removeEventListener('resize', onResize)
+  window.removeEventListener('popstate', onPopState)
 })
 
 // ── Zoom (mouse wheel) ──────────────────────────────────────
