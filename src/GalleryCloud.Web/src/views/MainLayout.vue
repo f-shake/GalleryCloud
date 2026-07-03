@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { useAuthStore } from '../stores/authStore'
 import { useDark } from '../composables/useDark'
@@ -14,8 +14,6 @@ const { isDark, toggleDark } = useDark()
 
 const isMobile = ref(window.innerWidth < 768)
 const drawerVisible = ref(false)
-const isScanning = ref(false)
-
 // Password change
 const pwDialogVisible = ref(false)
 const pwForm = ref({ oldPassword: '', newPassword: '', confirmPassword: '' })
@@ -42,20 +40,9 @@ async function handleChangePassword() {
   }
 }
 
-let scanTimer: any = null
-async function checkScan() {
-  try { const r = await client.get('/user/scan/status'); isScanning.value = r.data.isRunning }
-  catch { /* */ }
-}
-
 function onResize() { isMobile.value = window.innerWidth < 768 }
 onMounted(() => {
   window.addEventListener('resize', onResize)
-  if (!auth.isAdmin) { checkScan(); scanTimer = setInterval(checkScan, 5000) }
-})
-onUnmounted(() => {
-  window.removeEventListener('resize', onResize)
-  if (scanTimer) clearInterval(scanTimer)
 })
 
 const navItems = computed(() => {
