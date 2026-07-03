@@ -23,7 +23,6 @@ public class SettingService : ISettingService
         [SettingKeys.ThumbnailFormat] = "jpeg",
         [SettingKeys.ThumbnailQuality] = "60",
         [SettingKeys.ThumbnailParallelThreads] = "4",
-        [SettingKeys.ThumbnailMaxMemoryCacheMb] = "512",
         [SettingKeys.PreviewFormat] = "jpeg",
         [SettingKeys.PreviewQuality] = "70",
         [SettingKeys.PreviewMaxResolution] = "5000",

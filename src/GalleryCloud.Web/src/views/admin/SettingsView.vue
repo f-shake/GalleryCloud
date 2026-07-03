@@ -42,7 +42,6 @@ const sections: { title: string; fields: FieldConfig[] }[] = [
       { key: 'thumbnail.format', label: '格式', type: 'select', options: [{ v: 'jpeg', l: 'JPEG' }, { v: 'webp', l: 'WebP' }], hint: '切换后已有缩略图仍可用，新生成使用新格式' },
       { key: 'thumbnail.quality', label: '质量', type: 'slider', hint: '10-100，数值越高文件越大' },
       { key: 'thumbnail.parallelThreads', label: '并行线程', type: 'number', hint: `1 ~ ${cpuCores}（CPU 线程数）`, placeholder: '4' },
-      { key: 'thumbnail.maxMemoryCacheMb', label: '内存缓存 (MB)', type: 'number', placeholder: '512' },
     ],
   },
   {

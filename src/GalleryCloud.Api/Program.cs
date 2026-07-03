@@ -37,7 +37,11 @@ builder.Services.AddDbContext<AppDbContext>(options =>
     options.UseSqlite(connectionString));
 builder.Services.AddDbContext<ThumbnailDbContext>(options =>
     options.UseSqlite(thumbConnectionString));
-builder.Services.AddMemoryCache();
+var cacheSizeMB = builder.Configuration.GetValue<int>("MemoryCache:SizeLimitMB", 1024);
+builder.Services.AddMemoryCache(options =>
+{
+    options.SizeLimit = cacheSizeMB * 1024L * 1024L;
+});
 
 builder.Services.AddResponseCompression(options =>
 {
@@ -88,6 +92,10 @@ await DbMigrator.MigrateAsync(app.Services);
 // Load dynamic settings from DB
 var settingService = app.Services.GetRequiredService<ISettingService>();
 await settingService.LoadDefaultsAsync();
+
+// Initialize file watcher for existing roots
+var fileWatcher = app.Services.GetRequiredService<FileWatcherService>();
+await fileWatcher.InitializeAsync();
 
 // Middleware pipeline — only our custom AuthMiddleware, no ASP.NET JWT Bearer
 app.UseResponseCompression();

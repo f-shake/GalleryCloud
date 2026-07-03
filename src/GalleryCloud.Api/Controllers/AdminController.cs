@@ -25,10 +25,11 @@ public class AdminController : ControllerBase
     private readonly IUserService _userService;
     private readonly IStatsService _statsService;
     private readonly IFilesystemBrowserService _fsService;
+    private readonly FileWatcherService _fileWatcher;
 
     public AdminController(AppDbContext db, ThumbnailDbContext thumbDb, IScanService scanService,
         ISettingService settingService, IThumbnailService thumbnailService, IUserService userService,
-        IStatsService statsService, IFilesystemBrowserService fsService)
+        IStatsService statsService, IFilesystemBrowserService fsService, FileWatcherService fileWatcher)
     {
         _db = db;
         _thumbDb = thumbDb;
@@ -38,6 +39,7 @@ public class AdminController : ControllerBase
         _userService = userService;
         _statsService = statsService;
         _fsService = fsService;
+        _fileWatcher = fileWatcher;
     }
 
     // ==================== Users ====================
@@ -125,6 +127,16 @@ public class AdminController : ControllerBase
     {
         foreach (var (key, value) in updates)
             await _settingService.SetAsync(key, value);
+
+        // FileWatcher 开关即时生效
+        if (updates.TryGetValue(SettingKeys.FileWatcherEnabled, out var enabled))
+        {
+            if (enabled == "false")
+                _fileWatcher.StopAll();
+            else if (enabled == "true")
+                await _fileWatcher.InitializeAsync();
+        }
+
         return Ok(new MessageResult("Settings updated"));
     }
 

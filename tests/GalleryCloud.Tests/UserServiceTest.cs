@@ -96,7 +96,8 @@ public class UserServiceTest : ServiceTestBase
 
         var svc = CreateService();
         var result = await svc.UpdateUserAsync(user.Id, request);
-        Assert.Null(result);
+        Assert.NotNull(result);
+        Assert.Equal("New Name", result.DisplayName);
 
         var updated = await _db.Users.FindAsync(user.Id);
         Assert.NotNull(updated);

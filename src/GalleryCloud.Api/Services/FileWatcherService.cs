@@ -84,8 +84,31 @@ public class FileWatcherService : BackgroundService
         }
     }
 
+    public void StopAll()
+    {
+        foreach (var key in _watchers.Keys)
+        {
+            if (_watchers.TryRemove(key, out var watcher))
+            {
+                watcher.EnableRaisingEvents = false;
+                watcher.Dispose();
+            }
+        }
+        _logger.LogInformation("FileWatcher: all watchers stopped");
+    }
+
     private void Enqueue(string userId, string rootId, string rootPath, string changeType, string fullPath, string? oldPath = null)
     {
+        var relative = fullPath[rootPath.Length..].TrimStart(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+        if (oldPath != null)
+        {
+            var oldRelative = oldPath[rootPath.Length..].TrimStart(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+            _logger.LogInformation("FileWatcher detect [{Type}] {OldPath} → {Path}", changeType, oldRelative, relative);
+        }
+        else
+        {
+            _logger.LogInformation("FileWatcher detect [{Type}] {Path}", changeType, relative);
+        }
         _eventChannel.Writer.TryWrite(new FileEvent(userId, rootId, rootPath, changeType, fullPath, oldPath));
     }
 
@@ -124,6 +147,7 @@ public class FileWatcherService : BackgroundService
                 }
 
                 // Process batch
+                _logger.LogInformation("FileWatcher processing {Count} events", batch.Count);
                 await ProcessBatchAsync(batch.Values.ToList(), stoppingToken);
                 batch.Clear();
             }
@@ -181,9 +205,9 @@ public class FileWatcherService : BackgroundService
         {
             if (!File.Exists(fullPath)) return;
 
-            var exifEngine = await _settings.GetAsync(SettingKeys.ImageProcessingEngine, "ImageSharp");
-            var exif = ExifService.Extract(fullPath, exifEngine);
             var fileInfo = new FileInfo(fullPath);
+            var exifEngine = await _settings.GetAsync(SettingKeys.ImageProcessingEngine, "ImageSharp");
+            var exif = ExifService.Extract(fullPath, exifEngine, fileInfo.LastWriteTimeUtc);
 
             var photo = await db.Photos
                 .FirstOrDefaultAsync(p => p.UserId == userId && p.RootId == rootId && p.FilePath == relativePath, ct);
@@ -201,7 +225,7 @@ public class FileWatcherService : BackgroundService
                     Width = exif.Width,
                     Height = exif.Height,
                     Orientation = exif.Orientation,
-                    TakenAt = exif.TakenAt?.ToUniversalTime(),
+                    TakenAt = exif.TakenAt,
                     DeviceModel = exif.DeviceModel,
                     ExposureTime = exif.ExposureTime,
                     Iso = exif.Iso,
@@ -213,20 +237,29 @@ public class FileWatcherService : BackgroundService
                     IsDeleted = false,
                 };
                 db.Photos.Add(photo);
+                _logger.LogInformation("FileWatcher created: {Path}", relativePath);
             }
             else
             {
+                photo.FileName = Path.GetFileName(relativePath);
+                photo.FileFormat = Path.GetExtension(relativePath).ToLowerInvariant();
                 photo.FileSize = fileInfo.Length;
                 photo.Width = exif.Width;
                 photo.Height = exif.Height;
                 photo.Orientation = exif.Orientation;
-                photo.TakenAt = exif.TakenAt?.ToUniversalTime();
+                photo.TakenAt = exif.TakenAt;
                 photo.DeviceModel = exif.DeviceModel;
+                photo.ExposureTime = exif.ExposureTime;
+                photo.Iso = exif.Iso;
+                photo.Aperture = exif.Aperture;
+                photo.FocalLength = exif.FocalLength;
+                photo.FocalLength35mm = exif.FocalLength35mm;
                 photo.Latitude = exif.Latitude;
                 photo.Longitude = exif.Longitude;
                 photo.IsDeleted = false;
                 photo.DeletedAt = null;
                 photo.UpdatedAt = DateTime.UtcNow;
+                _logger.LogInformation("FileWatcher updated: {Path}", relativePath);
             }
 
             await db.SaveChangesAsync(ct);
@@ -237,7 +270,7 @@ public class FileWatcherService : BackgroundService
         }
     }
 
-    private static async Task HandleDelete(AppDbContext db, string userId, string rootId, string relativePath, CancellationToken ct)
+    private async Task HandleDelete(AppDbContext db, string userId, string rootId, string relativePath, CancellationToken ct)
     {
         var photo = await db.Photos
             .FirstOrDefaultAsync(p => p.UserId == userId && p.RootId == rootId && p.FilePath == relativePath && !p.IsDeleted, ct);
@@ -248,6 +281,7 @@ public class FileWatcherService : BackgroundService
             photo.DeletedAt = DateTime.UtcNow;
             photo.UpdatedAt = DateTime.UtcNow;
             await db.SaveChangesAsync(ct);
+            _logger.LogInformation("FileWatcher deleted: {Path}", relativePath);
         }
     }
 
@@ -263,6 +297,7 @@ public class FileWatcherService : BackgroundService
         photo.FileName = Path.GetFileName(newPath);
         photo.UpdatedAt = DateTime.UtcNow;
         await db.SaveChangesAsync(ct);
+        _logger.LogInformation("FileWatcher renamed: {OldPath} → {NewPath}", oldPath, newPath);
     }
 
     private static string GetEventKey(FileEvent evt) => $"{evt.UserId}|{evt.RootId}|{evt.FullPath}";

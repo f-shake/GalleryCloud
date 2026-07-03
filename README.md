@@ -77,9 +77,9 @@ dotnet ef migrations add <名称>
 - [ ] **缩略图清理** — 照片被软删除或根目录移除时，清理对应的缩略图缓存数据
 - [ ] **照片回收站** — 软删除的照片保留一段可恢复期，过期后自动清理
 - [ ] **WebSocket 推送** — 扫描进度、缩略图生成状态、文件变更实时推送到前端，替代轮询
-- [ ] **FileWatcherService 未初始化** — `InitializeAsync()` 在 `Program.cs` 中未被调用，导致文件监控功能完全未启动
-- [ ] **FileWatcherService 时区 Bug** — `HandleAddOrUpdate` 中 `TakenAt` 仍在使用 `.ToUniversalTime()`（`ScanService` 已修复）
-- [ ] **FileWatcherService 时间兜底** — `HandleAddOrUpdate` 调用 `ExifService.Extract` 时未传入 `fallbackTime`，无 EXIF 日期的文件不拿文件修改时间兜底
+- [x] **FileWatcherService 未初始化** — `InitializeAsync()` 在 `Program.cs` 中未被调用，导致文件监控功能完全未启动
+- [x] **FileWatcherService 时区 Bug** — `HandleAddOrUpdate` 中 `TakenAt` 仍在使用 `.ToUniversalTime()`（`ScanService` 已修复）
+- [x] **FileWatcherService 时间兜底** — `HandleAddOrUpdate` 调用 `ExifService.Extract` 时未传入 `fallbackTime`，无 EXIF 日期的文件不拿文件修改时间兜底
 
 ## 许可证
 
