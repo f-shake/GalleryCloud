@@ -4,6 +4,7 @@ import client from '../api/client'
 import { ElMessage } from 'element-plus'
 import type { ScanStatus, ScanLog, ThumbnailGenerationStatus, ThumbnailStats } from '../types'
 
+const btnSize = ref(window.innerWidth <= 767 ? 'small' : 'default')
 const status = ref<ScanStatus>({ isRunning: false, mode: null, userId: null, startedAt: null, processedFiles: 0, totalFiles: 0, estimatedPercent: 0 })
 const logs = ref<ScanLog[]>([])
 const loading = ref(true)
@@ -136,20 +137,20 @@ async function clearCache() {
 </script>
 
 <template>
-  <div style="padding:16px;display:flex;flex-direction:column;gap:16px;height:100%">
+  <div class="scan-container">
     <!-- ==================== Scan ==================== -->
-    <el-card>
+    <el-card style="flex-shrink:0">
       <template #header>
-        <div style="display:flex;justify-content:space-between;align-items:center">
+        <div class="card-header">
           <span>扫描状态</span>
-          <div style="display:flex;gap:8px">
-            <el-button type="primary" @click="triggerScan" :disabled="busy" :loading="status.isRunning">
+          <div class="action-buttons">
+            <el-button type="primary" @click="triggerScan" :disabled="busy" :loading="status.isRunning" :size="btnSize">
               触发全量扫描
             </el-button>
-            <el-button @click="triggerRefreshExif" :disabled="busy" :loading="refreshing">
+            <el-button @click="triggerRefreshExif" :disabled="busy" :loading="refreshing" :size="btnSize">
               刷新EXIF
             </el-button>
-            <el-button v-if="status.isRunning" type="danger" @click="cancelScan" :disabled="cancelling" :loading="cancelling">
+            <el-button v-if="status.isRunning" type="danger" @click="cancelScan" :disabled="cancelling" :loading="cancelling" :size="btnSize">
               中断扫描
             </el-button>
           </div>
@@ -164,21 +165,21 @@ async function clearCache() {
     </el-card>
 
     <!-- ==================== Thumbnail Status ==================== -->
-    <el-card>
+    <el-card style="flex-shrink:0">
       <template #header>
-        <div style="display:flex;justify-content:space-between;align-items:center">
+        <div class="card-header">
           <span>缩略图状态</span>
-          <div style="display:flex;gap:8px">
-            <el-button v-if="thumbStatus.isRunning" type="danger" @click="cancelGeneration" :disabled="cancellingThumb" :loading="cancellingThumb">
+          <div class="action-buttons">
+            <el-button v-if="thumbStatus.isRunning" type="danger" @click="cancelGeneration" :disabled="cancellingThumb" :loading="cancellingThumb" :size="btnSize">
               中断生成
             </el-button>
-            <el-button type="warning" @click="openDialog('rebuild')" :disabled="thumbBusy || busy" :loading="thumbStatus.isRunning && thumbMode === 'rebuild'">
+            <el-button type="warning" @click="openDialog('rebuild')" :disabled="thumbBusy || busy" :loading="thumbStatus.isRunning && thumbMode === 'rebuild'" :size="btnSize">
               重建缩略图
             </el-button>
-            <el-button type="primary" @click="openDialog('fill')" :disabled="thumbBusy || busy" :loading="thumbStatus.isRunning && thumbMode === 'fill'">
+            <el-button type="primary" @click="openDialog('fill')" :disabled="thumbBusy || busy" :loading="thumbStatus.isRunning && thumbMode === 'fill'" :size="btnSize">
               补全缩略图
             </el-button>
-            <el-button @click="clearCache" :disabled="thumbBusy || busy || thumbStatus.isRunning">清除缓存</el-button>
+            <el-button @click="clearCache" :disabled="thumbBusy || busy || thumbStatus.isRunning" :size="btnSize">清除缓存</el-button>
           </div>
         </div>
       </template>
@@ -207,16 +208,16 @@ async function clearCache() {
       </div>
     </el-card>
 
-    <!-- ==================== Scan History (fills remaining space) ==================== -->
-    <el-card style="flex:1;display:flex;flex-direction:column;overflow:hidden">
+    <!-- ==================== Scan History ==================== -->
+    <el-card class="history-card" style="flex-shrink:0">
       <template #header>
         <span>扫描历史</span>
       </template>
-      <div style="flex:1;overflow:auto">
-        <el-table :data="logs" v-loading="loading" stripe size="small" style="width:100%">
+      <div class="history-body">
+        <el-table :data="logs" v-loading="loading" stripe :size="btnSize" style="width:100%">
           <el-table-column prop="startedAt" label="开始时间" :formatter="(r:any) => r.startedAt?.replace('T',' ')?.substring(0,19)" />
           <el-table-column prop="mode" label="模式" width="80">
-            <template #default="{ row }"><el-tag :type="row.mode === 'full' ? 'primary' : 'success'" size="small">{{ row.mode === 'full' ? '全量' : '增量' }}</el-tag></template>
+            <template #default="{ row }"><el-tag :type="row.mode === 'full' ? 'primary' : 'success'" :size="btnSize">{{ row.mode === 'full' ? '全量' : '增量' }}</el-tag></template>
           </el-table-column>
           <el-table-column prop="totalFound" label="发现" width="80" />
           <el-table-column prop="newAdded" label="新增" width="80">
@@ -242,3 +243,53 @@ async function clearCache() {
     </el-dialog>
   </div>
 </template>
+
+<style scoped>
+.scan-container {
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  height: 100%;
+  overflow-y: auto;
+}
+.card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.action-buttons {
+  display: flex;
+  gap: 8px;
+}
+.history-card {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.history-body {
+  flex: 1;
+  overflow: auto;
+}
+@media (max-width: 767px) {
+  .card-header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 8px;
+  }
+  .action-buttons {
+    flex-direction: column;
+    width: 100%;
+  }
+  .action-buttons .el-button {
+    width: 100%;
+    margin-left: 0 !important;
+  }
+  .history-card {
+    overflow: visible;
+  }
+  .history-body {
+    overflow: visible;
+  }
+}
+</style>
