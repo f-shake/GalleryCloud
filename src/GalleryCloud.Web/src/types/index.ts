@@ -29,6 +29,7 @@ export interface PhotoSummary {
 
 export interface PhotoDetail extends PhotoSummary {
   filePath: string
+  rootId: string
   md5Hash: string | null
   updatedAt: string
 }

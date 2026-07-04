@@ -140,15 +140,15 @@ onUnmounted(() => {
       </div>
     </div>
     <div v-show="latitude != null && longitude != null && !loading" class="map-embed-zoom">
-      <el-button circle size="small" @click="viewInst?.zoomIn()" title="放大">
-        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+      <el-button circle size="default" @click="viewInst?.zoomIn()" title="放大">
+        <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
       </el-button>
-      <el-button circle size="small" @click="viewInst?.zoomOut()" title="缩小">
-        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="5" y1="12" x2="19" y2="12"/></svg>
+      <el-button circle size="default" @click="viewInst?.zoomOut()" title="缩小">
+        <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="5" y1="12" x2="19" y2="12"/></svg>
       </el-button>
     </div>
-    <el-button v-show="latitude != null && longitude != null && !loading" circle size="small" class="map-embed-basemap-btn" @click="toggleBasemap" :title="basemap === 'normal' ? '卫星图' : '普通图'">
-      <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+    <el-button v-show="latitude != null && longitude != null && !loading" circle size="default" class="map-embed-basemap-btn" @click="toggleBasemap" :title="basemap === 'normal' ? '卫星图' : '普通图'">
+      <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
         <circle cx="12" cy="12" r="10"/>
         <line x1="2" y1="12" x2="22" y2="12"/>
         <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/>
@@ -198,8 +198,10 @@ onUnmounted(() => {
   z-index: 1;
   display: flex;
   flex-direction: column;
+  align-items: center;
   gap: 4px;
 }
+.map-embed-zoom .el-button.is-circle + .el-button.is-circle { margin-left: 0; }
 .map-embed-basemap-btn {
   position: absolute;
   bottom: 12px;

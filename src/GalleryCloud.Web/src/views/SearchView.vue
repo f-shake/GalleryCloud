@@ -22,6 +22,7 @@ const form = ref({ q: '', from: '', to: '', format: '', device: '', tag: '', lat
 const showMapPicker = ref(false)
 
 const hasBbox = ref(false)
+const bboxArea = ref('')
 
 const { onPhotoClick } = usePhotoClick(() => toNavItems(photos.value))
 
@@ -41,14 +42,15 @@ function openMapPicker() {
   showMapPicker.value = true
 }
 
-function onMapConfirm(bounds: { south: number; north: number; west: number; east: number } | null) {
+interface BboxResult { south: number; north: number; west: number; east: number; areaKm2?: number }
+function onMapConfirm(bounds: BboxResult | null) {
   if (bounds) {
     form.value.lat1 = String(bounds.south)
     form.value.lng1 = String(bounds.west)
     form.value.lat2 = String(bounds.north)
     form.value.lng2 = String(bounds.east)
     hasBbox.value = true
-    search()
+    bboxArea.value = bounds.areaKm2 != null ? String(bounds.areaKm2) : ''
   } else {
     clearBbox()
   }
@@ -60,13 +62,14 @@ function clearBbox() {
   form.value.lat2 = ''
   form.value.lng2 = ''
   hasBbox.value = false
+  bboxArea.value = ''
   search()
 }
 
 async function search() {
   loading.value = true
   try {
-    const params: any = {}
+    const params: any = { limit: 1000000 }
     for (const [k, v] of Object.entries(form.value)) if (v) params[k] = v
     const r = await client.get('/search', { params: { ...params } })
     photos.value = r.data.photos
@@ -84,41 +87,39 @@ function onFormatChange(val: string | string[]) {
   <div class="sr-wrap">
     <div class="sr-form">
       <div class="sr-form-inner">
-        <div class="sr-filters-row">
+        <div class="sr-filters">
           <div class="sr-field">
             <span class="sr-label">文件名</span>
-            <el-input v-model="form.q" placeholder="搜索..." clearable style="width:160px" @keyup.enter="search" />
+            <el-input v-model="form.q" placeholder="搜索..." clearable @keyup.enter="search" />
           </div>
           <div class="sr-field">
             <span class="sr-label">日期</span>
-            <div style="display:flex;align-items:center;gap:4px">
-              <el-date-picker v-model="form.from" type="date" placeholder="开始" value-format="YYYY-MM-DD" style="width:130px" />
-              <span style="color:var(--el-text-color-secondary)">—</span>
-              <el-date-picker v-model="form.to" type="date" placeholder="结束" value-format="YYYY-MM-DD" style="width:130px" />
+            <div class="sr-date-range">
+              <el-date-picker v-model="form.from" type="date" placeholder="开始" value-format="YYYY-MM-DD" />
+              <span class="sr-date-sep">—</span>
+              <el-date-picker v-model="form.to" type="date" placeholder="结束" value-format="YYYY-MM-DD" />
             </div>
           </div>
           <div class="sr-field">
             <span class="sr-label">格式</span>
-            <el-select v-model="form.format" placeholder="全部" clearable style="width:110px" @change="search">
+            <el-select v-model="form.format" placeholder="全部" clearable>
               <el-option v-for="f in filters.formats" :key="f" :label="f.toUpperCase()" :value="f" />
             </el-select>
           </div>
           <div class="sr-field">
             <span class="sr-label">设备</span>
-            <el-select v-model="form.device" placeholder="全部" clearable filterable style="width:170px" @change="search">
+            <el-select v-model="form.device" placeholder="全部" clearable filterable>
               <el-option v-for="d in filters.deviceModels" :key="d" :label="d" :value="d" />
             </el-select>
           </div>
           <div class="sr-field">
             <span class="sr-label">区域</span>
-            <div style="display:flex;gap:4px">
-              <el-button v-if="!hasBbox" size="default" @click="openMapPicker" style="white-space:nowrap">
-                <el-icon style="margin-right:3px"><MapLocation /></el-icon>地图
-              </el-button>
-              <el-tag v-else closable type="info" size="default" style="cursor:pointer;font-size:13px;padding:0 10px;height:32px;line-height:30px" @click="openMapPicker" @close="clearBbox">
-                <el-icon style="margin-right:3px"><MapLocation /></el-icon>已选区域
-              </el-tag>
-            </div>
+            <el-button v-if="!hasBbox" @click="openMapPicker" style="white-space:nowrap">
+              <el-icon style="margin-right:3px"><MapLocation /></el-icon>地图
+            </el-button>
+            <el-tag v-else closable type="info" size="default" style="cursor:pointer;font-size:13px;padding:0 10px;height:32px;line-height:30px" @click="openMapPicker" @close="clearBbox">
+              <el-icon style="margin-right:3px"><MapLocation /></el-icon>{{ bboxArea }} km²
+            </el-tag>
           </div>
           <div class="sr-field sr-field-btn">
             <el-button type="primary" :icon="'Search'" @click="search">搜索</el-button>
@@ -149,10 +150,11 @@ function onFormatChange(val: string | string[]) {
       <PhotoGridToolbar :count="total" />
     </div>
 
-    <PhotoGrid v-if="photos.length" :photos="photos" :columns="columns" @photo-click="onPhotoClick" style="flex:1;min-height:0" />
-
-    <div v-if="loading && photos.length === 0" class="sr-state-overlay"><el-icon class="is-loading" :size="24"><Loading /></el-icon></div>
-    <el-empty v-else-if="!loading && photos.length === 0 && !isScanning" description="输入条件搜索" />
+    <div class="sr-results">
+      <PhotoGrid v-if="photos.length" :photos="photos" :columns="columns" @photo-click="onPhotoClick" style="flex:1;min-height:0" />
+      <div v-if="loading" class="sr-loading-overlay"><el-icon class="is-loading" :size="28"><Loading /></el-icon></div>
+      <el-empty v-else-if="!loading && photos.length === 0 && !isScanning" description="输入条件搜索" />
+    </div>
 
     <MapAreaPicker
       v-model="showMapPicker"
@@ -169,11 +171,30 @@ function onFormatChange(val: string | string[]) {
 .sr-wrap { position: absolute; inset: 0; display: flex; flex-direction: column; }
 .sr-form { flex-shrink: 0; border-bottom: 1px solid var(--el-border-color-light); background: var(--el-bg-color-overlay); }
 .sr-form-inner { padding: 8px 16px; display: flex; flex-direction: column; gap: 8px; }
-.sr-filters-row { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 12px; }
-.sr-field { display: flex; flex-direction: column; gap: 2px; }
-.sr-field-btn { justify-content: flex-end; }
+.sr-filters { display: grid; grid-template-columns: repeat(6, auto); align-items: end; gap: 8px 12px; }
+.sr-field { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.sr-field .el-input,
+.sr-field .el-select { width: 140px; }
+.sr-field-btn { justify-self: end; }
+.sr-date-range { display: flex; align-items: center; gap: 4px; }
+.sr-date-range .el-date-editor { width: 120px; }
+.sr-date-sep { color: var(--el-text-color-secondary); flex-shrink: 0; }
+.sr-field-btn .el-button { white-space: nowrap; }
 .sr-label { font-size: 11px; color: var(--el-text-color-secondary); white-space: nowrap; }
 .sr-tags-row { display: flex; align-items: center; gap: 8px; }
+
+@media (max-width: 1079px) {
+  .sr-filters { grid-template-columns: repeat(3, 1fr); }
+  .sr-field .el-input,
+  .sr-field .el-select { width: 100%; }
+  .sr-date-range .el-date-editor { width: 100%; }
+  .sr-field-btn { justify-self: stretch; }
+}
+@media (max-width: 639px) {
+  .sr-filters { grid-template-columns: 1fr 1fr; }
+  .sr-field:nth-child(1),
+  .sr-field:nth-child(2) { grid-column: 1 / -1; }
+}
 .sr-tags-list { display: flex; flex-wrap: wrap; gap: 6px; }
 .sr-tag--active { background: var(--el-color-primary-light-9) !important; border-color: var(--el-color-primary) !important; color: var(--el-color-primary) !important; font-weight: 600; }
 .sr-toolbar {
@@ -182,9 +203,12 @@ function onFormatChange(val: string | string[]) {
   padding: 4px 16px;
   background: var(--el-bg-color-page);
 }
-.sr-state-overlay {
+.sr-results { flex: 1; min-height: 0; position: relative; display: flex; flex-direction: column; }
+.sr-loading-overlay {
   position: absolute; inset: 0;
   display: flex; align-items: center; justify-content: center;
   z-index: 5; pointer-events: none;
+  background: var(--el-bg-color-page);
+  opacity: 0.7;
 }
 </style>

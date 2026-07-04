@@ -203,6 +203,8 @@ watch(() => store.open, async (val) => {
 
   try { const res = await client.get(`/photos/${id}`); if (sid === store.session) photo.value = res.data } catch { /* */ }
   try { const r = await client.get(`/favorites/check/${id}`); if (sid === store.session) favorited.value = r.data.isFavorited } catch { /* */ }
+  // 刷新用户信息，确保 roots 数据用于显示文件路径
+  try { const me = await client.get('/auth/me'); if (sid === store.session && auth.user) auth.user.roots = me.data.roots } catch { /* */ }
   slideOffset.value = CAROUSEL_BASE * vw.value
 })
 
@@ -228,6 +230,7 @@ watch(() => store.photoId, async (newId, oldId) => {
   }
   try { const res = await client.get(`/photos/${newId}`); if (sid === store.session) photo.value = res.data } catch { /* */ }
   try { const r = await client.get(`/favorites/check/${newId}`); if (sid === store.session) favorited.value = r.data.isFavorited } catch { /* */ }
+  try { const me = await client.get('/auth/me'); if (sid === store.session && auth.user) auth.user.roots = me.data.roots } catch { /* */ }
 })
 
 function toggleFav() {
