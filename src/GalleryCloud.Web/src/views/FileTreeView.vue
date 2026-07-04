@@ -112,13 +112,15 @@ const defaultExpanded = computed(() => tree.value.map(n => n._key))
 <template>
   <div class="ft-layout">
     <div class="ft-tree-panel">
-      <el-tree
+      <div v-if="treeLoading" class="ft-tree-loading">
+        <el-icon class="is-loading" :size="28"><Loading /></el-icon>
+      </div>
+      <el-tree v-else
         :data="tree"
         :props="{ children: 'subFolders', label: 'name' }"
         node-key="_key"
         :default-expanded-keys="defaultExpanded"
         @node-click="onNodeClick"
-        :loading="treeLoading"
         style="background:transparent"
       >
         <template #default="{ data }">
@@ -139,7 +141,7 @@ const defaultExpanded = computed(() => tree.value.map(n => n._key))
         </PhotoGridToolbar>
       </div>
       <el-empty v-if="!selPath && !selRootId && !isScanning" description="选择左侧文件夹" />
-      <div v-else-if="loading" style="text-align:center;padding:32px"><el-icon class="is-loading" :size="24"><Loading /></el-icon></div>
+      <div v-else-if="loading" style="flex:1;display:flex;align-items:center;justify-content:center"><el-icon class="is-loading" :size="28"><Loading /></el-icon></div>
       <PhotoGrid v-else :groups="photoGroups" :columns="columns" @photo-click="onPhotoClick" style="flex:1;min-height:0" />
     </div>
   </div>
@@ -153,7 +155,11 @@ const defaultExpanded = computed(() => tree.value.map(n => n._key))
 .ft-tree-panel {
   width: 260px; flex-shrink: 0; overflow-y: auto;
   border-right: 1px solid var(--el-border-color-light);
-  padding: 4px 8px;
+  padding: 4px 8px; position: relative;
+}
+.ft-tree-loading {
+  display: flex; align-items: center; justify-content: center;
+  height: 100%; min-height: 120px;
 }
 .ft-photo-panel { flex: 1; overflow: hidden; padding: 8px; display: flex; flex-direction: column; }
 

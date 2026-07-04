@@ -321,8 +321,10 @@ watch(groupLevel, () => {
 function onPhotoClick(photoId: string, e: MouseEvent) {
   const img = (e.currentTarget as HTMLElement).querySelector('img')
   const r = img ? img.getBoundingClientRect() : (e.currentTarget as HTMLElement).getBoundingClientRect()
-  viewStore.show(photoId, { x: r.x, y: r.y, width: r.width, height: r.height }, img?.src,
-    allPoints.map(p => ({ id: p.id, takenAtDate: toDateInt(p.takenAt) })))
+  // 聚类点内浏览：只在该聚类照片范围内导航，顺序与缩略图显示一致
+  const src = clusterView.value?.photos ?? allPoints
+  const navItems = src.map(p => ({ id: p.id, takenAtDate: toDateInt(p.takenAt) }))
+  viewStore.show(photoId, { x: r.x, y: r.y, width: r.width, height: r.height }, img?.src, navItems)
 }
 
 function closeClusterView() { clusterView.value = null }
