@@ -1,6 +1,8 @@
 <script setup lang="ts">
-import { ref } from 'vue'
-const active = ref('dashboard')
+import { computed } from 'vue'
+import { useRoute } from 'vue-router'
+const route = useRoute()
+const active = computed(() => route.name === 'admin-settings' ? 'settings' : route.name === 'admin-users' ? 'users' : 'dashboard')
 </script>
 
 <template>

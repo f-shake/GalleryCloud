@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, watch, onMounted, onUnmounted } from 'vue'
+import { ref, watch, onMounted, onUnmounted, onActivated } from 'vue'
 import client from '../api/client'
 import { thumbUrl } from '../composables/useThumbnailUrl'
 import { usePhotoGrid } from '../composables/usePhotoGrid'
@@ -37,8 +37,6 @@ let dotGL: GraphicsLayer | null = null          // density-based dot layer
 let thumbGL: GraphicsLayer | null = null        // density-based bubble layer
 let extentHandle: any = null
 let extentTimer: any = null
-
-const pointsReady = ref(false)  // 点图层渲染完成
 
 function onPhotoClick(photoId: string, e: MouseEvent) {
   const img = (e.currentTarget as HTMLElement).querySelector('img')
@@ -466,6 +464,11 @@ onMounted(async () => {
       }
     }
   } catch (e) { console.error('MapView init error:', e) }
+})
+
+onActivated(() => {
+  // KeepAlive 重新显示时，通知 ArcGIS 视图刷新容器尺寸
+  requestAnimationFrame(() => { try { (mapInst?.view as any)?.resize?.() } catch {} })
 })
 
 onUnmounted(() => {

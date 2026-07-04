@@ -78,9 +78,6 @@ async function search() {
   finally { loading.value = false }
 }
 
-function onFormatChange(val: string | string[]) {
-  form.value.format = Array.isArray(val) ? val.join(',') : val
-}
 </script>
 
 <template>

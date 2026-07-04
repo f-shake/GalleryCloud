@@ -133,7 +133,7 @@ public class ScanService : IScanService
         // First pass: enumerate files across all roots to know the grand total upfront
         var formatsStr = await _settings.GetAsync(SettingKeys.ScanSupportedFormats) ?? ".jpg,.jpeg,.heic,.avif,.png,.webp";
         var supportedFormats = formatsStr.Split(',', StringSplitOptions.RemoveEmptyEntries)
-            .Select(f => f.Trim().ToLowerInvariant())
+            .Select(SettingKeys.NormalizeFormat)
             .ToHashSet();
         var excludeStr = await _settings.GetAsync(SettingKeys.ScanExcludePatterns) ?? "**/thumbnails/**";
         var excludeGlobs = excludeStr.Split(',', StringSplitOptions.RemoveEmptyEntries)

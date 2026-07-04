@@ -9,18 +9,56 @@ const cpuCores = navigator.hardwareConcurrency || 4
 
 interface FieldConfig {
   key: string; label: string; hint?: string
-  type?: 'switch' | 'number' | 'select' | 'slider'
+  type?: 'switch' | 'number' | 'select' | 'slider' | 'list'
   placeholder?: string
   options?: { v: string; l: string }[]
+}
+
+// List-type fields: editable arrays synced to comma-separated settings keys
+const formatList = ref<string[]>([])
+const excludeList = ref<string[]>([])
+
+function parseList(val: string | undefined): string[] {
+  if (!val) return []
+  return val.split(',').map(s => s.trim()).filter(Boolean)
+}
+
+function initLists() {
+  formatList.value = parseList(settings.value['scan.supportedFormats'])
+  excludeList.value = parseList(settings.value['scan.excludePatterns'])
+}
+
+function normalizeFormat(s: string): string {
+  s = s.trim().toLowerCase()
+  if (s.startsWith('*.')) s = s.slice(1)
+  if (!s.startsWith('.')) s = '.' + s
+  return s
+}
+
+function syncList(key: string, list: string[]) {
+  if (key === 'scan.supportedFormats') {
+    for (let i = 0; i < list.length; i++) {
+      if (list[i]) list[i] = normalizeFormat(list[i])
+    }
+  }
+  settings.value[key] = list.filter(Boolean).join(',')
+}
+function addItem(key: string, list: string[]) {
+  list.push('')
+  syncList(key, list)
+}
+function removeItem(key: string, list: string[], idx: number) {
+  list.splice(idx, 1)
+  syncList(key, list)
 }
 
 const sections: { title: string; fields: FieldConfig[] }[] = [
   {
     title: '扫描',
     fields: [
-      { key: 'scan.cronExpression', label: 'Cron 表达式', hint: '定时扫描计划，默认每日凌晨3点', placeholder: '0 3 * * *' },
-      { key: 'scan.supportedFormats', label: '文件格式', hint: '逗号分隔，含 . 前缀', placeholder: '.jpg,.jpeg,.heic' },
-      { key: 'scan.excludePatterns', label: '排除路径', hint: '逗号分隔的 glob 模式', placeholder: '**/thumbnails/**' },
+      { key: 'scan.cronExpression', label: '定时扫描', hint: '格式：<b>分 时 日 月 周</b>，空格分隔。示例：每天凌晨3点 → <code>0 3 * * *</code>；每半小时 → <code>*/30 * * * *</code>；每周一中午 → <code>0 12 * * 1</code>' },
+      { key: 'scan.supportedFormats', label: '文件格式', type: 'list', hint: '例如：.jpg、.jpeg、.heic、.png、.webp 等。可省略点号（jpg）或使用 glob 写法（*.jpg）' },
+      { key: 'scan.excludePatterns', label: '排除路径', type: 'list', hint: '支持 glob 模式。** 匹配任意层目录，* 匹配单层。例如：**/thumbnails/** 排除所有 thumbnails 目录下的文件' },
     ],
   },
   {
@@ -62,7 +100,7 @@ const sections: { title: string; fields: FieldConfig[] }[] = [
 ]
 
 onMounted(async () => {
-  try { const r = await client.get('/admin/settings'); settings.value = r.data }
+  try { const r = await client.get('/admin/settings'); settings.value = r.data; initLists() }
   catch { /* */ }
   finally { loading.value = false }
 })
@@ -111,8 +149,17 @@ async function save() {
                 :min="f.key.includes('quality') ? 10 : 1"
                 :max="f.key === 'thumbnail.parallelThreads' ? cpuCores : (f.key.includes('quality') ? 100 : 32768)"
               />
+              <div v-else-if="f.type === 'list'" class="list-editor">
+                <div v-for="(_item, idx) in f.key === 'scan.supportedFormats' ? formatList : excludeList" :key="idx" class="list-row">
+                  <el-input v-model="(f.key === 'scan.supportedFormats' ? formatList : excludeList)[idx]" size="small" placeholder="输入值" @input="syncList(f.key, f.key === 'scan.supportedFormats' ? formatList : excludeList)" />
+                  <el-button size="small" text :icon="'Close'" @click="removeItem(f.key, f.key === 'scan.supportedFormats' ? formatList : excludeList, idx)" />
+                </div>
+                <el-button size="small" type="primary" @click="addItem(f.key, f.key === 'scan.supportedFormats' ? formatList : excludeList)">
+                  <el-icon style="margin-right:3px"><Plus /></el-icon>添加
+                </el-button>
+              </div>
               <el-input v-else v-model="settings[f.key]" :placeholder="f.placeholder" />
-              <div v-if="f.hint && f.type !== 'switch'" class="field-hint">{{ f.hint }}</div>
+              <div v-if="f.hint && f.type !== 'switch'" class="field-hint" v-html="f.hint"></div>
             </el-form-item>
           </el-form>
         </el-card>
@@ -133,6 +180,16 @@ async function save() {
   margin-top: 4px;
   line-height: 1.5;
 }
+.field-hint code {
+  font-size: 11px;
+  background: var(--el-fill-color-light);
+  padding: 1px 5px;
+  border-radius: 3px;
+  color: var(--el-color-primary);
+}
+.list-editor { width: 100%; display: flex; flex-direction: column; gap: 6px; }
+.list-row { display: flex; gap: 6px; }
+.list-row .el-input { flex: 1; }
 :deep(.el-form-item__content) { flex-wrap: wrap; }
 :deep(.el-form-item) { margin-bottom: 14px; }
 </style>

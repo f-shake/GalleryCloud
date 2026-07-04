@@ -168,7 +168,7 @@ public class FileWatcherService : BackgroundService
         var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
 
         var formatsStr = await _settings.GetAsync(SettingKeys.ScanSupportedFormats) ?? ".jpg,.jpeg,.heic,.avif,.png,.webp";
-        var supportedFormats = formatsStr.Split(',').Select(f => f.Trim().ToLowerInvariant()).ToHashSet();
+        var supportedFormats = formatsStr.Split(',').Select(SettingKeys.NormalizeFormat).ToHashSet();
 
         foreach (var evt in events)
         {

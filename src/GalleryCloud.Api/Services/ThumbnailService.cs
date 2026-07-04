@@ -285,8 +285,8 @@ public class ThumbnailService : IThumbnailService
 
         CacheInMemory($"thumb:{photoId}:{sizeKey}", resultBytes);
         var remaining = Interlocked.Decrement(ref _queueCount);
-        _logger.LogInformation("已生成缩略图 [{Size}] {PhotoId} 原图{W}x{H} 解码:{Decode}ms 编码:{Encode}ms DB:{Db}ms 排队:{Queue} 并行:{Parallel}",
-            sizeKey switch { "preview" => "pre", "grid" => "grd", _ => sizeKey }, photoId[..8], srcW, srcH, decodeMs, encodeMs, dbMs, Math.Max(0, remaining), Math.Max(0, _inProgressCount));
+        _logger.LogInformation("已生成缩略图 [{Size}] {PhotoId} 原图{W}x{H} 解码:{Decode}ms 编码:{Encode}ms({Size}KB) DB:{Db}ms 排队:{Queue} 并行:{Parallel}",
+            sizeKey switch { "preview" => "pre", "grid" => "grd", _ => sizeKey }, photoId[..8], srcW, srcH, decodeMs, encodeMs, resultBytes.Length / 1024, dbMs, Math.Max(0, remaining), Math.Max(0, _inProgressCount));
 
         return new MemoryStream(resultBytes);
     }
@@ -363,8 +363,8 @@ public class ThumbnailService : IThumbnailService
                 var dbMs = sw.ElapsedMilliseconds;
 
                 CacheInMemory($"thumb:{photoId}:{sizeKey}", resultBytes);
-                _logger.LogInformation("已生成缩略图 [{Size}] {PhotoId} 原图{W}x{H} 解码:{Decode}ms 编码:{Encode}ms DB:{Db}ms",
-                    sizeKey switch { "preview" => "pre", "grid" => "grd", _ => sizeKey }, photoId[..8], srcW, srcH, decodeMs, encodeMs, dbMs);
+                _logger.LogInformation("已生成缩略图 [{Size}] {PhotoId} 原图{W}x{H} 解码:{Decode}ms 编码:{Encode}ms({Size}KB) DB:{Db}ms",
+                    sizeKey switch { "preview" => "pre", "grid" => "grd", _ => sizeKey }, photoId[..8], srcW, srcH, decodeMs, encodeMs, resultBytes.Length / 1024, dbMs);
             }
         }
         else
@@ -412,8 +412,8 @@ public class ThumbnailService : IThumbnailService
                 var dbMs = sw.ElapsedMilliseconds;
 
                 CacheInMemory($"thumb:{photoId}:{sizeKey}", resultBytes);
-                _logger.LogInformation("已生成缩略图 [{Size}] {PhotoId} 原图{W}x{H} 解码:{Decode}ms 编码:{Encode}ms DB:{Db}ms",
-                    sizeKey switch { "preview" => "pre", "grid" => "grd", _ => sizeKey }, photoId[..8], srcW, srcH, decodeMs, encodeMs, dbMs);
+                _logger.LogInformation("已生成缩略图 [{Size}] {PhotoId} 原图{W}x{H} 解码:{Decode}ms 编码:{Encode}ms({Size}KB) DB:{Db}ms",
+                    sizeKey switch { "preview" => "pre", "grid" => "grd", _ => sizeKey }, photoId[..8], srcW, srcH, decodeMs, encodeMs, resultBytes.Length / 1024, dbMs);
             }
         }
     }

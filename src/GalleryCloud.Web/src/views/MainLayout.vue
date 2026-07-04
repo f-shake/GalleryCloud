@@ -129,7 +129,9 @@ const currentTitle = computed(() => navItems.value.find(n => route.path.startsWi
       </el-drawer>
 
       <el-main class="app-main">
-        <router-view />
+        <router-view v-slot="{ Component }">
+          <KeepAlive><component :is="Component" /></KeepAlive>
+        </router-view>
       </el-main>
     </el-container>
 
@@ -157,7 +159,9 @@ const currentTitle = computed(() => navItems.value.find(n => route.path.startsWi
         </el-dropdown>
       </el-header>
       <el-main class="app-main">
-        <router-view />
+        <router-view v-slot="{ Component }">
+          <KeepAlive><component :is="Component" /></KeepAlive>
+        </router-view>
       </el-main>
     </el-container>
 

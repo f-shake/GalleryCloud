@@ -15,7 +15,7 @@ public static class SettingKeys
     public const string ThumbnailFormat = "thumbnail.format";
     public const string ThumbnailQuality = "thumbnail.quality";
     public const string ThumbnailParallelThreads = "thumbnail.parallelThreads";
-    
+
     // Preview
     public const string PreviewFormat = "preview.format";
     public const string PreviewQuality = "preview.quality";
@@ -27,4 +27,16 @@ public static class SettingKeys
     // Map
     public const string MapTileUrlNormal = "map.tileUrlNormal";
     public const string MapTileUrlSatellite = "map.tileUrlSatellite";
+
+    /// <summary>
+    /// Normalize a file format string: lowercase, strip leading glob (*), ensure leading dot.
+    /// "jpg" → ".jpg", "*.jpg" → ".jpg", ".JPG" → ".jpg", ".jpg" → ".jpg"
+    /// </summary>
+    public static string NormalizeFormat(string raw)
+    {
+        var s = raw.Trim().ToLowerInvariant();
+        if (s.StartsWith("*.")) s = s[1..];
+        if (!s.StartsWith('.')) s = "." + s;
+        return s;
+    }
 }

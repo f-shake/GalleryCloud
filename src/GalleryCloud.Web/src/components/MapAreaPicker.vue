@@ -53,7 +53,7 @@ function toGeo(ext: any): { ymin: number; ymax: number; xmin: number; xmax: numb
 
 function readExtent(): { south: number; north: number; west: number; east: number; areaKm2: number } | null {
   if (!sketchLayer || sketchLayer.graphics.length === 0) return null
-  const ext = sketchLayer.graphics.getItemAt(0).geometry.extent
+  const ext = sketchLayer.graphics.getItemAt(0)?.geometry?.extent
   if (!ext) return null
   const geo = toGeo(ext)
   // Approximate area from lat/lng bounds
