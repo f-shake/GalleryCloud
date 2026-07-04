@@ -38,6 +38,17 @@ let thumbGL: GraphicsLayer | null = null        // density-based bubble layer
 let extentHandle: any = null
 let extentTimer: any = null
 
+const pointsReady = ref(false)  // 点图层渲染完成
+
+function onPhotoClick(photoId: string, e: MouseEvent) {
+  const img = (e.currentTarget as HTMLElement).querySelector('img')
+  const r = img ? img.getBoundingClientRect() : (e.currentTarget as HTMLElement).getBoundingClientRect()
+  // 聚类点内浏览：只在该聚类照片范围内导航，顺序与缩略图显示一致
+  const src = clusterView.value?.photos ?? allPoints
+  const navItems = src.map(p => ({ id: p.id, takenAtDate: toDateInt(p.takenAt) }))
+  viewStore.show(photoId, { x: r.x, y: r.y, width: r.width, height: r.height }, img?.src, navItems)
+}
+
 function openPhoto(photoId: string, screenPoint?: { x: number; y: number }) {
   const rect = screenPoint
     ? { x: screenPoint.x, y: screenPoint.y, width: 1, height: 1 }
@@ -318,15 +329,6 @@ watch(groupLevel, () => {
   }
 })
 
-function onPhotoClick(photoId: string, e: MouseEvent) {
-  const img = (e.currentTarget as HTMLElement).querySelector('img')
-  const r = img ? img.getBoundingClientRect() : (e.currentTarget as HTMLElement).getBoundingClientRect()
-  // 聚类点内浏览：只在该聚类照片范围内导航，顺序与缩略图显示一致
-  const src = clusterView.value?.photos ?? allPoints
-  const navItems = src.map(p => ({ id: p.id, takenAtDate: toDateInt(p.takenAt) }))
-  viewStore.show(photoId, { x: r.x, y: r.y, width: r.width, height: r.height }, img?.src, navItems)
-}
-
 function closeClusterView() { clusterView.value = null }
 
 function mapZoomIn() { mapInst?.view.zoomIn() }
@@ -495,7 +497,7 @@ onUnmounted(() => {
     </div>
 
     <div v-show="!loading && !pointsLoading && !clusterView" class="map-buttons">
-      <button class="map-btn" @click="switchMode(mode === 'cluster' ? 'point' : 'cluster')" :title="mode === 'cluster' ? '显示所有点位' : '聚合显示'">
+      <el-button circle size="default" @click="switchMode(mode === 'cluster' ? 'point' : 'cluster')" :title="mode === 'cluster' ? '显示所有点位' : '聚合显示'">
         <svg v-if="mode === 'cluster'" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
           <circle cx="8" cy="8" r="3"/>
           <circle cx="18" cy="10" r="2"/>
@@ -505,23 +507,23 @@ onUnmounted(() => {
           <circle cx="12" cy="12" r="10"/>
           <circle cx="12" cy="12" r="4" fill="currentColor"/>
         </svg>
-      </button>
-      <button class="map-btn" @click="toggleBasemap" :title="basemap === 'normal' ? '卫星图' : '普通图'">
+      </el-button>
+      <el-button circle size="default" @click="toggleBasemap" :title="basemap === 'normal' ? '卫星图' : '普通图'">
         <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
           <circle cx="12" cy="12" r="10"/>
           <line x1="2" y1="12" x2="22" y2="12"/>
           <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/>
         </svg>
-      </button>
+      </el-button>
     </div>
 
     <div v-show="!loading && !pointsLoading && !clusterView" class="map-zoom-buttons">
-      <button class="map-btn" @click="mapZoomIn" title="放大">
+      <el-button circle size="default" @click="mapZoomIn" title="放大">
         <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-      </button>
-      <button class="map-btn" @click="mapZoomOut" title="缩小">
+      </el-button>
+      <el-button circle size="default" @click="mapZoomOut" title="缩小">
         <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="5" y1="12" x2="19" y2="12"/></svg>
-      </button>
+      </el-button>
     </div>
 
     <Transition name="cluster-slide">
@@ -581,20 +583,15 @@ onUnmounted(() => {
   bottom: 20px; right: 16px;
   z-index: 10;
   display: flex; flex-direction: column;
+  align-items: center;
   gap: 8px;
 }
-.map-btn {
-  display: flex; align-items: center; justify-content: center;
-  width: 40px; height: 40px;
-  background: var(--el-bg-color-overlay);
-  border: 1px solid var(--el-border-color-light);
-  border-radius: 10px;
-  box-shadow: 0 2px 8px rgba(0,0,0,.12);
-  cursor: pointer;
-  color: var(--el-text-color-primary);
-  transition: background .2s;
+.map-buttons .el-button.is-circle {
+  width: 40px !important; height: 40px !important;
+  padding: 0 !important;
 }
-.map-btn:hover { background: var(--el-fill-color-light); }
+.map-buttons .el-button.is-circle svg { display: block !important; }
+.map-buttons .el-button.is-circle + .el-button.is-circle { margin-left: 0; }
 .map-zoom-buttons {
   position: absolute;
   bottom: 20px;
@@ -602,9 +599,15 @@ onUnmounted(() => {
   z-index: 10;
   display: flex;
   flex-direction: column;
+  align-items: center;
   gap: 8px;
 }
-.map-zoom-buttons .map-btn { width: 36px; height: 36px; border-radius: 8px; }
+.map-zoom-buttons .el-button.is-circle {
+  width: 36px !important; height: 36px !important;
+  padding: 0 !important;
+}
+.map-zoom-buttons .el-button.is-circle svg { display: block !important; }
+.map-zoom-buttons .el-button.is-circle + .el-button.is-circle { margin-left: 0; }
 .esri-zoom { display: none !important; }
 .esri-popup__main-container { max-width: 280px !important; }
 .esri-attribution { display: none !important; }

@@ -22,4 +22,7 @@ useDark()
 .thumb-img[style*="display: none"] {
   visibility: hidden;
 }
+/* ArcGIS — hide built-in controls, all map views share these */
+.esri-attribution { display: none !important; }
+.esri-zoom { display: none !important; }
 </style>

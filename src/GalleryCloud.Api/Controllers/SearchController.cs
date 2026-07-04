@@ -27,6 +27,10 @@ public class SearchController : ControllerBase
         [FromQuery] string? format,
         [FromQuery] string? device,
         [FromQuery] string? tag,
+        [FromQuery] double? lat1,
+        [FromQuery] double? lng1,
+        [FromQuery] double? lat2,
+        [FromQuery] double? lng2,
         [FromQuery] bool? isDeleted = false,
         [FromQuery] int page = 1,
         [FromQuery] int limit = 2000)
@@ -62,6 +66,18 @@ public class SearchController : ControllerBase
         // Device filter
         if (!string.IsNullOrWhiteSpace(device))
             query = query.Where(p => p.DeviceModel != null && p.DeviceModel.Contains(device));
+
+        // Bounding box filter (map area)
+        if (lat1.HasValue && lng1.HasValue && lat2.HasValue && lng2.HasValue)
+        {
+            var south = Math.Min(lat1.Value, lat2.Value);
+            var north = Math.Max(lat1.Value, lat2.Value);
+            var west = Math.Min(lng1.Value, lng2.Value);
+            var east = Math.Max(lng1.Value, lng2.Value);
+            query = query.Where(p => p.Latitude != null && p.Longitude != null
+                && p.Latitude >= south && p.Latitude <= north
+                && p.Longitude >= west && p.Longitude <= east);
+        }
 
         // Tag filter
         if (!string.IsNullOrWhiteSpace(tag))

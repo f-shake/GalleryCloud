@@ -40,7 +40,7 @@ function arcgisAssets(): Plugin {
 export default defineConfig(({ command }) => ({
   base: command === 'build' ? '/gallery/' : '/',
   plugins: [
-    vue(),
+    vue({ template: { compilerOptions: { isCustomElement: tag => tag.startsWith('arcgis-') } } }),
     UnoCSS(),
     arcgisAssets(),
   ],
