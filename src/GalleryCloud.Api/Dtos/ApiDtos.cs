@@ -77,6 +77,8 @@ public record PhotoListResponse(int Total, int Page, int Limit, List<PhotoItem> 
 
 public record SearchResponse(int Total, int Page, int Limit, List<PhotoListItem> Photos);
 
+public record SearchFilterOptions(List<string> Formats, List<string> DeviceModels, List<TagItem> Tags);
+
 // ============================================================
 // Auth
 // ============================================================

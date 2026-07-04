@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { ref, onMounted } from 'vue'
 import { usePhotoGrid } from '../composables/usePhotoGrid'
 import client from '../api/client'
 import { useScanStatus } from '../composables/useScanStatus'
@@ -12,9 +12,20 @@ const { isScanning } = useScanStatus()
 const photos = ref<any[]>([])
 const total = ref(0)
 const loading = ref(false)
-const form = ref({ q: '', from: '', to: '', format: '', device: '' })
+
+interface FilterOptions { formats: string[]; deviceModels: string[]; tags: { id: string; name: string; color: string | null }[] }
+const filters = ref<FilterOptions>({ formats: [], deviceModels: [], tags: [] })
+
+const form = ref({ q: '', from: '', to: '', format: '', device: '', tag: '' })
 
 const { onPhotoClick } = usePhotoClick(() => toNavItems(photos.value))
+
+onMounted(async () => {
+  try {
+    const r = await client.get('/search/filters')
+    filters.value = r.data
+  } catch { /* */ }
+})
 
 async function search() {
   loading.value = true
@@ -27,21 +38,51 @@ async function search() {
   } catch { /* */ }
   finally { loading.value = false }
 }
+
+function onFormatChange(val: string | string[]) {
+  form.value.format = Array.isArray(val) ? val.join(',') : val
+}
 </script>
 
 <template>
   <div class="sr-wrap">
     <div class="sr-form">
-      <el-card>
-        <el-form :model="form" @submit.prevent="search" inline>
-          <el-form-item><el-input v-model="form.q" placeholder="文件名" clearable style="width:180px" /></el-form-item>
-          <el-form-item><el-date-picker v-model="form.from" type="date" placeholder="开始日期" style="width:140px" /></el-form-item>
-          <el-form-item><el-date-picker v-model="form.to" type="date" placeholder="结束日期" style="width:140px" /></el-form-item>
-          <el-form-item><el-input v-model="form.format" placeholder="格式 jpg,heic" style="width:140px" /></el-form-item>
-          <el-form-item><el-input v-model="form.device" placeholder="设备型号" style="width:140px" /></el-form-item>
-          <el-form-item><el-button type="primary" native-type="submit" :icon="'Search'">搜索</el-button></el-form-item>
-        </el-form>
-      </el-card>
+      <el-form :model="form" @submit.prevent="search" class="sr-form-inner">
+        <div class="sr-form-row">
+          <el-form-item>
+            <el-input v-model="form.q" placeholder="文件名" clearable style="width:180px" @keyup.enter="search" />
+          </el-form-item>
+          <el-form-item>
+            <el-date-picker v-model="form.from" type="date" placeholder="开始日期" value-format="YYYY-MM-DD" style="width:150px" />
+          </el-form-item>
+          <el-form-item>
+            <el-date-picker v-model="form.to" type="date" placeholder="结束日期" value-format="YYYY-MM-DD" style="width:150px" />
+          </el-form-item>
+          <el-form-item>
+            <el-select v-model="form.format" placeholder="格式" clearable style="width:130px">
+              <el-option v-for="f in filters.formats" :key="f" :label="f.toUpperCase()" :value="f" />
+            </el-select>
+          </el-form-item>
+          <el-form-item>
+            <el-select v-model="form.device" placeholder="设备型号" clearable filterable style="width:180px">
+              <el-option v-for="d in filters.deviceModels" :key="d" :label="d" :value="d" />
+            </el-select>
+          </el-form-item>
+          <el-form-item>
+            <el-select v-model="form.tag" placeholder="标签" clearable style="width:140px">
+              <el-option v-for="t in filters.tags" :key="t.id" :label="t.name" :value="t.name">
+                <span style="display:flex;align-items:center;gap:6px">
+                  <span v-if="t.color" :style="{ display:'inline-block', width:8, height:8, borderRadius:'50%', background:t.color }" />
+                  {{ t.name }}
+                </span>
+              </el-option>
+            </el-select>
+          </el-form-item>
+          <el-form-item>
+            <el-button type="primary" native-type="submit" :icon="'Search'">搜索</el-button>
+          </el-form-item>
+        </div>
+      </el-form>
     </div>
 
     <div v-if="total > 0" class="sr-toolbar">
@@ -57,7 +98,10 @@ async function search() {
 
 <style>
 .sr-wrap { position: absolute; inset: 0; display: flex; flex-direction: column; }
-.sr-form { flex-shrink: 0; }
+.sr-form { flex-shrink: 0; border-bottom: 1px solid var(--el-border-color-light); background: var(--el-bg-color-overlay); }
+.sr-form-inner { padding: 10px 16px; }
+.sr-form-row { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; }
+.sr-form-row .el-form-item { margin-bottom: 0; }
 .sr-toolbar {
   flex-shrink: 0;
   display: flex; align-items: center; gap: 8px;

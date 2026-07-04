@@ -94,4 +94,35 @@ public class SearchController : ControllerBase
 
         return Ok(new SearchResponse(total, page, limit, items));
     }
+
+    [HttpGet("filters")]
+    public async Task<IActionResult> GetFilters()
+    {
+        if (!_userContext.IsAuthenticated) return Unauthorized();
+
+        var formats = await _db.Photos
+            .Where(p => p.UserId == _userContext.UserId && !p.IsDeleted
+                && _db.UserRoots.Any(r => r.Id == p.RootId && !r.IsDeleted))
+            .Where(p => p.FileFormat != null && p.FileFormat != "")
+            .Select(p => p.FileFormat)
+            .Distinct()
+            .OrderBy(f => f)
+            .ToListAsync();
+
+        var devices = await _db.Photos
+            .Where(p => p.UserId == _userContext.UserId && !p.IsDeleted
+                && _db.UserRoots.Any(r => r.Id == p.RootId && !r.IsDeleted))
+            .Where(p => p.DeviceModel != null && p.DeviceModel != "")
+            .Select(p => p.DeviceModel!)
+            .Distinct()
+            .OrderBy(d => d)
+            .ToListAsync();
+
+        var tags = await _db.Tags
+            .Where(t => t.UserId == _userContext.UserId)
+            .Select(t => new TagItem(t.Id, t.Name, t.Color))
+            .ToListAsync();
+
+        return Ok(new SearchFilterOptions(formats, devices, tags));
+    }
 }

@@ -15,6 +15,7 @@ namespace GalleryCloud.Api.Dtos;
 [JsonSerializable(typeof(ErrorResult))]
 [JsonSerializable(typeof(PhotoListResponse))]
 [JsonSerializable(typeof(SearchResponse))]
+[JsonSerializable(typeof(SearchFilterOptions))]
 
 [JsonSerializable(typeof(LoginRequest))]
 [JsonSerializable(typeof(UserResponse))]
