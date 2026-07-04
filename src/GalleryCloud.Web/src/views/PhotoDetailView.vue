@@ -2,7 +2,7 @@
 import { ref, computed, watch, onMounted, onUnmounted, defineAsyncComponent } from 'vue'
 import client from '../api/client'
 import { ElMessage } from 'element-plus'
-import { thumbUrl } from '../composables/useThumbnailUrl'
+import { thumbUrl, fetchThumbnail } from '../composables/useThumbnailUrl'
 import { usePhotoViewStore } from '../stores/photoViewStore'
 import { useAuthStore } from '../stores/authStore'
 const MapEmbed = defineAsyncComponent(() => import('../components/MapEmbed.vue'))
@@ -167,7 +167,7 @@ const src = computed(() => previewReady.value ? previewSrc.value : gridSrc.value
 watch(() => store.open, async (val) => {
   if (val) { window.history.pushState({ preview: true }, '') }
   if (!val || !store.photoId) return
-  dismissY.value = 0; dismissing.value = false
+  dismissY.value = 0; dismissing.value = false; gridError.value = false
   const id = store.photoId
   const sid = store.session
   scale.value = 1
@@ -185,17 +185,19 @@ watch(() => store.open, async (val) => {
   requestAnimationFrame(() => {
     if (sid !== store.session) return
     phase.value = 'expand'
-    setTimeout(() => {
+    setTimeout(async () => {  // 改为 async，使用带重试的 fetchThumbnail
       if (sid !== store.session) return
       showBar.value = true
       phase.value = 'show'
-      // Load preview AFTER animation completes
-      const previewImg = new Image()
-      previewImg.onload = () => {
-        if (sid === store.session) { previewSrc.value = previewImg.src; previewReady.value = true; phase.value = 'done' }
+      // 使用 fetchThumbnail（自动重试 202），比 new Image() 可靠
+      try {
+        const blobUrl = await fetchThumbnail(id, 'preview', 2560)
+        if (sid === store.session) {
+          previewSrc.value = blobUrl; previewReady.value = true; gridError.value = false; phase.value = 'done'
+        }
+      } catch {
+        if (sid === store.session) phase.value = 'done'
       }
-      previewImg.onerror = () => { if (sid === store.session) phase.value = 'done' }
-      previewImg.src = thumbUrl(id, 'preview', 2560)
     }, 380)
   })
 
@@ -215,10 +217,15 @@ watch(() => store.photoId, async (newId, oldId) => {
   gridSrc.value = thumbUrl(newId, 'grid', 400)
   previewReady.value = false; favorited.value = false
   phase.value = 'show'; showBar.value = true; slideOffset.value = CAROUSEL_BASE * vw.value
-  const previewImg = new Image()
-  previewImg.onload = () => { if (sid === store.session) { previewSrc.value = previewImg.src; previewReady.value = true; gridError.value = false; phase.value = 'done' } }
-  previewImg.onerror = () => { if (sid === store.session) phase.value = 'done' }
-  previewImg.src = thumbUrl(newId, 'preview', 2560)
+  // 使用带重试的 fetchThumbnail
+  try {
+    const blobUrl = await fetchThumbnail(newId, 'preview', 2560)
+    if (sid === store.session) {
+      previewSrc.value = blobUrl; previewReady.value = true; gridError.value = false; phase.value = 'done'
+    }
+  } catch {
+    if (sid === store.session) phase.value = 'done'
+  }
   try { const res = await client.get(`/photos/${newId}`); if (sid === store.session) photo.value = res.data } catch { /* */ }
   try { const r = await client.get(`/favorites/check/${newId}`); if (sid === store.session) favorited.value = r.data.isFavorited } catch { /* */ }
 })
@@ -495,7 +502,9 @@ const displayPath = computed(() => {
       @touchend="onTouchEnd"
       @click="onImgClick"
     >
-      <div v-if="!src || gridError" class="pv-placeholder" />
+      <div v-if="!src || gridError" class="pv-placeholder">
+        <el-icon class="is-loading" :size="28"><Loading /></el-icon>
+      </div>
       <img v-else :src="src" :class="[imgClass, slideSnapping ? 'pv-img--fade-out' : '']" :style="imgStyle" draggable="false" @error="gridError = true" />
       <!-- Carousel overlay: sibling div, only during show/done for swipe animation -->
       <div v-if="phase === 'show' || phase === 'done'" class="pv-carousel" :style="carouselStyle">
@@ -619,6 +628,7 @@ const displayPath = computed(() => {
 .pv-placeholder {
   width: 100%; height: 100%;
   background: var(--el-bg-color);
+  display: flex; align-items: center; justify-content: center;
 }
 .pv-img {
   object-fit: contain; border-radius: 0; will-change: transform;
