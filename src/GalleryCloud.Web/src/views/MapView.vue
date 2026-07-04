@@ -355,38 +355,33 @@ function onTouchEnd() {
 
 onMounted(async () => {
   try {
-    const [cfg, pts] = await Promise.all([
-      client.get('/map/basemap-config'),
-      client.get('/map/points'),
-    ])
-
+    // ① 先拿底图配置（轻量，几十ms），避免 initMap 用默认 URL 建底图后被 switchBasemap 刷新
+    const cfg = await client.get('/map/basemap-config')
     const c = cfg.data
     updateTileUrls(c.tileUrlNormal, c.tileUrlSatellite)
 
-    // Restore saved basemap preference
     const savedBasemap = localStorage.getItem('mapBasemap')
     if (savedBasemap === 'normal' || savedBasemap === 'satellite') {
       basemap.value = savedBasemap
-    } else {
-      basemap.value = 'normal'
     }
 
-    const points: MapPoint[] = Array.isArray(pts.data) ? pts.data : []
-    allPoints = points
-    pointCount.value = points.length
-
-    const instance = await initMap()
+    // ② 并行：ArcGIS 初始化（已用正确 URL 和底图类型）+ 加载点位
+    const [pts, instance] = await Promise.all([
+      client.get('/map/points'),
+      initMap(undefined, undefined, basemap.value),
+    ])
     if (!instance) return
     mapInst = instance
 
-    // Apply saved/restored basemap
-    switchBasemap(basemap.value)
+    // 处理点位数据
+    allPoints = Array.isArray(pts.data) ? pts.data : []
+    pointCount.value = allPoints.length
 
-    if (points.length > 0) {
-      clusterLayer = buildClusterLayer(points)
+    if (allPoints.length > 0) {
+      clusterLayer = buildClusterLayer(allPoints)
       instance.map.add(clusterLayer)
 
-      dotLayer = buildDotLayer(points)
+      dotLayer = buildDotLayer(allPoints)
       instance.map.add(dotLayer)
 
       dotGL = new GraphicsLayer()
@@ -455,7 +450,7 @@ onMounted(async () => {
       })
     }
 
-    // All layers added — loading complete (only after points have been added to the map)
+    // 所有图层已添加 — 加载完成
     pointsLoading.value = false
 
     const params = new URLSearchParams(window.location.search)
@@ -488,8 +483,15 @@ onUnmounted(() => {
   <div class="map-root">
     <div ref="mapContainer" class="map-container"></div>
 
-    <div v-if="loading || pointsLoading" class="map-loading">
+    <!-- 地图加载中：全屏遮罩 -->
+    <div v-if="loading" class="map-loading">
       <el-icon class="is-loading" :size="32"><Loading /></el-icon>
+    </div>
+
+    <!-- 地图已就绪，点位加载中：底部小提示 -->
+    <div v-if="!loading && pointsLoading" class="map-points-loading">
+      <el-icon class="is-loading" :size="18"><Loading /></el-icon>
+      <span>加载点位中...</span>
     </div>
 
     <div v-show="!loading && !pointsLoading && !clusterView" class="map-buttons">
@@ -560,6 +562,19 @@ onUnmounted(() => {
   position: absolute; inset: 0;
   background: var(--el-bg-color-page);
   opacity: 0.65;
+}
+.map-points-loading {
+  position: absolute; left: 50%; bottom: 80px;
+  transform: translateX(-50%);
+  z-index: 20; pointer-events: none;
+  display: flex; align-items: center; gap: 6px;
+  padding: 6px 14px;
+  background: var(--el-bg-color-overlay);
+  border: 1px solid var(--el-border-color-light);
+  border-radius: 20px;
+  box-shadow: 0 2px 8px rgba(0,0,0,.1);
+  font-size: 13px;
+  color: var(--el-text-color-secondary);
 }
 .map-buttons {
   position: absolute;

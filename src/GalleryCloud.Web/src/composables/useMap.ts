@@ -20,11 +20,16 @@ export function useMap(containerRef: Ref<HTMLDivElement | null>) {
   let tileUrlSatellite = 'https://mt1.google.com/vt/lyrs=s&x={x}&y={y}&z={z}'
   let mapInstance: MapInstance | null = null
 
-  async function initMap(center: [number, number] = [105, 35], zoom: number = 4): Promise<MapInstance | null> {
+  async function initMap(
+    center: [number, number] = [105, 35],
+    zoom: number = 4,
+    initialBasemap: 'normal' | 'satellite' = 'normal',
+  ): Promise<MapInstance | null> {
     if (!containerRef.value) return null
 
+    const url = initialBasemap === 'satellite' ? tileUrlSatellite : tileUrlNormal
     const basemap = new Basemap({
-      baseLayers: [new WebTileLayer({ urlTemplate: tileUrlNormal })]
+      baseLayers: [new WebTileLayer({ urlTemplate: url })]
     })
 
     const map = new Map({ basemap })
