@@ -60,6 +60,7 @@ builder.Services.AddScoped<UserContext>();
 builder.Services.AddScoped<IUserContext>(sp => sp.GetRequiredService<UserContext>());
 
 // Application services (singletons for in-memory state)
+builder.Services.AddScoped<ShareService>();
 builder.Services.AddSingleton<IScanService, ScanService>();
 builder.Services.AddSingleton<IThumbnailService, ThumbnailService>();
 

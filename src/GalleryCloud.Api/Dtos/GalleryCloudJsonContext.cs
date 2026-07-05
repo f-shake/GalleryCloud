@@ -59,6 +59,20 @@ namespace GalleryCloud.Api.Dtos;
 [JsonSerializable(typeof(ReadyResponse))]
 [JsonSerializable(typeof(EnqueueResponse))]
 
+[JsonSerializable(typeof(ShareItem))]
+[JsonSerializable(typeof(CreateShareRequest))]
+[JsonSerializable(typeof(ExtendShareRequest))]
+[JsonSerializable(typeof(SharePhotoItem))]
+[JsonSerializable(typeof(ShareDetailResponse))]
+[JsonSerializable(typeof(AddPhotosToShareRequest))]
+[JsonSerializable(typeof(Share))]
+[JsonSerializable(typeof(SharePhoto))]
+
+[JsonSerializable(typeof(TrashItem))]
+[JsonSerializable(typeof(TrashListResponse))]
+
+[JsonSerializable(typeof(BatchIdsRequest))]
+
 [JsonSerializable(typeof(MoveRequest))]
 [JsonSerializable(typeof(RenameRequest))]
 [JsonSerializable(typeof(ChangePasswordRequest))]
@@ -86,6 +100,9 @@ namespace GalleryCloud.Api.Dtos;
 [JsonSerializable(typeof(List<FolderNode>))]
 [JsonSerializable(typeof(List<ScanLogItem>))]
 [JsonSerializable(typeof(List<UserListItem>))]
+[JsonSerializable(typeof(List<ShareItem>))]
+[JsonSerializable(typeof(List<SharePhotoItem>))]
+[JsonSerializable(typeof(List<TrashItem>))]
 [JsonSerializable(typeof(List<string>))]
 [JsonSerializable(typeof(List<MapPhotoPoint>))]
 

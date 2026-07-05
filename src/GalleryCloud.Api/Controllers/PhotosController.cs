@@ -189,6 +189,62 @@ public class PhotosController : ControllerBase
         return Accepted(new MessageResult("pending"));
     }
 
+    [HttpPatch("batch/delete")]
+    public async Task<IActionResult> BatchDelete([FromBody] BatchIdsRequest request)
+    {
+        if (!_userContext.IsAuthenticated)
+            return Unauthorized();
+
+        var photos = await _db.Photos
+            .Where(p => request.Ids.Contains(p.Id) && p.UserId == _userContext.UserId && !p.IsDeleted)
+            .ToListAsync();
+
+        var now = DateTime.UtcNow;
+        foreach (var photo in photos)
+        {
+            photo.IsDeleted = true;
+            photo.DeletedAt = now;
+            photo.UpdatedAt = now;
+        }
+
+        await _db.SaveChangesAsync();
+        return Ok(new MessageResult($"Deleted {photos.Count} photos"));
+    }
+
+    [HttpPatch("batch/restore")]
+    public async Task<IActionResult> BatchRestore([FromBody] BatchIdsRequest request)
+    {
+        if (!_userContext.IsAuthenticated)
+            return Unauthorized();
+
+        var photos = await _db.Photos
+            .Where(p => request.Ids.Contains(p.Id) && p.UserId == _userContext.UserId && p.IsDeleted)
+            .ToListAsync();
+
+        // Verify files still exist
+        var roots = await _db.UserRoots.Where(r => r.UserId == _userContext.UserId && !r.IsDeleted).ToListAsync();
+        var validIds = new HashSet<string>();
+        foreach (var photo in photos)
+        {
+            var root = roots.FirstOrDefault(r => r.Id == photo.RootId);
+            if (root == null) continue;
+            var fullPath = Path.GetFullPath(Path.Combine(root.RootPath, photo.FilePath));
+            if (System.IO.File.Exists(fullPath))
+                validIds.Add(photo.Id);
+        }
+
+        var toRestore = photos.Where(p => validIds.Contains(p.Id)).ToList();
+        foreach (var photo in toRestore)
+        {
+            photo.IsDeleted = false;
+            photo.DeletedAt = null;
+            photo.UpdatedAt = DateTime.UtcNow;
+        }
+
+        await _db.SaveChangesAsync();
+        return Ok(new MessageResult($"Restored {toRestore.Count} photos"));
+    }
+
     [HttpDelete("{id}")]
     public async Task<IActionResult> Delete(string id)
     {

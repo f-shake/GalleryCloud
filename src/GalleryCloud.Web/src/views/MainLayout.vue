@@ -55,6 +55,8 @@ const navItems = computed(() => {
     { path: '/map', title: '地图', icon: 'MapLocation' },
     { path: '/search', title: '搜索', icon: 'Search' },
     { path: '/favorites', title: '收藏', icon: 'Star' },
+    { path: '/trash', title: '回收站', icon: 'Delete' },
+    { path: '/shares', title: '分享', icon: 'Share' },
     { path: '/manage', title: '管理', icon: 'Setting' },
   ]
 })

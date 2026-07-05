@@ -20,6 +20,14 @@ public class AuthMiddleware
 
     public async Task InvokeAsync(HttpContext context, UserContext userContext, IOptions<AuthOptions> authOptions)
     {
+        // Skip authentication for public endpoints (e.g., share viewing)
+        var path = context.Request.Path.Value ?? "";
+        if (path.StartsWith("/api/public/", StringComparison.OrdinalIgnoreCase))
+        {
+            await _next(context);
+            return;
+        }
+
         var token = ExtractToken(context);
 
         if (!string.IsNullOrEmpty(token))

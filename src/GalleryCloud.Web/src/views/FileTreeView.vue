@@ -1,9 +1,12 @@
 <script setup lang="ts">
-import { ref, onMounted, computed } from 'vue'
+import { ref, watch, onMounted, computed } from 'vue'
 import { usePhotoGrid } from '../composables/usePhotoGrid'
+import { useSelectionStore } from '../stores/selectionStore'
 import { toDateInt } from '../stores/photoViewStore'
+import { useLongPressSelection } from '../composables/useLongPressSelection'
 import PhotoGridToolbar from '../components/PhotoGridToolbar.vue'
 import PhotoGrid from '../components/PhotoGrid.vue'
+import BatchToolbar from '../components/BatchToolbar.vue'
 import client from '../api/client'
 import { useScanStatus } from '../composables/useScanStatus'
 import { usePhotoClick, toNavItems } from '../composables/usePhotoClick'
@@ -11,21 +14,26 @@ import { usePhotoClick, toNavItems } from '../composables/usePhotoClick'
 interface FolderNode { name: string; path: string; rootId?: string; photoCount: number; subFolders: FolderNode[]; _key: string }
 const { columns, groupLevel, zoomIn, zoomOut } = usePhotoGrid()
 const { isScanning } = useScanStatus()
+const selStore = useSelectionStore()
 
 const { onPhotoClick } = usePhotoClick(() => toNavItems(photos.value))
+const { onTouchStart: onLpTouchStart, onTouchMove: onLpTouchMove, onTouchEnd: onLpTouchEnd } = useLongPressSelection()
 
 // Pinch zoom for photo grid
 let pinchStart = 0, pinchEnd = 0
 function onTouchStart(e: TouchEvent) {
+  onLpTouchStart(e, '')
   if (e.touches.length === 2) {
     pinchStart = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY)
     pinchEnd = pinchStart
   }
 }
 function onTouchMove(e: TouchEvent) {
+  onLpTouchMove()
   if (e.touches.length === 2 && pinchStart > 0) { e.preventDefault(); pinchEnd = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY) }
 }
 function onTouchEnd() {
+  onLpTouchEnd()
   if (pinchStart > 0 && Math.abs(pinchEnd - pinchStart) > 20) { if (pinchEnd > pinchStart) zoomIn(); else zoomOut() }
   pinchStart = 0; pinchEnd = 0
 }
@@ -36,6 +44,9 @@ const photos = ref<any[]>([])
 const loading = ref(false)
 const treeLoading = ref(true)
 
+watch(photos, (val) => {
+  selStore.setViewPhotos(val.map(p => ({ id: p.id, takenAt: p.takenAt })))
+}, { immediate: true })
 // Group photos using YYYYMMDD integer arithmetic (same as timeline)
 const photoGroups = computed(() => {
   void columns.value
@@ -92,6 +103,7 @@ function addKeys(nodes: FolderNode[]): FolderNode[] {
 }
 
 async function onNodeClick(node: FolderNode) {
+  selStore.disable()
   selPath.value = node.path
   selRootId.value = node.rootId || ''
   loading.value = true
@@ -136,13 +148,30 @@ const defaultExpanded = computed(() => tree.value.map(n => n._key))
       <div style="margin-bottom:12px;flex-shrink:0">
         <PhotoGridToolbar :count="photos.length">
           <template #left>
-            <span style="font-size:13px;color:var(--el-text-color-secondary)">{{ selPath || (selRootId ? '' : '选择文件夹') }}</span>
+            <template v-if="selStore.enabled">
+              <BatchToolbar />
+            </template>
+            <template v-else>
+              <span style="font-size:13px;color:var(--el-text-color-secondary)">{{ selPath || (selRootId ? '' : '选择文件夹') }}</span>
+              <el-button text size="small" style="margin-left:4px" @click="selStore.enable('folders')">
+                <el-icon><Select /></el-icon>选择
+              </el-button>
+            </template>
           </template>
         </PhotoGridToolbar>
       </div>
       <el-empty v-if="!selPath && !selRootId && !isScanning" description="选择左侧文件夹" />
       <div v-else-if="loading" style="flex:1;display:flex;align-items:center;justify-content:center"><el-icon class="is-loading" :size="28"><Loading /></el-icon></div>
-      <PhotoGrid v-else :groups="photoGroups" :columns="columns" @photo-click="onPhotoClick" style="flex:1;min-height:0" />
+      <PhotoGrid
+        v-else
+        :groups="photoGroups"
+        :columns="columns"
+        :selection-mode="selStore.enabled"
+        :selected-ids="selStore.selectedIds"
+        @photo-click="onPhotoClick"
+        @selection-toggle="selStore.toggle"
+        style="flex:1;min-height:0"
+      />
     </div>
   </div>
 </template>

@@ -1,15 +1,19 @@
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, watch } from 'vue'
 import { usePhotoGrid } from '../composables/usePhotoGrid'
+import { useSelectionStore } from '../stores/selectionStore'
 import client from '../api/client'
 import { useScanStatus } from '../composables/useScanStatus'
 import { usePhotoClick, toNavItems } from '../composables/usePhotoClick'
+import { useLongPressSelection } from '../composables/useLongPressSelection'
 import PhotoGridToolbar from '../components/PhotoGridToolbar.vue'
 import PhotoGrid from '../components/PhotoGrid.vue'
+import BatchToolbar from '../components/BatchToolbar.vue'
 import MapAreaPicker from '../components/MapAreaPicker.vue'
 
 const { columns } = usePhotoGrid()
 const { isScanning } = useScanStatus()
+const selStore = useSelectionStore()
 const photos = ref<any[]>([])
 const total = ref(0)
 const loading = ref(false)
@@ -25,6 +29,7 @@ const hasBbox = ref(false)
 const bboxArea = ref('')
 
 const { onPhotoClick } = usePhotoClick(() => toNavItems(photos.value))
+const { onTouchStart, onTouchMove, onTouchEnd } = useLongPressSelection()
 
 onMounted(async () => {
   try {
@@ -67,6 +72,7 @@ function clearBbox() {
 }
 
 async function search() {
+  selStore.disable()
   loading.value = true
   try {
     const params: any = { limit: 1000000 }
@@ -77,6 +83,10 @@ async function search() {
   } catch { /* */ }
   finally { loading.value = false }
 }
+
+watch(photos, (val) => {
+  selStore.setViewPhotos(val.map((p: any) => ({ id: p.id, takenAt: p.takenAt })))
+}, { immediate: true })
 
 </script>
 
@@ -144,11 +154,27 @@ async function search() {
     </div>
 
     <div v-if="photos.length || total > 0" class="sr-toolbar">
-      <PhotoGridToolbar :count="total" />
+      <PhotoGridToolbar :count="total">
+        <template #left>
+          <el-button v-if="!selStore.enabled" text size="small" @click="selStore.enable('search')">
+            <el-icon><Select /></el-icon>选择
+          </el-button>
+          <BatchToolbar v-else @batch-hide="search()" />
+        </template>
+      </PhotoGridToolbar>
     </div>
 
-    <div class="sr-results">
-      <PhotoGrid v-if="photos.length" :photos="photos" :columns="columns" @photo-click="onPhotoClick" style="flex:1;min-height:0" />
+    <div class="sr-results" @touchstart="onTouchStart($event, '')" @touchmove="onTouchMove" @touchend="onTouchEnd">
+      <PhotoGrid
+        v-if="photos.length"
+        :photos="photos"
+        :columns="columns"
+        :selection-mode="selStore.enabled"
+        :selected-ids="selStore.selectedIds"
+        @photo-click="onPhotoClick"
+        @selection-toggle="selStore.toggle"
+        style="flex:1;min-height:0"
+      />
       <div v-if="loading" class="sr-loading-overlay"><el-icon class="is-loading" :size="28"><Loading /></el-icon></div>
       <el-empty v-else-if="!loading && photos.length === 0 && !isScanning" description="输入条件搜索" />
     </div>

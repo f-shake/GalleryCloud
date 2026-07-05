@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, computed, watch, onMounted, onUnmounted, defineAsyncComponent } from 'vue'
 import client from '../api/client'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import { thumbUrl, fetchThumbnail } from '../composables/useThumbnailUrl'
 import { usePhotoViewStore } from '../stores/photoViewStore'
 import { useAuthStore } from '../stores/authStore'
@@ -472,6 +472,31 @@ function formatDateTime(val: string | null): string {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`
 }
 
+async function hidePhoto() {
+  if (!store.photoId) return
+  try {
+    await ElMessageBox.confirm('确定隐藏这张照片？', '隐藏照片', { confirmButtonText: '确定', cancelButtonText: '取消', type: 'warning' })
+    await client.delete(`/photos/${store.photoId}`)
+    ElMessage.success('已隐藏')
+    store.close()
+  } catch { /* */ }
+}
+
+async function sharePhoto() {
+  // Share from preview: create share with this single photo
+  if (!store.photoId) return
+  try {
+    const { value } = await ElMessageBox.prompt('分享名称（可选）', '创建分享', { confirmButtonText: '创建', cancelButtonText: '取消', inputPlaceholder: '默认分享' })
+    const name = value || '默认分享'
+    const res = await client.post('/shares', { name, expireDays: 30 })
+    const share = res.data
+    await client.post(`/shares/${share.id}/photos`, { photoIds: [store.photoId] })
+    const link = `${window.location.origin}${import.meta.env.BASE_URL}share/${share.token}`
+    await navigator.clipboard.writeText(link)
+    ElMessage.success('分享链接已复制到剪贴板')
+  } catch { /* */ }
+}
+
 function getExt(mime: string): string {
   const map: Record<string, string> = { 'image/jpeg': '.jpg', 'image/png': '.png', 'image/webp': '.webp', 'image/heic': '.heic', 'image/avif': '.avif' }
   return map[mime] || ''
@@ -529,6 +554,8 @@ const displayPath = computed(() => {
       <span v-if="store.hasPrev || store.hasNext" style="font-size:12px;color:var(--el-text-color-secondary);flex-shrink:0">{{ store.currentIndex + 1 }} / {{ store.allItems.length }}</span>
       <el-button circle :icon="favorited ? 'StarFilled' : 'Star'" @click="toggleFav" :class="['glass-btn', favorited ? 'fav-active' : '']" />
       <el-button circle :icon="'Download'" class="glass-btn" @click="downloadOriginal" />
+      <el-button circle :icon="'Delete'" class="glass-btn" @click="hidePhoto" style="color:#f56c6c" />
+      <el-button circle :icon="'Share'" class="glass-btn" @click="sharePhoto" />
       <el-button circle :icon="'InfoFilled'" @click="showInfo = !showInfo" class="glass-btn" />
     </div>
 
