@@ -7,6 +7,7 @@ public class SharePhoto
     public DateTime AddedAt { get; set; } = DateTime.UtcNow;
     public bool IsDeleted { get; set; }
     public DateTime? DeletedAt { get; set; }
+    public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
 
     // Navigation
     public Share? Share { get; set; }

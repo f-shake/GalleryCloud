@@ -83,7 +83,7 @@ function formatDeletedAt(dateStr: string): string {
             <el-icon><Select /></el-icon>选择
           </el-button>
           <template v-else>
-            <BatchToolbar />
+            <BatchToolbar :show-hide="false" />
             <el-button size="small" type="primary" @click="batchRestore">
               <el-icon style="margin-right:2px"><Refresh /></el-icon>恢复选中
             </el-button>

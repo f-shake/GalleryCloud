@@ -78,9 +78,13 @@ export const useSelectionStore = defineStore('selection', () => {
       if (newItems.length > 0) {
         viewPhotos.value = [...viewPhotos.value, ...newItems]
       }
-    } catch { /* fall through */ }
-    selectedIds.value = new Set(viewPhotos.value.map(p => p.id))
-    bulkLoading.value = false
+      selectedIds.value = new Set(serverPhotos.map(p => p.id))
+    } catch {
+      // 服务端失败时不改变已选状态
+      return
+    } finally {
+      bulkLoading.value = false
+    }
   }
 
   function clearSelection() {
@@ -126,9 +130,23 @@ export const useSelectionStore = defineStore('selection', () => {
       }
     }
 
-    // "全部"：直接选所有本地照片（如果跨年则从服务端抓取）
+    // "全部"：从服务端抓取所有照片
     if (!from) {
-      selectedIds.value = new Set(viewPhotos.value.map(p => p.id))
+      bulkLoading.value = true
+      try {
+        const res = await client.get('/search', { params: { limit: 1000000 } })
+        const serverPhotos = (res.data.photos as any[]).map(p => ({
+          id: p.id as string,
+          takenAt: (p.takenAt as string) || null,
+        }))
+        viewPhotos.value = serverPhotos
+        selectedIds.value = new Set(serverPhotos.map(p => p.id))
+      } catch {
+        // 服务端失败时回退到本地
+        selectedIds.value = new Set(viewPhotos.value.map(p => p.id))
+      } finally {
+        bulkLoading.value = false
+      }
       return
     }
 
@@ -175,8 +193,9 @@ export const useSelectionStore = defineStore('selection', () => {
         })
         .map(p => p.id)
       selectedIds.value = new Set(ids)
+    } finally {
+      bulkLoading.value = false
     }
-    bulkLoading.value = false
   }
 
   const count = computed(() => selectedIds.value.size)

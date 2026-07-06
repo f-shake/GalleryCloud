@@ -2,7 +2,6 @@ using System.Security.Cryptography;
 using GalleryCloud.Api.Data;
 using GalleryCloud.Api.Dtos;
 using GalleryCloud.Core.Entities;
-using GalleryCloud.Core.Interfaces;
 using Microsoft.EntityFrameworkCore;
 
 namespace GalleryCloud.Api.Services;
@@ -10,15 +9,14 @@ namespace GalleryCloud.Api.Services;
 public class ShareService
 {
     private readonly IServiceScopeFactory _scopeFactory;
-    private readonly UserContext _userContext;
 
-    public ShareService(IServiceScopeFactory scopeFactory, UserContext userContext)
+    public ShareService(IServiceScopeFactory scopeFactory)
     {
         _scopeFactory = scopeFactory;
-        _userContext = userContext;
     }
 
-    public async Task<ShareDetailResponse> CreateShareAsync(string userId, string name, int? expireDays)
+    public async Task<ShareDetailResponse> CreateShareAsync(string userId, string name, int? expireDays,
+        bool? allowDownload = null, bool? allowMetadata = null)
     {
         using var scope = _scopeFactory.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
@@ -29,6 +27,8 @@ public class ShareService
             Name = name,
             Token = GenerateToken(),
             ExpiresAt = expireDays.HasValue ? DateTime.UtcNow.AddDays(expireDays.Value) : null,
+            AllowDownload = allowDownload ?? true,
+            AllowMetadata = allowMetadata ?? true,
         };
 
         db.Shares.Add(share);
@@ -107,6 +107,7 @@ public class ShareService
         {
             sp.IsDeleted = true;
             sp.DeletedAt = DateTime.UtcNow;
+            sp.UpdatedAt = DateTime.UtcNow;
             await db.SaveChangesAsync();
         }
     }
@@ -121,7 +122,8 @@ public class ShareService
             .OrderByDescending(s => s.CreatedAt)
             .Select(s => new ShareItem(
                 s.Id, s.Name, s.Token, s.ExpiresAt, s.CreatedAt,
-                s.SharePhotos.Count(sp => !sp.IsDeleted)
+                s.SharePhotos.Count(sp => !sp.IsDeleted),
+                s.AllowDownload, s.AllowMetadata
             ))
             .ToListAsync();
 
@@ -184,7 +186,8 @@ public class ShareService
 
         var item = new ShareItem(
             share.Id, share.Name, share.Token,
-            share.ExpiresAt, share.CreatedAt, photos.Count
+            share.ExpiresAt, share.CreatedAt, photos.Count,
+            share.AllowDownload, share.AllowMetadata
         );
 
         return new ShareDetailResponse(item, photos);

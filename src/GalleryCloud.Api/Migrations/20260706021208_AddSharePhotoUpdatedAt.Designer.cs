@@ -3,6 +3,7 @@ using System;
 using GalleryCloud.Api.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 
 #nullable disable
@@ -10,9 +11,11 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace GalleryCloud.Api.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    partial class AppDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260706021208_AddSharePhotoUpdatedAt")]
+    partial class AddSharePhotoUpdatedAt
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder.HasAnnotation("ProductVersion", "10.0.9");
@@ -221,12 +224,6 @@ namespace GalleryCloud.Api.Migrations
                     b.Property<string>("Id")
                         .HasMaxLength(32)
                         .HasColumnType("TEXT");
-
-                    b.Property<bool>("AllowDownload")
-                        .HasColumnType("INTEGER");
-
-                    b.Property<bool>("AllowMetadata")
-                        .HasColumnType("INTEGER");
 
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("TEXT");

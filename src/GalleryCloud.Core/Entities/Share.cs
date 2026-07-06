@@ -11,6 +11,8 @@ public class Share
     public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
     public bool IsDeleted { get; set; }
     public DateTime? DeletedAt { get; set; }
+    public bool AllowDownload { get; set; } = true;
+    public bool AllowMetadata { get; set; } = true;
 
     // Navigation
     public User? User { get; set; }

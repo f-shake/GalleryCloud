@@ -175,9 +175,9 @@ public record EnqueueResponse(int Enqueued);
 // Shares
 // ============================================================
 
-public record ShareItem(string Id, string Name, string Token, DateTime? ExpiresAt, DateTime CreatedAt, int PhotoCount);
+public record ShareItem(string Id, string Name, string Token, DateTime? ExpiresAt, DateTime CreatedAt, int PhotoCount, bool AllowDownload = true, bool AllowMetadata = true);
 
-public record CreateShareRequest(string Name, int? ExpireDays);
+public record CreateShareRequest(string Name, int? ExpireDays, bool? AllowDownload = null, bool? AllowMetadata = null);
 
 public record ExtendShareRequest(string? Name, int? ExpireDays);
 

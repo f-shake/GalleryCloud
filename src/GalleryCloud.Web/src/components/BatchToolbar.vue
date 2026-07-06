@@ -5,6 +5,12 @@ import { ElMessageBox, ElMessage } from 'element-plus'
 import client from '../api/client'
 import ShareDialog from './ShareDialog.vue'
 
+const props = withDefaults(defineProps<{
+  showHide?: boolean
+}>(), {
+  showHide: true,
+})
+
 const store = useSelectionStore()
 
 const emit = defineEmits<{
@@ -55,7 +61,7 @@ function openShare() {
     <el-button size="small" :loading="store.bulkLoading" @click="store.selectAllFromServer()">全选</el-button>
     <el-button size="small" @click="store.clearSelection()">取消全选</el-button>
     <div class="batch-sep" />
-    <el-button size="small" type="danger" plain @click="batchHide">
+    <el-button v-if="showHide" size="small" type="danger" plain @click="batchHide">
       <el-icon style="margin-right:2px"><Delete /></el-icon>隐藏
     </el-button>
     <el-button size="small" type="primary" plain @click="openShare">

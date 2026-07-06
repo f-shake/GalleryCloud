@@ -1,6 +1,8 @@
 using GalleryCloud.Api.Data;
 using GalleryCloud.Api.Dtos;
+using GalleryCloud.Api.Helpers;
 using GalleryCloud.Api.Services;
+using GalleryCloud.Core.Entities;
 using GalleryCloud.Core.Enums;
 using GalleryCloud.Core.Interfaces;
 using Microsoft.AspNetCore.Mvc;
@@ -48,7 +50,8 @@ public class ShareController : ControllerBase
         if (expireDays > 365)
             return BadRequest(new ErrorResult("ExpireDays cannot exceed 365"));
 
-        var result = await _shareService.CreateShareAsync(_userContext.UserId!, request.Name, expireDays == 0 ? null : expireDays);
+        var result = await _shareService.CreateShareAsync(_userContext.UserId!, request.Name,
+            expireDays == 0 ? null : expireDays, request.AllowDownload, request.AllowMetadata);
         return Ok(result);
     }
 
@@ -149,12 +152,12 @@ public class ShareController : ControllerBase
         {
             var result = await _thumbnailService.GetThumbnailAsync(photoId, thumbSize, w, HttpContext.RequestAborted);
             if (result == null) return NotFound();
-            return new FileContentResult(await ReadFullyAsync(result), "image/webp");
+            return new FileContentResult(await StreamHelper.ReadFullyAsync(result), "image/webp");
         }
 
         var cached = await _thumbnailService.TryGetCachedAsync(photoId, thumbSize, w);
         if (cached != null)
-            return new FileContentResult(await ReadFullyAsync(cached), "image/webp");
+            return new FileContentResult(await StreamHelper.ReadFullyAsync(cached), "image/webp");
 
         _thumbnailService.EnqueueAsync(photoId, thumbSize, w);
         return Accepted(new MessageResult("pending"));
@@ -163,9 +166,12 @@ public class ShareController : ControllerBase
     [HttpGet("api/public/shares/{token}/photos/{photoId}/file")]
     public async Task<IActionResult> GetPublicFile(string token, string photoId)
     {
-        // Validate share access
-        if (!await IsPhotoInShare(token, photoId))
+        // Validate share access and download permission
+        var share = await GetShareByTokenAsync(token);
+        if (share == null || !await IsPhotoInShare(token, photoId))
             return NotFound();
+        if (!share.AllowDownload)
+            return Forbid();
 
         using var scope = _scopeFactory.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
@@ -206,10 +212,13 @@ public class ShareController : ControllerBase
                 && s.SharePhotos.Any(sp => sp.PhotoId == photoId && !sp.IsDeleted));
     }
 
-    private static async Task<byte[]> ReadFullyAsync(Stream stream)
+    private async Task<Share?> GetShareByTokenAsync(string token)
     {
-        using var ms = new MemoryStream();
-        await stream.CopyToAsync(ms);
-        return ms.ToArray();
+        using var scope = _scopeFactory.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        return await db.Shares
+            .IgnoreQueryFilters()
+            .FirstOrDefaultAsync(s => s.Token == token && !s.IsDeleted
+                && (!s.ExpiresAt.HasValue || s.ExpiresAt > DateTime.UtcNow));
     }
 }

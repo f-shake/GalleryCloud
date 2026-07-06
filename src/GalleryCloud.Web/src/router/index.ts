@@ -40,7 +40,7 @@ const router = createRouter({
         },
       ],
     },
-    { path: '/share/:token', name: 'public-share', component: () => import('../views/PublicShareView.vue'), meta: { guest: true } },
+    { path: '/share/:token', name: 'public-share', component: () => import('../views/PublicShareView.vue'), meta: { noAuth: true } },
     { path: '/:pathMatch(.*)*', name: 'not-found', component: () => import('../views/NotFoundView.vue') },
   ],
 })
@@ -53,6 +53,10 @@ router.afterEach(() => {
 
 router.beforeEach((to, _from) => {
   const auth = useAuthStore()
+
+  // Public routes (e.g., public share) — no auth required
+  if (to.meta.noAuth) return
+
   // Admin can only access admin routes
   if (auth.isAdmin && !to.path.startsWith('/admin') && to.path !== '/login')
     return '/admin'

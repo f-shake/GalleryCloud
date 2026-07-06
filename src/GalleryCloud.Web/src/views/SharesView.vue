@@ -6,6 +6,7 @@ import client from '../api/client'
 interface ShareItem {
   id: string; name: string; token: string
   expiresAt: string | null; createdAt: string; photoCount: number
+  allowDownload: boolean; allowMetadata: boolean
 }
 
 const shares = ref<ShareItem[]>([])
@@ -100,6 +101,10 @@ function isExpired(expiresAt: string | null): boolean {
               <span>{{ s.photoCount }} 张照片</span>
               <span>到期：{{ formatDate(s.expiresAt) }}</span>
               <span>创建于 {{ formatDate(s.createdAt) }}</span>
+              <span>
+                <el-tag v-if="!s.allowDownload" size="small" type="warning">禁止下载</el-tag>
+                <el-tag v-if="!s.allowMetadata" size="small" type="warning">隐藏元数据</el-tag>
+              </span>
             </div>
           </div>
           <div class="sv-card-actions">

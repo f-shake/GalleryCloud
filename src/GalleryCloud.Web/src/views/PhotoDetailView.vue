@@ -2,10 +2,22 @@
 import { ref, computed, watch, onMounted, onUnmounted, defineAsyncComponent } from 'vue'
 import client from '../api/client'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { thumbUrl, fetchThumbnail } from '../composables/useThumbnailUrl'
+import { thumbUrl, fetchThumbnail, publicThumbUrl, publicFileUrl, fetchPublicThumbnail } from '../composables/useThumbnailUrl'
 import { usePhotoViewStore } from '../stores/photoViewStore'
 import { useAuthStore } from '../stores/authStore'
 const MapEmbed = defineAsyncComponent(() => import('../components/MapEmbed.vue'))
+
+const props = withDefaults(defineProps<{
+  shareToken?: string
+  allowDownload?: boolean
+  allowMetadata?: boolean
+}>(), {
+  shareToken: undefined,
+  allowDownload: true,
+  allowMetadata: true,
+})
+
+const isShareMode = computed(() => !!props.shareToken)
 
 const store = usePhotoViewStore()
 const auth = useAuthStore()
@@ -13,6 +25,17 @@ const auth = useAuthStore()
 const photo = ref<any>(null)
 const favorited = ref(false)
 const showInfo = ref(false)
+
+/** 根据模式返回正确的 grid 缩略图 URL */
+function photoThumbUrl(id: string, size = 'grid', width = 400): string {
+  if (isShareMode.value) return publicThumbUrl(props.shareToken!, id, size, width)
+  return thumbUrl(id, size, width)
+}
+/** 根据模式异步获取预览图 */
+async function photoFetchThumbnail(id: string, size = 'grid', width = 400): Promise<string> {
+  if (isShareMode.value) return fetchPublicThumbnail(props.shareToken!, id, size, width)
+  return fetchThumbnail(id, size, width)
+}
 const layoutMode = ref<'split' | 'full'>('full')
 watch(showInfo, (val) => {
   if (val) {
@@ -174,7 +197,7 @@ watch(() => store.open, async (val) => {
   offsetX.value = 0
   offsetY.value = 0
 
-  gridSrc.value = store.startImgSrc || thumbUrl(id, 'grid', 400)
+  gridSrc.value = store.startImgSrc || photoThumbUrl(id, 'grid', 400)
   previewReady.value = false
   photo.value = null
   favorited.value = false
@@ -191,7 +214,7 @@ watch(() => store.open, async (val) => {
       phase.value = 'show'
       // 使用 fetchThumbnail（自动重试 202），比 new Image() 可靠
       try {
-        const blobUrl = await fetchThumbnail(id, 'preview', 2560)
+        const blobUrl = await photoFetchThumbnail(id, 'preview', 2560)
         if (sid === store.session) {
           previewSrc.value = blobUrl; previewReady.value = true; gridError.value = false; phase.value = 'done'
         }
@@ -201,10 +224,16 @@ watch(() => store.open, async (val) => {
     }, 380)
   })
 
-  try { const res = await client.get(`/photos/${id}`); if (sid === store.session) photo.value = res.data } catch { /* */ }
-  try { const r = await client.get(`/favorites/check/${id}`); if (sid === store.session) favorited.value = r.data.isFavorited } catch { /* */ }
-  // 刷新用户信息，确保 roots 数据用于显示文件路径
-  try { const me = await client.get('/auth/me'); if (sid === store.session && auth.user) auth.user.roots = me.data.roots } catch { /* */ }
+  if (isShareMode.value) {
+    // 分享模式：从 store 中取当前照片的基本信息
+    const item = store.allItems.find(x => x.id === id)
+    if (item) photo.value = { id, fileName: (item as any).fileName || '', fileFormat: (item as any).fileFormat || '', width: (item as any).width, height: (item as any).height }
+  } else {
+    try { const res = await client.get(`/photos/${id}`); if (sid === store.session) photo.value = res.data } catch { /* */ }
+    try { const r = await client.get(`/favorites/check/${id}`); if (sid === store.session) favorited.value = r.data.isFavorited } catch { /* */ }
+    // 刷新用户信息，确保 roots 数据用于显示文件路径
+    try { const me = await client.get('/auth/me'); if (sid === store.session && auth.user) auth.user.roots = me.data.roots } catch { /* */ }
+  }
   slideOffset.value = CAROUSEL_BASE * vw.value
 })
 
@@ -216,21 +245,27 @@ watch(() => store.photoId, async (newId, oldId) => {
   gridError.value = false; scale.value = 1; offsetX.value = 0; offsetY.value = 0
   dismissY.value = 0; dismissing.value = false
   const sid = store.session
-  gridSrc.value = thumbUrl(newId, 'grid', 400)
+  gridSrc.value = photoThumbUrl(newId, 'grid', 400)
   previewReady.value = false; favorited.value = false
   phase.value = 'show'; showBar.value = true; slideOffset.value = CAROUSEL_BASE * vw.value
   // 使用带重试的 fetchThumbnail
   try {
-    const blobUrl = await fetchThumbnail(newId, 'preview', 2560)
+    const blobUrl = await photoFetchThumbnail(newId, 'preview', 2560)
     if (sid === store.session) {
       previewSrc.value = blobUrl; previewReady.value = true; gridError.value = false; phase.value = 'done'
     }
   } catch {
     if (sid === store.session) phase.value = 'done'
   }
-  try { const res = await client.get(`/photos/${newId}`); if (sid === store.session) photo.value = res.data } catch { /* */ }
-  try { const r = await client.get(`/favorites/check/${newId}`); if (sid === store.session) favorited.value = r.data.isFavorited } catch { /* */ }
-  try { const me = await client.get('/auth/me'); if (sid === store.session && auth.user) auth.user.roots = me.data.roots } catch { /* */ }
+  if (isShareMode.value) {
+    // 分享模式：从 store 中取当前照片的基本信息
+    const item = store.allItems.find(x => x.id === newId)
+    if (item) photo.value = { id: newId, fileName: (item as any).fileName || '', fileFormat: (item as any).fileFormat || '', width: (item as any).width, height: (item as any).height }
+  } else {
+    try { const res = await client.get(`/photos/${newId}`); if (sid === store.session) photo.value = res.data } catch { /* */ }
+    try { const r = await client.get(`/favorites/check/${newId}`); if (sid === store.session) favorited.value = r.data.isFavorited } catch { /* */ }
+    try { const me = await client.get('/auth/me'); if (sid === store.session && auth.user) auth.user.roots = me.data.roots } catch { /* */ }
+  }
 })
 
 function toggleFav() {
@@ -448,20 +483,24 @@ function onTouchEnd() {
 async function downloadOriginal() {
   const id = store.photoId
   if (!id) return
-  const token = localStorage.getItem('token') || ''
   try {
-    const res = await fetch(`${import.meta.env.BASE_URL}api/photos/${id}/file`, {
-      headers: { Authorization: `Bearer ${token}` }
-    })
+    const dlUrl = isShareMode.value
+      ? publicFileUrl(props.shareToken!, id)
+      : `${import.meta.env.BASE_URL}api/photos/${id}/file`
+    const headers: Record<string, string> = {}
+    if (!isShareMode.value) {
+      headers['Authorization'] = `Bearer ${localStorage.getItem('token') || ''}`
+    }
+    const res = await fetch(dlUrl, { headers })
     if (res.status === 404) { ElMessage.error('文件不存在或已被删除'); return }
     if (!res.ok) throw new Error('Download failed')
     const blob = await res.blob()
-    const url = URL.createObjectURL(blob)
+    const objUrl = URL.createObjectURL(blob)
     const a = document.createElement('a')
-    a.href = url
+    a.href = objUrl
     a.download = photo.value?.fileName || `${id}${getExt(blob.type)}`
     a.click()
-    URL.revokeObjectURL(url)
+    URL.revokeObjectURL(objUrl)
   } catch { /* */ }
 }
 function formatDateTime(val: string | null): string {
@@ -536,9 +575,9 @@ const displayPath = computed(() => {
       <img v-else :src="src" :class="[imgClass, slideSnapping ? 'pv-img--fade-out' : '']" :style="imgStyle" draggable="false" @error="gridError = true" />
       <!-- Carousel overlay: sibling div, only during show/done for swipe animation -->
       <div v-if="phase === 'show' || phase === 'done'" class="pv-carousel" :style="carouselStyle">
-        <div class="pv-carousel-cell" :style="{ left: 0 }"><img v-if="store.hasPrev" :src="thumbUrl(store.allItems[store.currentIndex-1]?.id || '', 'grid', 400)" class="pv-carousel-img" /></div>
+        <div class="pv-carousel-cell" :style="{ left: 0 }"><img v-if="store.hasPrev" :src="photoThumbUrl(store.allItems[store.currentIndex-1]?.id || '', 'grid', 400)" class="pv-carousel-img" /></div>
         <div class="pv-carousel-cell" :style="{ left: vw + 'px' }" />
-        <div class="pv-carousel-cell" :style="{ left: (vw * 2) + 'px' }"><img v-if="store.hasNext" :src="thumbUrl(store.allItems[store.currentIndex+1]?.id || '', 'grid', 400)" class="pv-carousel-img" /></div>
+        <div class="pv-carousel-cell" :style="{ left: (vw * 2) + 'px' }"><img v-if="store.hasNext" :src="photoThumbUrl(store.allItems[store.currentIndex+1]?.id || '', 'grid', 400)" class="pv-carousel-img" /></div>
       </div>
     </div>
 
@@ -552,16 +591,16 @@ const displayPath = computed(() => {
       <el-icon v-if="!previewReady" class="is-loading" :size="20" style="color:var(--el-text-color-secondary);margin-left:4px"><Loading /></el-icon>
       <span v-if="photo?.fileName" class="pv-filename" style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:13px;margin:0 8px;color:#fff;text-shadow:0 0 4px rgba(0,0,0,.8),0 0 2px rgba(0,0,0,.6)">{{ photo.fileName }}</span>
       <span v-if="store.hasPrev || store.hasNext" style="font-size:12px;color:var(--el-text-color-secondary);flex-shrink:0">{{ store.currentIndex + 1 }} / {{ store.allItems.length }}</span>
-      <el-button circle :icon="favorited ? 'StarFilled' : 'Star'" @click="toggleFav" :class="['glass-btn', favorited ? 'fav-active' : '']" />
-      <el-button circle :icon="'Download'" class="glass-btn" @click="downloadOriginal" />
-      <el-button circle :icon="'Delete'" class="glass-btn" @click="hidePhoto" style="color:#f56c6c" />
-      <el-button circle :icon="'Share'" class="glass-btn" @click="sharePhoto" />
-      <el-button circle :icon="'InfoFilled'" @click="showInfo = !showInfo" class="glass-btn" />
+      <el-button v-if="!isShareMode" circle :icon="favorited ? 'StarFilled' : 'Star'" @click="toggleFav" :class="['glass-btn', favorited ? 'fav-active' : '']" />
+      <el-button v-if="!isShareMode || allowDownload" circle :icon="'Download'" class="glass-btn" @click="downloadOriginal" />
+      <el-button v-if="!isShareMode" circle :icon="'Delete'" class="glass-btn" @click="hidePhoto" style="color:#f56c6c" />
+      <el-button v-if="!isShareMode" circle :icon="'Share'" class="glass-btn" @click="sharePhoto" />
+      <el-button v-if="!isShareMode || allowMetadata" circle :icon="'InfoFilled'" @click="showInfo = !showInfo" class="glass-btn" />
     </div>
 
-    <!-- Info panel — full height with map embed -->
+    <!-- Info panel — full height with map embed (分享模式需 allowMetadata 才显示) -->
     <Transition name="info-slide">
-      <div v-if="showInfo && photo" class="pv-info" :class="{ 'pv-info--snapping': infoSnapping }" @click.stop
+      <div v-if="showInfo && photo && (!isShareMode || allowMetadata)" class="pv-info" :class="{ 'pv-info--snapping': infoSnapping }" @click.stop
         @touchstart.passive="onInfoTouchStart" @touchmove="onInfoTouchMove" @touchend="onInfoTouchEnd"
         @mousedown="onInfoMouseDown"
         :style="infoDragY > 0 ? { transform: `translateY(${infoDragY}px)` } : undefined">

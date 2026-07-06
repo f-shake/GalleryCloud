@@ -1,5 +1,6 @@
 using GalleryCloud.Api.Data;
 using GalleryCloud.Api.Dtos;
+using GalleryCloud.Api.Helpers;
 using GalleryCloud.Api.Services;
 using GalleryCloud.Core.Entities;
 using GalleryCloud.Core.Enums;
@@ -176,13 +177,13 @@ public class PhotosController : ControllerBase
         {
             var result = await _thumbnailService.GetThumbnailAsync(id, thumbSize, w, HttpContext.RequestAborted);
             if (result == null) return NotFound();
-            return new FileContentResult(await ReadFullyAsync(result), "image/webp");
+            return new FileContentResult(await StreamHelper.ReadFullyAsync(result), "image/webp");
         }
 
         // 1. Try cache — if hit, return bytes directly
         var cached = await _thumbnailService.TryGetCachedAsync(id, thumbSize, w);
         if (cached != null)
-            return new FileContentResult(await ReadFullyAsync(cached), "image/webp");
+            return new FileContentResult(await StreamHelper.ReadFullyAsync(cached), "image/webp");
 
         // 2. Not cached — grid: enqueue background generation, return 202 immediately
         _thumbnailService.EnqueueAsync(id, thumbSize, w);
@@ -367,10 +368,4 @@ public class PhotosController : ControllerBase
         return Ok(new MessageResult("Renamed"));
     }
 
-    private static async Task<byte[]> ReadFullyAsync(Stream stream)
-    {
-        using var ms = new MemoryStream();
-        await stream.CopyToAsync(ms);
-        return ms.ToArray();
-    }
 }
