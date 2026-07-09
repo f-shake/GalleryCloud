@@ -7,9 +7,11 @@ import ShareDialog from './ShareDialog.vue'
 
 const props = withDefaults(defineProps<{
   showHide?: boolean
+  showShare?: boolean
   onPreset?: (preset: DatePreset) => void | Promise<void>
 }>(), {
   showHide: true,
+  showShare: true,
 })
 
 const store = useSelectionStore()
@@ -74,7 +76,7 @@ function openShare() {
       <el-button v-if="showHide" size="small" type="danger" plain @click="batchHide">
         <el-icon style="margin-right:2px"><Delete /></el-icon>隐藏
       </el-button>
-      <el-button size="small" type="primary" plain @click="openShare">
+      <el-button v-if="showShare" size="small" type="primary" plain @click="openShare">
         <el-icon style="margin-right:2px"><Share /></el-icon>分享
       </el-button>
     </template>

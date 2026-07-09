@@ -52,4 +52,6 @@ const store = useSelectionStore()
 .pgt-btn { color: var(--el-text-color-secondary) !important; }
 /* 带文本的图标按钮，图标与文字之间留间距（而非 icon prop 的纯图标按钮不受影响） */
 .pgt-row .el-button:not(.pgt-btn) .el-icon { margin-right: 4px; }
+/* 统一行内 flex 按钮的垂直居中 */
+.pgt-row .el-button { display: inline-flex; align-items: center; }
 </style>

@@ -100,7 +100,7 @@ onMounted(loadTrash)
             <el-icon><Select /></el-icon>选择
           </el-button>
           <template v-else>
-            <BatchToolbar :show-hide="false" />
+            <BatchToolbar :show-hide="false" :show-share="false" />
             <el-button size="small" type="primary" @click="batchRestore">
               <el-icon style="margin-right:2px"><Refresh /></el-icon>恢复选中
             </el-button>
@@ -125,9 +125,9 @@ onMounted(loadTrash)
         @selection-toggle="selStore.toggle"
       >
         <template #cell-footer="{ photo }">
-          <div class="trash-overlay" :class="{ 'trash-overlay--no-date': cellWidth < 120 }">
+          <div v-if="!selStore.enabled" class="trash-overlay" :class="{ 'trash-overlay--no-date': cellWidth < 120 }">
             <span v-if="cellWidth >= 120" class="trash-date">{{ formatLocalDateTime(photo.deletedAt) }}</span>
-            <el-button v-if="!selStore.enabled" size="small" text style="color:#fff" @click.stop="restoreSingle(photo.id)">恢复</el-button>
+            <el-button size="small" text style="color:#fff" @click.stop="restoreSingle(photo.id)">恢复</el-button>
           </div>
         </template>
       </PhotoGrid>
