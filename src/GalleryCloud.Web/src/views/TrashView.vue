@@ -134,6 +134,7 @@ function formatDeletedAt(dateStr: string): string {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
   gap: 8px;
+  align-content: start;
 }
 .trash-item {
   position: relative;

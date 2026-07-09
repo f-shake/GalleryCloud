@@ -33,7 +33,7 @@ export const useSelectionStore = defineStore('selection', () => {
   // The current view's full photo list (used for selectToday/Month/Year range calculation)
   const viewPhotos = ref<{ id: string; takenAt: string | null }[]>([])
 
-  // 服务端全选/范围选择时的加载状态
+  // 服务端范围选择时的加载状态
   const bulkLoading = ref(false)
 
   function enable(source?: string) {
@@ -63,30 +63,6 @@ export const useSelectionStore = defineStore('selection', () => {
     }
   }
 
-  /** 服务端全选（解决 TimelineView lazy-load 下 viewPhotos 不全的问题） */
-  async function selectAllFromServer() {
-    bulkLoading.value = true
-    try {
-      const res = await client.get('/search', { params: { limit: 1000000 } })
-      const serverPhotos = (res.data.photos as any[]).map(p => ({
-        id: p.id as string,
-        takenAt: (p.takenAt as string) || null,
-      }))
-      // 合并到 viewPhotos（累积，不丢失已有的）
-      const existingIds = new Set(viewPhotos.value.map(p => p.id))
-      const newItems = serverPhotos.filter(p => !existingIds.has(p.id))
-      if (newItems.length > 0) {
-        viewPhotos.value = [...viewPhotos.value, ...newItems]
-      }
-      selectedIds.value = new Set(serverPhotos.map(p => p.id))
-    } catch {
-      // 服务端失败时不改变已选状态
-      return
-    } finally {
-      bulkLoading.value = false
-    }
-  }
-
   function clearSelection() {
     selectedIds.value = new Set()
   }
@@ -95,7 +71,7 @@ export const useSelectionStore = defineStore('selection', () => {
     viewPhotos.value = photos
   }
 
-  /** 选择该日期范围内的所有照片（从 viewPhotos 或服务端搜索 API 获取） */
+  /** 切换某个日期范围内的全部照片：已全选则取消，否则全选 */
   async function selectByDatePreset(preset: DatePreset) {
     const now = new Date()
     const todayStr = now.toISOString().substring(0, 10)
@@ -130,20 +106,30 @@ export const useSelectionStore = defineStore('selection', () => {
       }
     }
 
+    /** 获取目标 ID 集合后执行 toggle：已全选则取消，否则全选 */
+    function applyToggle(targetIds: Set<string>) {
+      if (targetIds.size === 0) return
+      const cur = selectedIds.value
+      const allSelected = [...targetIds].every(id => cur.has(id))
+      const next = new Set(cur)
+      if (allSelected) {
+        for (const id of targetIds) next.delete(id)
+      } else {
+        for (const id of targetIds) next.add(id)
+      }
+      selectedIds.value = next
+    }
+
     // "全部"：从服务端抓取所有照片
     if (!from) {
       bulkLoading.value = true
       try {
         const res = await client.get('/search', { params: { limit: 1000000 } })
-        const serverPhotos = (res.data.photos as any[]).map(p => ({
-          id: p.id as string,
-          takenAt: (p.takenAt as string) || null,
-        }))
-        viewPhotos.value = serverPhotos
-        selectedIds.value = new Set(serverPhotos.map(p => p.id))
+        const serverIds = new Set((res.data.photos as any[]).map(p => p.id as string))
+        applyToggle(serverIds)
       } catch {
         // 服务端失败时回退到本地
-        selectedIds.value = new Set(viewPhotos.value.map(p => p.id))
+        applyToggle(new Set(viewPhotos.value.map(p => p.id)))
       } finally {
         bulkLoading.value = false
       }
@@ -155,34 +141,19 @@ export const useSelectionStore = defineStore('selection', () => {
       const ids = viewPhotos.value
         .filter(p => p.takenAt?.substring(0, 10) === todayStr)
         .map(p => p.id)
-      selectedIds.value = new Set(ids)
+      applyToggle(new Set(ids))
       return
     }
 
-    // 月/年/全部：从服务端搜索 API 获取该范围的所有照片 ID
+    // 月/年：从服务端搜索 API 获取该范围的所有照片 ID
     bulkLoading.value = true
     try {
       const params: Record<string, string | number> = { limit: 1000000 }
       if (from) params.from = from
       if (to) params.to = to
       const res = await client.get('/search', { params })
-      const serverPhotos = (res.data.photos as any[]).map(p => ({
-        id: p.id as string,
-        takenAt: (p.takenAt as string) || null,
-      }))
-
-      // 合并到 viewPhotos 中（累积，不丢失已有的）
-      const existingIds = new Set(viewPhotos.value.map(p => p.id))
-      const merged = [...viewPhotos.value]
-      for (const p of serverPhotos) {
-        if (!existingIds.has(p.id)) {
-          merged.push(p)
-          existingIds.add(p.id)
-        }
-      }
-      viewPhotos.value = merged
-
-      selectedIds.value = new Set(serverPhotos.map(p => p.id))
+      const serverIds = new Set((res.data.photos as any[]).map(p => p.id as string))
+      applyToggle(serverIds)
     } catch {
       // 服务端失败时回退到本地数据
       const ids = viewPhotos.value
@@ -192,7 +163,7 @@ export const useSelectionStore = defineStore('selection', () => {
           return date >= from! && date <= to!
         })
         .map(p => p.id)
-      selectedIds.value = new Set(ids)
+      applyToggle(new Set(ids))
     } finally {
       bulkLoading.value = false
     }
@@ -202,7 +173,7 @@ export const useSelectionStore = defineStore('selection', () => {
 
   return {
     enabled, selectedIds, selectionOrigin, viewPhotos, bulkLoading, count,
-    enable, disable, toggle, selectAll, selectAllFromServer, clearSelection,
+    enable, disable, toggle, selectAll, clearSelection,
     setViewPhotos, selectByDatePreset,
   }
 })

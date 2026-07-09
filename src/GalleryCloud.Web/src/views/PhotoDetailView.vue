@@ -515,9 +515,47 @@ async function hidePhoto() {
   if (!store.photoId) return
   try {
     await ElMessageBox.confirm('确定隐藏这张照片？', '隐藏照片', { confirmButtonText: '确定', cancelButtonText: '取消', type: 'warning' })
-    await client.delete(`/photos/${store.photoId}`)
-    ElMessage.success('已隐藏')
-    store.close()
+    const hiddenId = store.photoId
+    const hiddenIdx = store.allItems.findIndex(i => i.id === hiddenId)
+    if (hiddenIdx < 0) { store.close(); return }
+
+    const hasNext = hiddenIdx < store.allItems.length - 1
+    const hasPrev = hiddenIdx > 0
+
+    if (hasNext || hasPrev) {
+      // 手动播滑动动画（不依赖 commitSlide，避免 navigateNext/Prev 的索引问题）
+      const deletePromise = client.delete(`/photos/${hiddenId}`)
+      // 动画期间展示下一张/前一张的 carousel 缩略图
+      slideSnapping.value = true
+      slideOffset.value = hasNext ? -2 * vw.value : 0
+      setTimeout(() => {
+        // 动画结束：先移除隐藏照片，再设 photoId（此时 allItems 已干净）
+        store.allItems.splice(hiddenIdx, 1)
+        const targetId = hasNext
+          ? store.allItems[hiddenIdx].id       // 下一张已前移到 hiddenIdx
+          : store.allItems[hiddenIdx - 1].id   // 前一张仍在 hiddenIdx - 1
+        store.photoId = targetId
+        store.session++
+        // 重置 carousel
+        requestAnimationFrame(() => {
+          slideSnapping.value = false
+          slideOffset.value = CAROUSEL_BASE * vw.value
+        })
+      }, 300)
+      // 等动画 + 删除都完成
+      await Promise.all([
+        deletePromise,
+        new Promise(r => setTimeout(r, 350)),
+      ])
+      ElMessage.success('已隐藏')
+      window.dispatchEvent(new CustomEvent('photo-hidden', { detail: { id: hiddenId } }))
+    } else {
+      // 没有前后张：直接删
+      await client.delete(`/photos/${hiddenId}`)
+      ElMessage.success('已隐藏')
+      window.dispatchEvent(new CustomEvent('photo-hidden', { detail: { id: hiddenId } }))
+      store.close()
+    }
   } catch { /* */ }
 }
 
@@ -674,7 +712,7 @@ const displayPath = computed(() => {
 
 <style scoped>
 .pv-bg {
-  position: fixed; inset: 0; z-index: 9998;
+  position: fixed; inset: 0; z-index: 600;
   background: transparent;
   transition: background .35s ease;
   pointer-events: none;
@@ -682,7 +720,7 @@ const displayPath = computed(() => {
 .pv-bg--on { background: var(--el-bg-color); pointer-events: auto; }
 
 .pv-img-wrap {
-  position: fixed; top: 0; right: 0; left: 0; z-index: 9999;
+  position: fixed; top: 0; right: 0; left: 0; z-index: 700;
   height: 100%;
   display: flex; align-items: center; justify-content: center;
   overflow: hidden;
@@ -718,7 +756,7 @@ const displayPath = computed(() => {
 .pv-img--fade-out { opacity: 0 !important; transition: opacity .2s ease !important; }
 
 .pv-topbar {
-  position: fixed; top: 0; left: 0; right: 0; z-index: 10000;
+  position: fixed; top: 0; left: 0; right: 0; z-index: 800;
   display: flex; align-items: center; gap: 8px;
   padding: 12px 16px; pointer-events: none;
 }
@@ -731,7 +769,7 @@ const displayPath = computed(() => {
 .fav-active { color: #f59e0b !important; background: rgba(245,158,11,.25) !important; }
 
 .pv-info {
-  position: fixed; left: 0; right: 0; bottom: 0; height: 40%; z-index: 10000;
+  position: fixed; left: 0; right: 0; bottom: 0; height: 40%; z-index: 800;
   background: var(--el-bg-color);
   display: flex; flex-direction: column;
   padding: 12px 0 0;
@@ -782,7 +820,7 @@ const displayPath = computed(() => {
 /* Desktop nav arrows */
 .pv-nav {
   position: fixed; top: 50%; transform: translateY(-50%);
-  z-index: 10000; width: 48px; height: 64px;
+  z-index: 800; width: 48px; height: 64px;
   display: flex; align-items: center; justify-content: center;
   cursor: pointer; color: var(--el-text-color-primary);
   background: var(--el-fill-color-light); backdrop-filter: blur(8px);

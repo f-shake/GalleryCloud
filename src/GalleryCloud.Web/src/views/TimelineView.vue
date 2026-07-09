@@ -198,8 +198,12 @@ onMounted(async () => {
   ready.value = true
   loadVisibleDays()
   window.addEventListener('resize', onTlResize)
+  window.addEventListener('photo-hidden', onPhotoHidden)
 })
-onUnmounted(() => window.removeEventListener('resize', onTlResize))
+onUnmounted(() => {
+  window.removeEventListener('resize', onTlResize)
+  window.removeEventListener('photo-hidden', onPhotoHidden)
+})
 
 function onJumpToDate(dateStr: string) {
   const target = dateStr.substring(0, 10)
@@ -225,9 +229,9 @@ function isDayAllSelected(date: string): boolean {
     return dd.ids.every(p => selStore.selectedIds.has(p.id))
   }
   // 兜底：用 viewPhotos（可能被服务端全选填充过）
-  const dayPhotos = selStore.viewPhotos.filter(p => p.takenAt?.startsWith(date))
+  const dayPhotos = selStore.viewPhotos.filter((p: { id: string; takenAt: string | null }) => p.takenAt?.startsWith(date))
   if (dayPhotos.length > 0) {
-    return dayPhotos.every(p => selStore.selectedIds.has(p.id))
+    return dayPhotos.every((p: { id: string; takenAt: string | null }) => selStore.selectedIds.has(p.id))
   }
   return false
 }
@@ -250,6 +254,26 @@ async function selectDay(date: string) {
     for (const id of dayIds) newSet.add(id)
   }
   selStore.selectAll(Array.from(newSet))
+}
+
+/** 批量隐藏后刷新 timeline */
+async function onBatchHide(_hiddenIds: string[]) {
+  await tl.init()
+  await tl.loadNullDateIds()
+  await rebuildRows()
+  loadVisibleDays()
+}
+
+/** 单张隐藏后刷新 timeline */
+async function onPhotoHidden(e: Event) {
+  const id = (e as CustomEvent).detail.id
+  // 从已加载的照片中移除
+  const idx = tl.allLoadedItems.value.findIndex(p => p.id === id)
+  if (idx >= 0) {
+    tl.allLoadedItems.value.splice(idx, 1)
+    await rebuildRows()
+    loadVisibleDays()
+  }
 }
 
 // Map any scrollTop to a date using daily density data
@@ -335,7 +359,7 @@ function onTouchEnd() {
           <el-button v-if="!selStore.enabled" text size="small" @click="selStore.enable('timeline')">
             <el-icon><Select /></el-icon>选择
           </el-button>
-          <BatchToolbar v-else />
+          <BatchToolbar v-else @batch-hide="onBatchHide" />
         </template>
       </PhotoGridToolbar>
     </div>

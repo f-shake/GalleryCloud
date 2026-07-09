@@ -25,6 +25,19 @@ watch(photos, (val) => {
 
 onMounted(() => loadMore())
 
+/** 批量隐藏后从列表中移除 */
+function onBatchHide(hiddenIds: string[]) {
+  const ids = new Set(hiddenIds)
+  photos.value = photos.value.filter((p: any) => !ids.has(p.id))
+}
+
+/** 单张隐藏后从列表中移除 */
+function onPhotoHidden(e: Event) {
+  const id = (e as CustomEvent).detail.id
+  const idx = photos.value.findIndex((p: any) => p.id === id)
+  if (idx >= 0) photos.value.splice(idx, 1)
+}
+
 function onScroll() {
   if (!containerRef.value) return
   const el = containerRef.value
@@ -32,10 +45,13 @@ function onScroll() {
 }
 
 onMounted(() => {
+  loadMore()
   containerRef.value?.addEventListener('scroll', onScroll, { passive: true })
+  window.addEventListener('photo-hidden', onPhotoHidden)
 })
 onUnmounted(() => {
   containerRef.value?.removeEventListener('scroll', onScroll)
+  window.removeEventListener('photo-hidden', onPhotoHidden)
 })
 </script>
 
@@ -47,7 +63,7 @@ onUnmounted(() => {
           <el-button v-if="!selStore.enabled" text size="small" @click="selStore.enable('favorites')">
             <el-icon><Select /></el-icon>选择
           </el-button>
-          <BatchToolbar v-else />
+          <BatchToolbar v-else @batch-hide="onBatchHide" />
         </template>
       </PhotoGridToolbar>
     </div>

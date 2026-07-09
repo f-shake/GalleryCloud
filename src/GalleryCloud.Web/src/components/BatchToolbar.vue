@@ -14,7 +14,7 @@ const props = withDefaults(defineProps<{
 const store = useSelectionStore()
 
 const emit = defineEmits<{
-  'batch-hide': []
+  'batch-hide': [ids: string[]]
 }>()
 
 const showShareDialog = ref(false)
@@ -34,10 +34,11 @@ async function batchHide() {
       cancelButtonText: '取消',
       type: 'warning',
     })
-    await client.patch('/photos/batch/delete', { ids: Array.from(store.selectedIds) })
+    const hiddenIds = Array.from(store.selectedIds)
+    await client.patch('/photos/batch/delete', { ids: hiddenIds })
     ElMessage.success(`已隐藏 ${store.count} 张照片`)
     store.disable()
-    emit('batch-hide')
+    emit('batch-hide', hiddenIds)
   } catch { /* cancelled or error */ }
 }
 
@@ -53,20 +54,19 @@ function openShare() {
 <template>
   <div class="batch-toolbar">
     <span class="batch-label">全选范围：</span>
-    <el-button size="small" :type="'default'" :loading="store.bulkLoading" @click="selectPreset('today')">今天</el-button>
-    <el-button size="small" :type="'default'" :loading="store.bulkLoading" @click="selectPreset('month')">本月</el-button>
-    <el-button size="small" :type="'default'" :loading="store.bulkLoading" @click="selectPreset('year')">今年</el-button>
-    <el-button size="small" :type="'default'" :loading="store.bulkLoading" @click="selectPreset('all')">全部</el-button>
-    <div class="batch-sep" />
-    <el-button size="small" :loading="store.bulkLoading" @click="store.selectAllFromServer()">全选</el-button>
-    <el-button size="small" @click="store.clearSelection()">取消全选</el-button>
-    <div class="batch-sep" />
-    <el-button v-if="showHide" size="small" type="danger" plain @click="batchHide">
-      <el-icon style="margin-right:2px"><Delete /></el-icon>隐藏
-    </el-button>
-    <el-button size="small" type="primary" plain @click="openShare">
-      <el-icon style="margin-right:2px"><Share /></el-icon>分享
-    </el-button>
+    <el-button size="small" :disabled="store.bulkLoading" @click="selectPreset('today')">今天</el-button>
+    <el-button size="small" :disabled="store.bulkLoading" @click="selectPreset('month')">本月</el-button>
+    <el-button size="small" :disabled="store.bulkLoading" @click="selectPreset('year')">今年</el-button>
+    <el-button size="small" :disabled="store.bulkLoading" @click="selectPreset('all')">全部</el-button>
+    <template v-if="store.count > 0">
+      <div class="batch-sep" />
+      <el-button v-if="showHide" size="small" type="danger" plain @click="batchHide">
+        <el-icon style="margin-right:2px"><Delete /></el-icon>隐藏
+      </el-button>
+      <el-button size="small" type="primary" plain @click="openShare">
+        <el-icon style="margin-right:2px"><Share /></el-icon>分享
+      </el-button>
+    </template>
 
     <ShareDialog
       v-model="showShareDialog"

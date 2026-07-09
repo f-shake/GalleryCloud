@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, watch, onMounted, computed } from 'vue'
+import { ref, watch, onMounted, onUnmounted, computed } from 'vue'
 import { usePhotoGrid } from '../composables/usePhotoGrid'
 import { useSelectionStore } from '../stores/selectionStore'
 import { toDateInt } from '../stores/photoViewStore'
@@ -92,6 +92,10 @@ onMounted(async () => {
   }
   catch { /* */ }
   finally { treeLoading.value = false }
+  window.addEventListener('photo-hidden', onPhotoHidden)
+})
+onUnmounted(() => {
+  window.removeEventListener('photo-hidden', onPhotoHidden)
 })
 
 function addKeys(nodes: FolderNode[]): FolderNode[] {
@@ -116,6 +120,19 @@ async function onNodeClick(node: FolderNode) {
   }
   catch { /* */ }
   finally { loading.value = false }
+}
+
+/** 批量隐藏后从列表中移除 */
+function onBatchHide(hiddenIds: string[]) {
+  const ids = new Set(hiddenIds)
+  photos.value = photos.value.filter((p: any) => !ids.has(p.id))
+}
+
+/** 单张隐藏后从列表中移除 */
+function onPhotoHidden(e: Event) {
+  const id = (e as CustomEvent).detail.id
+  const idx = photos.value.findIndex((p: any) => p.id === id)
+  if (idx >= 0) photos.value.splice(idx, 1)
 }
 
 const defaultExpanded = computed(() => tree.value.map(n => n._key))
@@ -149,7 +166,7 @@ const defaultExpanded = computed(() => tree.value.map(n => n._key))
         <PhotoGridToolbar :count="photos.length">
           <template #left>
             <template v-if="selStore.enabled">
-              <BatchToolbar />
+              <BatchToolbar @batch-hide="onBatchHide" />
             </template>
             <template v-else>
               <span style="font-size:13px;color:var(--el-text-color-secondary)">{{ selPath || (selRootId ? '' : '选择文件夹') }}</span>
