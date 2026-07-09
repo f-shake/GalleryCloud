@@ -183,7 +183,8 @@ function findPhotoIdAtPoint(clientX: number, clientY: number): string | null {
                   <polyline points="5,12 10,17 19,8" />
                 </svg>
               </div>
-              <img v-lazy-img="thumbUrl(p.id, 'grid', 400)" class="thumb-img" />
+              <img v-lazy-img="p.thumbUrl || thumbUrl(p.id, 'grid', 400)" class="thumb-img" />
+              <slot name="cell-footer" :photo="p" />
             </div>
           </div>
         </template>

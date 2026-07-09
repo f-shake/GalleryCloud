@@ -1,12 +1,14 @@
 <script setup lang="ts">
-import { ref, watch, onMounted } from 'vue'
+import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import { useSelectionStore } from '../stores/selectionStore'
+import { usePhotoGrid } from '../composables/usePhotoGrid'
 import client from '../api/client'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { thumbUrl } from '../composables/useThumbnailUrl'
 import { usePhotoClick, toNavItems } from '../composables/usePhotoClick'
 import { useLongPressSelection } from '../composables/useLongPressSelection'
+import { formatLocalDateTime } from '../utils/date'
 import PhotoGridToolbar from '../components/PhotoGridToolbar.vue'
+import PhotoGrid from '../components/PhotoGrid.vue'
 import BatchToolbar from '../components/BatchToolbar.vue'
 
 interface TrashPhoto {
@@ -20,8 +22,31 @@ const photos = ref<TrashPhoto[]>([])
 const total = ref(0)
 const loading = ref(false)
 
+const { columns } = usePhotoGrid()
 const { onPhotoClick } = usePhotoClick(() => toNavItems(photos.value))
 const { onTouchStart, onTouchMove, onTouchEnd } = useLongPressSelection()
+
+const gridEl = ref<HTMLElement | null>(null)
+const gridWidth = ref(0)
+let resizeObs: ResizeObserver | null = null
+
+onMounted(() => {
+  if (gridEl.value) {
+    gridWidth.value = gridEl.value.clientWidth
+    resizeObs = new ResizeObserver(entries => {
+      gridWidth.value = entries[0]?.contentRect.width ?? 0
+    })
+    resizeObs.observe(gridEl.value)
+  }
+})
+onUnmounted(() => resizeObs?.disconnect())
+
+/** 每个缩略格的实际宽度 ≈ 容器宽度减去间隙再除以列数 */
+const cellWidth = computed(() => {
+  if (!gridWidth.value || !columns.value) return 0
+  const gaps = (columns.value - 1) * 4
+  return (gridWidth.value - gaps) / columns.value
+})
 
 watch(photos, (val) => {
   selStore.setViewPhotos(val.map(p => ({ id: p.id, takenAt: p.takenAt })))
@@ -64,14 +89,6 @@ async function batchRestore() {
 }
 
 onMounted(loadTrash)
-
-function formatDeletedAt(dateStr: string): string {
-  if (!dateStr) return ''
-  const d = new Date(dateStr)
-  if (isNaN(d.getTime())) return dateStr
-  const pad = (n: number) => n.toString().padStart(2, '0')
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`
-}
 </script>
 
 <template>
@@ -98,25 +115,22 @@ function formatDeletedAt(dateStr: string): string {
       <el-icon class="is-loading" :size="28"><Loading /></el-icon>
     </div>
 
-    <div v-else-if="photos.length" class="trash-body">
-      <div
-        v-for="p in photos"
-        :key="p.id"
-        class="trash-item"
-        :class="{ 'trash-item--selected': selStore.enabled && selStore.selectedIds.has(p.id) }"
-        @click="selStore.enabled ? selStore.toggle(p.id) : onPhotoClick(p.id, $event)"
+    <div v-else-if="photos.length" ref="gridEl" class="trash-body">
+      <PhotoGrid
+        :photos="photos"
+        :columns="columns"
+        :selection-mode="selStore.enabled"
+        :selected-ids="selStore.selectedIds"
+        @photo-click="onPhotoClick"
+        @selection-toggle="selStore.toggle"
       >
-        <img :src="thumbUrl(p.id, 'grid', 400)" class="trash-thumb" loading="lazy" />
-        <div v-if="selStore.enabled" class="trash-check" :class="{ 'trash-check--on': selStore.selectedIds.has(p.id) }">
-          <svg v-if="selStore.selectedIds.has(p.id)" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
-            <polyline points="5,12 10,17 19,8" />
-          </svg>
-        </div>
-        <div class="trash-overlay">
-          <span class="trash-date">已隐藏 {{ formatDeletedAt(p.deletedAt) }}</span>
-          <el-button v-if="!selStore.enabled" size="small" text style="color:#fff" @click.stop="restoreSingle(p.id)">恢复</el-button>
-        </div>
-      </div>
+        <template #cell-footer="{ photo }">
+          <div class="trash-overlay" :class="{ 'trash-overlay--no-date': cellWidth < 120 }">
+            <span v-if="cellWidth >= 120" class="trash-date">{{ formatLocalDateTime(photo.deletedAt) }}</span>
+            <el-button v-if="!selStore.enabled" size="small" text style="color:#fff" @click.stop="restoreSingle(photo.id)">恢复</el-button>
+          </div>
+        </template>
+      </PhotoGrid>
     </div>
   </div>
 </template>
@@ -129,47 +143,17 @@ function formatDeletedAt(dateStr: string): string {
   padding: 4px 16px;
   background: var(--el-bg-color-page);
 }
-.trash-body {
-  flex: 1; overflow-y: auto; padding: 8px;
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
-  gap: 8px;
-  align-content: start;
-}
-.trash-item {
-  position: relative;
-  border-radius: 6px;
-  overflow: hidden;
-  cursor: pointer;
-  aspect-ratio: 1;
-  background: var(--el-fill-color-light);
-}
-.trash-item--selected { outline: 3px solid var(--el-color-primary); outline-offset: -3px; }
-.trash-thumb {
-  width: 100%; height: 100%;
-  object-fit: cover;
-  opacity: 0.6;
-}
-.trash-check {
-  position: absolute; top: 6px; left: 6px; z-index: 2;
-  width: 22px; height: 22px; border-radius: 50%;
-  border: 2px solid rgba(255,255,255,0.9);
-  background: rgba(0,0,0,0.3);
-  display: flex; align-items: center; justify-content: center;
-  transition: background .15s;
-  pointer-events: none;
-}
-.trash-check--on { background: var(--el-color-primary); border-color: var(--el-color-primary); }
+.trash-body { flex: 1; min-height: 0; overflow: hidden; padding: 8px; }
+/* dim thumbnails */
+.trash-body :deep(.thumb-img) { opacity: 0.6; }
 .trash-overlay {
-  position: absolute;
-  bottom: 0; left: 0; right: 0;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
+  position: absolute; bottom: 0; left: 0; right: 0;
+  display: flex; align-items: center; justify-content: space-between;
   padding: 4px 8px;
   background: linear-gradient(transparent, rgba(0,0,0,0.7));
-  font-size: 11px;
-  color: #fff;
+  font-size: 11px; color: #fff;
+  pointer-events: auto;
 }
+.trash-overlay--no-date { justify-content: flex-end; }
 .trash-date { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 </style>

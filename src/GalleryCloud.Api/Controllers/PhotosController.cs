@@ -219,6 +219,7 @@ public class PhotosController : ControllerBase
             return Unauthorized();
 
         var photos = await _db.Photos
+            .IgnoreQueryFilters()
             .Where(p => request.Ids.Contains(p.Id) && p.UserId == _userContext.UserId && p.IsDeleted)
             .ToListAsync();
 
@@ -274,6 +275,7 @@ public class PhotosController : ControllerBase
             return Unauthorized();
 
         var photo = await _db.Photos
+            .IgnoreQueryFilters()
             .FirstOrDefaultAsync(p => p.Id == id && p.UserId == _userContext.UserId && p.IsDeleted);
 
         if (photo == null)

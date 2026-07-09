@@ -503,12 +503,9 @@ async function downloadOriginal() {
     URL.revokeObjectURL(objUrl)
   } catch { /* */ }
 }
+import { formatLocalDateTime } from '../utils/date'
 function formatDateTime(val: string | null): string {
-  if (!val) return ''
-  const d = new Date(val)
-  if (isNaN(d.getTime())) return val
-  const pad = (n: number) => n.toString().padStart(2, '0')
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`
+  return formatLocalDateTime(val, true)
 }
 
 async function hidePhoto() {

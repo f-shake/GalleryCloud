@@ -2,6 +2,7 @@
 import { ref, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import client from '../api/client'
+import { formatLocalDateTime, parseDateSafe } from '../utils/date'
 
 interface ShareItem {
   id: string; name: string; token: string
@@ -68,16 +69,9 @@ async function deleteShare(id: string) {
   } catch { /* */ }
 }
 
-function formatDate(dateStr: string | null): string {
-  if (!dateStr) return '永久'
-  const d = new Date(dateStr)
-  if (isNaN(d.getTime())) return dateStr
-  return d.toLocaleDateString('zh-CN') + ' ' + d.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })
-}
-
 function isExpired(expiresAt: string | null): boolean {
   if (!expiresAt) return false
-  return new Date(expiresAt) < new Date()
+  return parseDateSafe(expiresAt) < new Date()
 }
 </script>
 
@@ -99,8 +93,8 @@ function isExpired(expiresAt: string | null): boolean {
             <div class="sv-card-name">{{ s.name }}</div>
             <div class="sv-card-meta">
               <span>{{ s.photoCount }} 张照片</span>
-              <span>到期：{{ formatDate(s.expiresAt) }}</span>
-              <span>创建于 {{ formatDate(s.createdAt) }}</span>
+              <span>到期：{{ s.expiresAt ? formatLocalDateTime(s.expiresAt) : '永久' }}</span>
+              <span>创建于 {{ formatLocalDateTime(s.createdAt) }}</span>
               <span>
                 <el-tag v-if="!s.allowDownload" size="small" type="warning">禁止下载</el-tag>
                 <el-tag v-if="!s.allowMetadata" size="small" type="warning">隐藏元数据</el-tag>

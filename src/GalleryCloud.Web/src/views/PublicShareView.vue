@@ -2,11 +2,15 @@
 import { ref, onMounted, computed } from 'vue'
 import { useRoute } from 'vue-router'
 import { usePhotoViewStore } from '../stores/photoViewStore'
+import { usePhotoGrid } from '../composables/usePhotoGrid'
+import PhotoGrid from '../components/PhotoGrid.vue'
+import PhotoGridToolbar from '../components/PhotoGridToolbar.vue'
 import PhotoDetailView from './PhotoDetailView.vue'
 
 interface SharePhoto {
   id: string; fileName: string; fileFormat: string
   width: number | null; height: number | null
+  thumbUrl?: string
 }
 
 interface ShareInfo {
@@ -24,16 +28,15 @@ const loading = ref(true)
 const error = ref('')
 const shareInfo = ref<ShareInfo | null>(null)
 
+const { columns } = usePhotoGrid()
 const store = usePhotoViewStore()
 
-/** 分享页的点击处理：与 usePhotoClick 功能相同，但传递丰富的 item 数据给 store */
 function onPhotoClick(id: string, e: MouseEvent) {
   const el = e.currentTarget as HTMLElement
   const img = el.querySelector('img')
   const rect = img
     ? { x: img.getBoundingClientRect().left, y: img.getBoundingClientRect().top, width: img.width, height: img.height }
     : { x: el.offsetLeft, y: el.offsetTop, width: el.offsetWidth, height: el.offsetHeight }
-  // 传递完整 photo 数据（fileName 等），供 PhotoDetailView 分享模式使用
   const items = photos.value.map(p => ({ ...p, takenAtDate: null })) as any
   store.show(id, rect, img?.src, items)
 }
@@ -45,19 +48,13 @@ onMounted(async () => {
     const data = await r.json()
     shareInfo.value = data.share || null
     shareName.value = data.share?.name || ''
-    photos.value = data.photos || []
+    photos.value = (data.photos || []).map((p: any) => ({
+      ...p,
+      thumbUrl: `${import.meta.env.BASE_URL}api/public/shares/${token}/photos/${p.id}/thumbnail?size=grid&w=400`,
+    }))
   } catch { error.value = '加载失败' }
   finally { loading.value = false }
 })
-
-function fileSizeLabel(w: number | null, h: number | null): string {
-  if (w && h) return `${w} × ${h}`
-  return ''
-}
-
-function thumbUrl(id: string): string {
-  return `${import.meta.env.BASE_URL}api/public/shares/${token}/photos/${id}/thumbnail?size=grid&w=400`
-}
 
 const shareToken = computed(() => token)
 const allowDownload = computed(() => shareInfo.value?.allowDownload ?? true)
@@ -66,35 +63,25 @@ const allowMetadata = computed(() => shareInfo.value?.allowMetadata ?? true)
 
 <template>
   <div class="ps-wrap">
-    <!-- 加载中 -->
-    <div v-if="loading" class="ps-loading">
+    <div v-if="loading" class="ps-msg">
       <el-icon class="is-loading" :size="32"><Loading /></el-icon>
     </div>
-
-    <!-- 错误 -->
-    <div v-else-if="error" class="ps-error">{{ error }}</div>
-
-    <!-- 内容 -->
+    <div v-else-if="error" class="ps-msg ps-error">{{ error }}</div>
     <template v-else>
-      <div class="ps-header">
-        <h2>{{ shareName }}</h2>
-        <span class="ps-count">{{ photos.length }} 张照片</span>
-      </div>
-
+      <PhotoGridToolbar :count="photos.length">
+        <template #left>
+          <span style="font-weight:600;font-size:14px">{{ shareName }}</span>
+        </template>
+      </PhotoGridToolbar>
       <div class="ps-grid">
-        <div
-          v-for="p in photos"
-          :key="p.id"
-          class="ps-cell"
-          @click="onPhotoClick(p.id, $event)"
-        >
-          <img :src="thumbUrl(p.id)" class="ps-img" loading="lazy" />
-          <div class="ps-cell-info">{{ fileSizeLabel(p.width, p.height) }}</div>
-        </div>
+        <PhotoGrid
+          :photos="photos"
+          :columns="columns"
+          @photo-click="onPhotoClick"
+        />
       </div>
     </template>
 
-    <!-- 复用 PhotoDetailView 预览 -->
     <PhotoDetailView
       :share-token="shareToken"
       :allow-download="allowDownload"
@@ -110,30 +97,18 @@ body {
   color: var(--el-text-color-primary);
   color-scheme: light dark;
 }
-.ps-wrap { min-height: 100vh; padding: 16px; max-width: 1200px; margin: 0 auto; }
-.ps-loading, .ps-error { display: flex; align-items: center; justify-content: center; min-height: 60vh; font-size: 16px; }
+.ps-wrap {
+  min-height: 100vh;
+  padding: 16px;
+  max-width: 1200px;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+}
+.ps-msg {
+  display: flex; align-items: center; justify-content: center;
+  min-height: 60vh; font-size: 16px;
+}
 .ps-error { color: var(--el-color-danger); }
-.ps-header { margin-bottom: 16px; }
-.ps-header h2 { margin: 0; font-size: 20px; }
-.ps-count { font-size: 13px; color: var(--el-text-color-secondary); }
-.ps-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 8px; }
-.ps-cell {
-  position: relative;
-  aspect-ratio: 1; overflow: hidden; border-radius: 6px;
-  background: var(--el-fill-color-light);
-  cursor: pointer;
-}
-.ps-cell:hover .ps-img { transform: scale(1.05); }
-.ps-img { width: 100%; height: 100%; object-fit: cover; transition: transform .2s; display: block; }
-.ps-cell-info {
-  position: absolute; bottom: 0; left: 0; right: 0;
-  padding: 4px 8px;
-  background: linear-gradient(transparent, rgba(0,0,0,0.6));
-  color: #fff;
-  font-size: 11px;
-  text-align: right;
-  opacity: 0;
-  transition: opacity .2s;
-}
-.ps-cell:hover .ps-cell-info { opacity: 1; }
+.ps-grid { flex: 1; min-height: 0; overflow: hidden; margin-top: 12px; }
 </style>
