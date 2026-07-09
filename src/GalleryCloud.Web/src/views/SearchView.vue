@@ -154,14 +154,7 @@ watch(photos, (val) => {
     </div>
 
     <div v-if="photos.length || total > 0" class="sr-toolbar">
-      <PhotoGridToolbar :count="total">
-        <template #left>
-          <el-button v-if="!selStore.enabled" text size="small" @click="selStore.enable('search')">
-            <el-icon><Select /></el-icon>选择
-          </el-button>
-          <BatchToolbar v-else @batch-hide="search()" />
-        </template>
-      </PhotoGridToolbar>
+      <PhotoGridToolbar :count="total" selectionSource="search" @batch-hide="search()" />
     </div>
 
     <div class="sr-results" @touchstart="onTouchStart($event, '')" @touchmove="onTouchMove" @touchend="onTouchEnd">

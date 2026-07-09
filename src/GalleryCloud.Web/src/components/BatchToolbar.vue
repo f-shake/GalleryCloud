@@ -7,6 +7,7 @@ import ShareDialog from './ShareDialog.vue'
 
 const props = withDefaults(defineProps<{
   showHide?: boolean
+  onPreset?: (preset: DatePreset) => void | Promise<void>
 }>(), {
   showHide: true,
 })
@@ -18,9 +19,19 @@ const emit = defineEmits<{
 }>()
 
 const showShareDialog = ref(false)
+const loadingPreset = ref<DatePreset | null>(null)
 
-function selectPreset(preset: DatePreset) {
-  store.selectByDatePreset(preset)
+async function selectPreset(preset: DatePreset) {
+  loadingPreset.value = preset
+  try {
+    if (props.onPreset) {
+      await props.onPreset(preset)
+    } else {
+      await store.selectByDatePreset(preset)
+    }
+  } finally {
+    loadingPreset.value = null
+  }
 }
 
 async function batchHide() {
@@ -54,10 +65,10 @@ function openShare() {
 <template>
   <div class="batch-toolbar">
     <span class="batch-label">全选范围：</span>
-    <el-button size="small" :disabled="store.bulkLoading" @click="selectPreset('today')">今天</el-button>
-    <el-button size="small" :disabled="store.bulkLoading" @click="selectPreset('month')">本月</el-button>
-    <el-button size="small" :disabled="store.bulkLoading" @click="selectPreset('year')">今年</el-button>
-    <el-button size="small" :disabled="store.bulkLoading" @click="selectPreset('all')">全部</el-button>
+    <el-button size="small" :loading="loadingPreset === 'today'" :disabled="loadingPreset !== null" @click="selectPreset('today')">今天</el-button>
+    <el-button size="small" :loading="loadingPreset === 'month'" :disabled="loadingPreset !== null" @click="selectPreset('month')">本月</el-button>
+    <el-button size="small" :loading="loadingPreset === 'year'" :disabled="loadingPreset !== null" @click="selectPreset('year')">今年</el-button>
+    <el-button size="small" :loading="loadingPreset === 'all'" :disabled="loadingPreset !== null" @click="selectPreset('all')">全部</el-button>
     <template v-if="store.count > 0">
       <div class="batch-sep" />
       <el-button v-if="showHide" size="small" type="danger" plain @click="batchHide">

@@ -58,14 +58,7 @@ onUnmounted(() => {
 <template>
   <div class="fv-wrap" @touchstart="onTouchStart($event, '')" @touchmove="onTouchMove" @touchend="onTouchEnd">
     <div class="fv-toolbar">
-      <PhotoGridToolbar :count="photos.length">
-        <template #left>
-          <el-button v-if="!selStore.enabled" text size="small" @click="selStore.enable('favorites')">
-            <el-icon><Select /></el-icon>选择
-          </el-button>
-          <BatchToolbar v-else @batch-hide="onBatchHide" />
-        </template>
-      </PhotoGridToolbar>
+      <PhotoGridToolbar :count="photos.length" selectionSource="favorites" @batch-hide="onBatchHide" />
     </div>
 
     <el-empty v-if="!loading && photos.length === 0 && !isScanning" description="暂无收藏" />

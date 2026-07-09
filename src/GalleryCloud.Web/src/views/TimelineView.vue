@@ -3,6 +3,7 @@ import { ref, onMounted, onUnmounted, watch, nextTick } from 'vue'
 import { useVirtualizer } from '@tanstack/vue-virtual'
 import { usePhotoGrid } from '../composables/usePhotoGrid'
 import { useSelectionStore } from '../stores/selectionStore'
+import type { DatePreset } from '../stores/selectionStore'
 import { useTimeline, type RowItem } from '../composables/useTimeline'
 import { HEADER_HEIGHT, estimateGridRowSize } from '../composables/usePhotoGridLayout'
 import { thumbUrl } from '../composables/useThumbnailUrl'
@@ -276,6 +277,11 @@ async function onPhotoHidden(e: Event) {
   }
 }
 
+/** Timeline 是懒加载，viewPhotos 不全，所以 preset 选择走服务端 */
+async function serverPreset(preset: DatePreset) {
+  await selStore.selectByDatePreset(preset, false)
+}
+
 // Map any scrollTop to a date using daily density data
 const _dateCache = new Map<number, string>()
 function getDateAtScrollTop(scrollTop: number): string {
@@ -354,12 +360,16 @@ function onTouchEnd() {
   <div class="tl-wrap" @touchstart="onTouchStart" @touchmove="onTouchMove" @touchend="onTouchEnd">
     <!-- Toolbar: outside scroll, always visible -->
     <div class="tl-toolbar">
-      <PhotoGridToolbar :count="tl.totalPhotos.value">
+      <PhotoGridToolbar :count="tl.totalPhotos.value" @batch-hide="onBatchHide">
         <template #left>
-          <el-button v-if="!selStore.enabled" text size="small" @click="selStore.enable('timeline')">
-            <el-icon><Select /></el-icon>选择
-          </el-button>
-          <BatchToolbar v-else @batch-hide="onBatchHide" />
+          <template v-if="selStore.enabled">
+            <BatchToolbar @batch-hide="onBatchHide" :on-preset="serverPreset" />
+          </template>
+          <template v-else>
+            <el-button text size="small" @click="selStore.enable('timeline')">
+              <el-icon><Select /></el-icon>选择
+            </el-button>
+          </template>
         </template>
       </PhotoGridToolbar>
     </div>

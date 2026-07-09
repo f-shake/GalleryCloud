@@ -71,8 +71,12 @@ export const useSelectionStore = defineStore('selection', () => {
     viewPhotos.value = photos
   }
 
-  /** 切换某个日期范围内的全部照片：已全选则取消，否则全选 */
-  async function selectByDatePreset(preset: DatePreset) {
+  /**
+   * 切换某个日期范围内的全部照片。
+   * @param localOnly true = 只用 viewPhotos（数据完整的视图，如文件夹/收藏/搜索），
+   *                   false = 先调服务端 /search 再回退 viewPhotos（懒加载视图如 timeline）
+   */
+  async function selectByDatePreset(preset: DatePreset, localOnly = true) {
     const now = new Date()
     const todayStr = now.toISOString().substring(0, 10)
 
@@ -120,32 +124,26 @@ export const useSelectionStore = defineStore('selection', () => {
       selectedIds.value = next
     }
 
-    // "全部"：从服务端抓取所有照片
-    if (!from) {
-      bulkLoading.value = true
-      try {
-        const res = await client.get('/search', { params: { limit: 1000000 } })
-        const serverIds = new Set((res.data.photos as any[]).map(p => p.id as string))
-        applyToggle(serverIds)
-      } catch {
-        // 服务端失败时回退到本地
+    // localOnly 模式：纯本地 viewPhotos
+    if (localOnly) {
+      // 全部
+      if (!from) {
         applyToggle(new Set(viewPhotos.value.map(p => p.id)))
-      } finally {
-        bulkLoading.value = false
+        return
       }
-      return
-    }
-
-    // "今天"：本地数据通常完整
-    if (preset === 'today') {
+      // 今天/本月/今年
       const ids = viewPhotos.value
-        .filter(p => p.takenAt?.substring(0, 10) === todayStr)
+        .filter(p => {
+          if (!p.takenAt) return false
+          const date = p.takenAt.substring(0, 10)
+          return date >= from! && date <= to!
+        })
         .map(p => p.id)
       applyToggle(new Set(ids))
       return
     }
 
-    // 月/年：从服务端搜索 API 获取该范围的所有照片 ID
+    // 服务端模式：调 /search 获取全量数据，失败时回退到 viewPhotos
     bulkLoading.value = true
     try {
       const params: Record<string, string | number> = { limit: 1000000 }
@@ -156,6 +154,11 @@ export const useSelectionStore = defineStore('selection', () => {
       applyToggle(serverIds)
     } catch {
       // 服务端失败时回退到本地数据
+      // "全部" 本地无范围，直接全选 viewPhotos
+      if (!from) {
+        applyToggle(new Set(viewPhotos.value.map(p => p.id)))
+        return
+      }
       const ids = viewPhotos.value
         .filter(p => {
           if (!p.takenAt) return false
