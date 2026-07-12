@@ -46,11 +46,13 @@ const allowMetadata = computed(() => shareInfo.value?.allowMetadata ?? true)
     </div>
     <div v-else-if="error" class="ps-msg ps-error">{{ error }}</div>
     <template v-else>
-      <PhotoGridToolbar :count="photos.length">
-        <template #left>
-          <span style="font-weight:600;font-size:14px">{{ shareName }}</span>
-        </template>
-      </PhotoGridToolbar>
+      <div style="padding: 4px 16px">
+        <PhotoGridToolbar :count="photos.length">
+          <template #left>
+            <span style="font-weight:600;font-size:14px">{{ shareName }}</span>
+          </template>
+        </PhotoGridToolbar>
+      </div>
       <PhotoGrid
         :photos="photos"
         :columns="columns"

@@ -9,6 +9,16 @@ import router from './router'
 import { vLazyImg } from './composables/useLazyImg'
 import App from './App.vue'
 
+// 全局禁止裂图：所有 <img> 加载失败时替换为透明像素
+const TRANSPARENT_PIXEL = 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7'
+window.addEventListener('error', (e) => {
+  const target = e.target as HTMLElement
+  if (target.tagName === 'IMG') {
+    (target as HTMLImageElement).src = TRANSPARENT_PIXEL
+    e.preventDefault()
+  }
+}, true)
+
 const app = createApp(App)
 
 // Register all Element Plus icons

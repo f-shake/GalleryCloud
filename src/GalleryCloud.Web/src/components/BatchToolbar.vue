@@ -101,6 +101,12 @@ function openShare() {
   color: var(--el-text-color-secondary);
   white-space: nowrap;
 }
+@media (max-width: 767px) {
+  .batch-toolbar { display: flex; width: 100%; gap: 2px; flex-wrap: nowrap; }
+  .batch-toolbar :deep(.el-button) { flex: 1; padding: 4px 2px; font-size: 12px; min-width: 0; justify-content: center; }
+  .batch-toolbar :deep(.el-icon) { display: none; }
+  .batch-label { display: none; }
+}
 .batch-sep {
   width: 1px;
   height: 20px;

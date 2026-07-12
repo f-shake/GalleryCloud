@@ -116,7 +116,7 @@ function isExpired(expiresAt: string | null): boolean {
 </template>
 
 <style scoped>
-.sv-wrap { padding: 16px; height: 100%; overflow-y: auto; }
+.sv-wrap { padding: 16px; }
 .sv-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; }
 .sv-list { display: flex; flex-direction: column; gap: 8px; max-width: 600px; }
 .sv-card--expired { opacity: 0.5; }

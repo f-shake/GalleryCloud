@@ -623,8 +623,9 @@ const displayPath = computed(() => {
     <!-- Top bar -->
     <div v-if="showBar" class="pv-topbar">
       <el-button circle :icon="'ArrowLeft'" @click="doClose" class="glass-btn" />
+      <span v-if="photo?.fileName" class="pv-filename" style="min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:13px;color:#fff;text-shadow:0 0 4px rgba(0,0,0,.8),0 0 2px rgba(0,0,0,.6)">{{ photo.fileName }}</span>
       <el-icon v-if="!previewReady" class="is-loading" :size="20" style="color:var(--el-text-color-secondary);margin-left:4px"><Loading /></el-icon>
-      <span v-if="photo?.fileName" class="pv-filename" style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:13px;margin:0 8px;color:#fff;text-shadow:0 0 4px rgba(0,0,0,.8),0 0 2px rgba(0,0,0,.6)">{{ photo.fileName }}</span>
+      <div style="flex:1" />
       <span v-if="store.hasPrev || store.hasNext" style="font-size:12px;color:var(--el-text-color-secondary);flex-shrink:0">{{ store.currentIndex + 1 }} / {{ store.allItems.length }}</span>
       <el-button v-if="!isShareMode" circle :icon="favorited ? 'StarFilled' : 'Star'" @click="toggleFav" :class="['glass-btn', favorited ? 'fav-active' : '']" />
       <el-button v-if="!isShareMode || allowDownload" circle :icon="'Download'" class="glass-btn" @click="downloadOriginal" />
@@ -759,6 +760,12 @@ const displayPath = computed(() => {
   padding: 12px 16px; pointer-events: none;
 }
 .pv-topbar > * { pointer-events: auto; }
+@media (max-width: 767px) {
+  .pv-topbar { flex-wrap: wrap; gap: 6px; padding: 10px 12px; }
+  .pv-topbar .pv-filename { width: 100%; order: 10; text-align: center; margin: 0; }
+  .pv-topbar .glass-btn { width: 36px; height: 36px; padding: 0; }
+  .pv-topbar > :nth-child(2) { margin-left: 4px; }
+}
 .glass-btn {
   background: var(--el-fill-color-light) !important; border: none !important;
   color: var(--el-text-color-primary) !important; backdrop-filter: blur(8px);

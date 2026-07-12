@@ -218,9 +218,7 @@ html, body, #app { margin:0; height:100%; }
 .app-main {
   background: var(--el-bg-color-page);
   overflow-y: auto;
-  scrollbar-width: none;
   position: relative; /* anchor for absolute children */
   padding: 0;
 }
-.app-main::-webkit-scrollbar { display: none; }
 </style>
