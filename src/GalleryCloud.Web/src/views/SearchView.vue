@@ -8,7 +8,6 @@ import { usePhotoClick, toNavItems } from '../composables/usePhotoClick'
 import { useLongPressSelection } from '../composables/useLongPressSelection'
 import PhotoGridToolbar from '../components/PhotoGridToolbar.vue'
 import PhotoGrid from '../components/PhotoGrid.vue'
-import BatchToolbar from '../components/BatchToolbar.vue'
 import MapAreaPicker from '../components/MapAreaPicker.vue'
 
 const { columns } = usePhotoGrid()
