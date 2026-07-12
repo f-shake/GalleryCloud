@@ -67,6 +67,19 @@ const slideOffset = ref(0)
 const slideSnapping = ref(false)
 const CAROUSEL_BASE = -1
 const gridError = ref(false)
+let gridRetryTimer: any = null
+
+function onGridError() {
+  const id = store.photoId
+  if (!id || previewReady.value) { gridError.value = true; return }
+  gridError.value = true
+  clearTimeout(gridRetryTimer)
+  gridRetryTimer = setTimeout(() => {
+    if (previewReady.value || store.photoId !== id) return
+    gridSrc.value = photoThumbUrl(id, 'grid', 400) + '&retry=' + Date.now()
+    gridError.value = false
+  }, 3000)
+}
 
 function commitSlide(direction: number) {
   if (slideSnapping.value) return // guard against double-tap
@@ -197,7 +210,7 @@ watch(() => store.open, async (val) => {
   offsetX.value = 0
   offsetY.value = 0
 
-  gridSrc.value = isShareMode.value ? '' : (store.startImgSrc || photoThumbUrl(id, 'grid', 400))
+  gridSrc.value = store.startImgSrc || photoThumbUrl(id, 'grid', 400)
   previewReady.value = false
   photo.value = null
   favorited.value = false
@@ -245,7 +258,7 @@ watch(() => store.photoId, async (newId, oldId) => {
   gridError.value = false; scale.value = 1; offsetX.value = 0; offsetY.value = 0
   dismissY.value = 0; dismissing.value = false
   const sid = store.session
-  gridSrc.value = isShareMode.value ? '' : photoThumbUrl(newId, 'grid', 400)
+  gridSrc.value = photoThumbUrl(newId, 'grid', 400)
   previewReady.value = false; favorited.value = false
   phase.value = 'show'; showBar.value = true; slideOffset.value = CAROUSEL_BASE * vw.value
   // 使用带重试的 fetchThumbnail
@@ -323,6 +336,7 @@ onUnmounted(() => {
   window.removeEventListener('keydown', onKeydown)
   window.removeEventListener('resize', onResize)
   window.removeEventListener('popstate', onPopState)
+  clearTimeout(gridRetryTimer)
 })
 
 // ── Zoom (mouse wheel) ──────────────────────────────────────
@@ -607,7 +621,7 @@ const displayPath = computed(() => {
       <div v-if="!src || gridError" class="pv-placeholder">
         <el-icon class="is-loading" :size="28"><Loading /></el-icon>
       </div>
-      <img v-else :src="src" :class="[imgClass, slideSnapping ? 'pv-img--fade-out' : '']" :style="imgStyle" draggable="false" @error="gridError = true" />
+      <img v-else :src="src" :class="[imgClass, slideSnapping ? 'pv-img--fade-out' : '']" :style="imgStyle" draggable="false" @error="onGridError" />
       <!-- Carousel overlay: sibling div, only during show/done for swipe animation -->
       <div v-if="phase === 'show' || phase === 'done'" class="pv-carousel" :style="carouselStyle">
         <div class="pv-carousel-cell" :style="{ left: 0 }"><img v-if="store.hasPrev" :src="photoThumbUrl(store.allItems[store.currentIndex-1]?.id || '', 'grid', 400)" class="pv-carousel-img" /></div>
@@ -737,6 +751,7 @@ const displayPath = computed(() => {
 .pv-img {
   object-fit: contain; border-radius: 0; will-change: transform;
   user-select: none; -webkit-user-select: none;
+  background: var(--el-fill-color-light);
 }
 .pv-img:not(.pv-img--anim) { transition: none; border-radius: 4px; }
 .pv-img--anim {

@@ -1,45 +1,23 @@
 <script setup lang="ts">
 import { ref, onMounted, computed } from 'vue'
 import { useRoute } from 'vue-router'
-import { usePhotoViewStore } from '../stores/photoViewStore'
 import { usePhotoGrid } from '../composables/usePhotoGrid'
+import { usePhotoClick, toNavItems } from '../composables/usePhotoClick'
 import PhotoGrid from '../components/PhotoGrid.vue'
 import PhotoGridToolbar from '../components/PhotoGridToolbar.vue'
 import PhotoDetailView from './PhotoDetailView.vue'
-
-interface SharePhoto {
-  id: string; fileName: string; fileFormat: string
-  width: number | null; height: number | null
-  thumbUrl?: string
-}
-
-interface ShareInfo {
-  id: string; name: string; token: string
-  expiresAt: string | null; photoCount: number
-  allowDownload: boolean; allowMetadata: boolean
-}
 
 const route = useRoute()
 const token = route.params.token as string
 
 const shareName = ref('')
-const photos = ref<SharePhoto[]>([])
+const photos = ref<any[]>([])
 const loading = ref(true)
 const error = ref('')
-const shareInfo = ref<ShareInfo | null>(null)
+const shareInfo = ref<any>(null)
 
 const { columns } = usePhotoGrid()
-const store = usePhotoViewStore()
-
-function onPhotoClick(id: string, e: MouseEvent) {
-  const el = e.currentTarget as HTMLElement
-  const img = el.querySelector('img')
-  const rect = img
-    ? { x: img.getBoundingClientRect().left, y: img.getBoundingClientRect().top, width: img.width, height: img.height }
-    : { x: el.offsetLeft, y: el.offsetTop, width: el.offsetWidth, height: el.offsetHeight }
-  const items = photos.value.map(p => ({ ...p, takenAtDate: null })) as any
-  store.show(id, rect, img?.src, items)
-}
+const { onPhotoClick } = usePhotoClick(() => toNavItems(photos.value))
 
 onMounted(async () => {
   try {
@@ -92,23 +70,17 @@ const allowMetadata = computed(() => shareInfo.value?.allowMetadata ?? true)
 <style>
 body {
   margin: 0;
-  overflow: hidden;
-  background: var(--el-bg-color-page);
-  color: var(--el-text-color-primary);
-  color-scheme: light dark;
 }
 .ps-wrap {
-  position: fixed;
-  inset: 0;
+  height: 100vh;
   display: flex;
   flex-direction: column;
-  padding: 16px;
-  max-width: 1200px;
-  margin: 0 auto;
 }
 .ps-msg {
   flex: 1;
-  display: flex; align-items: center; justify-content: center;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   font-size: 16px;
 }
 .ps-error { color: var(--el-color-danger); }
