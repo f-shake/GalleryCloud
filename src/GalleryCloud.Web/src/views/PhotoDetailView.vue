@@ -67,19 +67,6 @@ const slideOffset = ref(0)
 const slideSnapping = ref(false)
 const CAROUSEL_BASE = -1
 const gridError = ref(false)
-let gridRetryTimer: any = null
-
-function onGridError() {
-  const id = store.photoId
-  if (!id || previewReady.value) { gridError.value = true; return }
-  gridError.value = true
-  clearTimeout(gridRetryTimer)
-  gridRetryTimer = setTimeout(() => {
-    if (previewReady.value || store.photoId !== id) return
-    gridSrc.value = photoThumbUrl(id, 'grid', 400) + '&retry=' + Date.now()
-    gridError.value = false
-  }, 3000)
-}
 
 function commitSlide(direction: number) {
   if (slideSnapping.value) return // guard against double-tap
@@ -336,7 +323,6 @@ onUnmounted(() => {
   window.removeEventListener('keydown', onKeydown)
   window.removeEventListener('resize', onResize)
   window.removeEventListener('popstate', onPopState)
-  clearTimeout(gridRetryTimer)
 })
 
 // ── Zoom (mouse wheel) ──────────────────────────────────────
@@ -621,7 +607,7 @@ const displayPath = computed(() => {
       <div v-if="!src || gridError" class="pv-placeholder">
         <el-icon class="is-loading" :size="28"><Loading /></el-icon>
       </div>
-      <img v-else :src="src" :class="[imgClass, slideSnapping ? 'pv-img--fade-out' : '']" :style="imgStyle" draggable="false" @error="onGridError" />
+      <img v-else :src="src" :class="[imgClass, slideSnapping ? 'pv-img--fade-out' : '']" :style="imgStyle" draggable="false" />
       <!-- Carousel overlay: sibling div, only during show/done for swipe animation -->
       <div v-if="phase === 'show' || phase === 'done'" class="pv-carousel" :style="carouselStyle">
         <div class="pv-carousel-cell" :style="{ left: 0 }"><img v-if="store.hasPrev" :src="photoThumbUrl(store.allItems[store.currentIndex-1]?.id || '', 'grid', 400)" class="pv-carousel-img" /></div>
