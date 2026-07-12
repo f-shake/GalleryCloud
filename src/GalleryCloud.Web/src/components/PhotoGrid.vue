@@ -203,6 +203,7 @@ function findPhotoIdAtPoint(clientX: number, clientY: number): string | null {
 .pg-virt { scrollbar-width: none; }
 .thumb-cell--selected { outline: 3px solid var(--el-color-primary); outline-offset: -3px; border-radius: 4px; }
 .thumb-cell { position: relative; }
+.thumb-img { display: block; width: 100%; min-height: 60px; object-fit: cover; background: var(--el-fill-color-light); }
 .thumb-cell-check {
   position: absolute; top: 6px; left: 6px; z-index: 2;
   width: 22px; height: 22px; border-radius: 50%;

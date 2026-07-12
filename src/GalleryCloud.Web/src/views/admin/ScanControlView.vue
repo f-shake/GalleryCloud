@@ -3,6 +3,7 @@ import { ref, computed, onMounted, onUnmounted } from 'vue'
 import client from '../../api/client'
 import { ElMessage } from 'element-plus'
 import type { ScanStatus, ScanLog, ThumbnailGenerationStatus, ThumbnailStats } from '../../types'
+import { clearBlobCache } from '../../composables/useThumbnailQueue'
 
 const status = ref<ScanStatus>({ isRunning: false, mode: null, userId: null, startedAt: null, processedFiles: 0, totalFiles: 0, estimatedPercent: 0 })
 const btnSize = ref(window.innerWidth <= 767 ? 'small' : 'default')
@@ -120,6 +121,7 @@ async function clearCache() {
   try {
     thumbBusy.value = true
     await client.delete('/admin/thumbnails/cache')
+    clearBlobCache()
     ElMessage.success('缩略图缓存已清除')
     const sr = await client.get('/admin/thumbnails/stats')
     thumbStats.value = sr.data

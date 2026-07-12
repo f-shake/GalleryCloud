@@ -95,7 +95,22 @@ export function useThumbnailQueue() {
     }
   }
 
-  return { register, unregister }
+  return { register, unregister, clearBlobCache }
+}
+
+export function clearBlobCache() {
+  // Revoke all blob URLs to free memory
+  for (const url of blobCache.values()) {
+    URL.revokeObjectURL(url)
+  }
+  blobCache.clear()
+  enqueued.clear()
+  pending.value.clear()
+  // Abort any in-flight fetches
+  for (const ctrl of controllers.values()) {
+    ctrl.abort()
+  }
+  controllers.clear()
 }
 
 async function fetchThumbnailImage(photoId: string, token: string, signal: AbortSignal): Promise<string> {

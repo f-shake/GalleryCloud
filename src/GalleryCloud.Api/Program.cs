@@ -8,6 +8,7 @@ using GalleryCloud.Core.Settings;
 using Microsoft.EntityFrameworkCore;
 using Serilog;
 using Microsoft.AspNetCore.ResponseCompression;
+using Microsoft.Extensions.Options;
 // Serilog: 控制台输出 + 按天滚动文件到 App_Data/logs/
 Log.Logger = new LoggerConfiguration()
     .MinimumLevel.Information()
@@ -35,6 +36,9 @@ var thumbConnectionString = builder.Configuration.GetConnectionString("Thumbnail
 builder.Services.AddOptions<AuthOptions>()
     .Bind(builder.Configuration.GetSection("Auth"))
     .ValidateDataAnnotations()
+    .Validate(ao => builder.Environment.IsDevelopment()
+        || (ao.JwtSecret != AuthOptions.DefaultJwtSecret && ao.AdminDefaultPassword != AuthOptions.DefaultAdminPassword),
+        "Auth:JwtSecret and Auth:AdminDefaultPassword must not be default placeholders in production.")
     .ValidateOnStart();
 builder.Services.AddDbContext<AppDbContext>(options =>
     options.UseSqlite(connectionString));

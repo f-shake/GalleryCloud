@@ -79,12 +79,6 @@ public class ShareService
             .FirstOrDefaultAsync(s => s.Id == shareId && s.UserId == userId && !s.IsDeleted);
         if (share == null) throw new KeyNotFoundException("Share not found");
 
-        // Verify all photos belong to the user
-        var ownedCount = await db.Photos
-            .CountAsync(p => photoIds.Contains(p.Id) && p.UserId == userId);
-        if (ownedCount != photoIds.Count)
-            throw new InvalidOperationException("Some photos do not belong to you");
-
         var existingIds = share.SharePhotos.Select(sp => sp.PhotoId).ToHashSet();
         foreach (var pid in photoIds)
         {

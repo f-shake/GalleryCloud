@@ -10,6 +10,11 @@ export const useAuthStore = defineStore('auth', () => {
   const isAuthenticated = computed(() => !!token.value)
   const isAdmin = computed(() => user.value?.id === 'admin')
 
+  // Sync existing token to cookie for <img> tag auth
+  if (token.value) {
+    document.cookie = `token=${token.value};path=/;SameSite=Lax`
+  }
+
   function setTokenCookie(t: string) {
     document.cookie = `token=${t};path=/;SameSite=Lax`
   }

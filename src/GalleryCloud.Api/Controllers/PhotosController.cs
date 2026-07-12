@@ -7,6 +7,7 @@ using GalleryCloud.Core.Enums;
 using GalleryCloud.Core.Interfaces;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 
 namespace GalleryCloud.Api.Controllers;
 
@@ -18,12 +19,15 @@ public class PhotosController : ControllerBase
     private readonly UserContext _userContext;
     private readonly IThumbnailService? _thumbnailService;
     private readonly ISettingService _settingService;
+    private readonly ILogger<PhotosController> _logger;
 
-    public PhotosController(AppDbContext db, UserContext userContext, ISettingService settingService, IThumbnailService? thumbnailService = null)
+    public PhotosController(AppDbContext db, UserContext userContext, ISettingService settingService,
+        ILogger<PhotosController> logger, IThumbnailService? thumbnailService = null)
     {
         _db = db;
         _userContext = userContext;
         _settingService = settingService;
+        _logger = logger;
         _thumbnailService = thumbnailService;
     }
 
@@ -218,24 +222,11 @@ public class PhotosController : ControllerBase
         if (!_userContext.IsAuthenticated)
             return Unauthorized();
 
-        var photos = await _db.Photos
+        var toRestore = await _db.Photos
             .IgnoreQueryFilters()
             .Where(p => request.Ids.Contains(p.Id) && p.UserId == _userContext.UserId && p.IsDeleted)
             .ToListAsync();
 
-        // Verify files still exist
-        var roots = await _db.UserRoots.Where(r => r.UserId == _userContext.UserId && !r.IsDeleted).ToListAsync();
-        var validIds = new HashSet<string>();
-        foreach (var photo in photos)
-        {
-            var root = roots.FirstOrDefault(r => r.Id == photo.RootId);
-            if (root == null) continue;
-            var fullPath = Path.GetFullPath(Path.Combine(root.RootPath, photo.FilePath));
-            if (System.IO.File.Exists(fullPath))
-                validIds.Add(photo.Id);
-        }
-
-        var toRestore = photos.Where(p => validIds.Contains(p.Id)).ToList();
         foreach (var photo in toRestore)
         {
             photo.IsDeleted = false;
@@ -244,6 +235,7 @@ public class PhotosController : ControllerBase
         }
 
         await _db.SaveChangesAsync();
+        _logger.LogInformation("批量恢复 {Count} 张照片 (请求 {IdsCount} 张)", toRestore.Count, request.Ids.Count);
         return Ok(new MessageResult($"Restored {toRestore.Count} photos"));
     }
 

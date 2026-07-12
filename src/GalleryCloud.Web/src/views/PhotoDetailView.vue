@@ -197,7 +197,7 @@ watch(() => store.open, async (val) => {
   offsetX.value = 0
   offsetY.value = 0
 
-  gridSrc.value = store.startImgSrc || photoThumbUrl(id, 'grid', 400)
+  gridSrc.value = isShareMode.value ? '' : (store.startImgSrc || photoThumbUrl(id, 'grid', 400))
   previewReady.value = false
   photo.value = null
   favorited.value = false
@@ -245,7 +245,7 @@ watch(() => store.photoId, async (newId, oldId) => {
   gridError.value = false; scale.value = 1; offsetX.value = 0; offsetY.value = 0
   dismissY.value = 0; dismissing.value = false
   const sid = store.session
-  gridSrc.value = photoThumbUrl(newId, 'grid', 400)
+  gridSrc.value = isShareMode.value ? '' : photoThumbUrl(newId, 'grid', 400)
   previewReady.value = false; favorited.value = false
   phase.value = 'show'; showBar.value = true; slideOffset.value = CAROUSEL_BASE * vw.value
   // 使用带重试的 fetchThumbnail

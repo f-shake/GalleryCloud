@@ -56,7 +56,9 @@ public class AdminController : ControllerBase
     {
         try
         {
-            return Ok(await _userService.CreateUserAsync(request));
+            var result = await _userService.CreateUserAsync(request);
+            _logger.LogInformation("创建用户: {Username} (ID={Id})", request.Username, result.Id);
+            return Ok(result);
         }
         catch (InvalidOperationException ex)
         {
@@ -84,6 +86,7 @@ public class AdminController : ControllerBase
     {
         var ok = await _userService.DisableUserAsync(id);
         if (!ok) return NotFound();
+        _logger.LogInformation("禁用用户: {UserId}", id);
         return Ok(new MessageResult("User disabled"));
     }
 
@@ -129,7 +132,10 @@ public class AdminController : ControllerBase
     public async Task<IActionResult> UpdateSettings([FromBody] Dictionary<string, string> updates)
     {
         foreach (var (key, value) in updates)
+        {
+            _logger.LogInformation("设置变更: {Key} = {Value}", key, value);
             await _settingService.SetAsync(key, value);
+        }
 
         // FileWatcher 开关即时生效
         if (updates.TryGetValue(SettingKeys.FileWatcherEnabled, out var enabled))
@@ -234,6 +240,7 @@ public class AdminController : ControllerBase
         var count = await _thumbDb.ThumbnailCaches.CountAsync();
         _thumbDb.ThumbnailCaches.RemoveRange(_thumbDb.ThumbnailCaches);
         await _thumbDb.SaveChangesAsync();
+        _logger.LogInformation("缩略图缓存已清除：{Count} 条记录", count);
         return Ok(new MessageResult("Cache cleared"));
     }
 

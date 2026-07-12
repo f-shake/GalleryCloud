@@ -73,13 +73,12 @@ const allowMetadata = computed(() => shareInfo.value?.allowMetadata ?? true)
           <span style="font-weight:600;font-size:14px">{{ shareName }}</span>
         </template>
       </PhotoGridToolbar>
-      <div class="ps-grid">
-        <PhotoGrid
-          :photos="photos"
-          :columns="columns"
-          @photo-click="onPhotoClick"
-        />
-      </div>
+      <PhotoGrid
+        :photos="photos"
+        :columns="columns"
+        style="flex:1;min-height:0"
+        @photo-click="onPhotoClick"
+      />
     </template>
 
     <PhotoDetailView
@@ -93,22 +92,24 @@ const allowMetadata = computed(() => shareInfo.value?.allowMetadata ?? true)
 <style>
 body {
   margin: 0;
+  overflow: hidden;
   background: var(--el-bg-color-page);
   color: var(--el-text-color-primary);
   color-scheme: light dark;
 }
 .ps-wrap {
-  min-height: 100vh;
+  position: fixed;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
   padding: 16px;
   max-width: 1200px;
   margin: 0 auto;
-  display: flex;
-  flex-direction: column;
 }
 .ps-msg {
+  flex: 1;
   display: flex; align-items: center; justify-content: center;
-  min-height: 60vh; font-size: 16px;
+  font-size: 16px;
 }
 .ps-error { color: var(--el-color-danger); }
-.ps-grid { flex: 1; min-height: 0; overflow: hidden; margin-top: 12px; }
 </style>

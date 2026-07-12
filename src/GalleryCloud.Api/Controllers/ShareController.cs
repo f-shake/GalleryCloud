@@ -5,6 +5,7 @@ using GalleryCloud.Api.Services;
 using GalleryCloud.Core.Entities;
 using GalleryCloud.Core.Enums;
 using GalleryCloud.Core.Interfaces;
+using GalleryCloud.Core.Settings;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 
@@ -148,19 +149,13 @@ public class ShareController : ControllerBase
             _ => ThumbnailSize.Grid
         };
 
-        if (size == "preview")
-        {
-            var result = await _thumbnailService.GetThumbnailAsync(photoId, thumbSize, w, HttpContext.RequestAborted);
-            if (result == null) return NotFound();
-            return new FileContentResult(await StreamHelper.ReadFullyAsync(result), "image/webp");
-        }
-
-        var cached = await _thumbnailService.TryGetCachedAsync(photoId, thumbSize, w);
-        if (cached != null)
-            return new FileContentResult(await StreamHelper.ReadFullyAsync(cached), "image/webp");
-
-        _thumbnailService.EnqueueAsync(photoId, thumbSize, w);
-        return Accepted(new MessageResult("pending"));
+        // 即时生成（浏览器 <img> 无法处理 202，必须同步返回图片）
+        var result = await _thumbnailService.GetThumbnailAsync(photoId, thumbSize, w, HttpContext.RequestAborted);
+        if (result == null) return NotFound();
+        var fmt = await _settingService.GetAsync(
+            size == "preview" ? SettingKeys.PreviewFormat : SettingKeys.ThumbnailFormat, "jpeg");
+        var contentType = fmt.Equals("webp", StringComparison.OrdinalIgnoreCase) ? "image/webp" : "image/jpeg";
+        return new FileContentResult(await StreamHelper.ReadFullyAsync(result), contentType);
     }
 
     [HttpGet("api/public/shares/{token}/photos/{photoId}/file")]

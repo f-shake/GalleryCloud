@@ -9,7 +9,6 @@ import { useLongPressSelection } from '../composables/useLongPressSelection'
 import { formatLocalDateTime } from '../utils/date'
 import PhotoGridToolbar from '../components/PhotoGridToolbar.vue'
 import PhotoGrid from '../components/PhotoGrid.vue'
-import BatchToolbar from '../components/BatchToolbar.vue'
 
 interface TrashPhoto {
   id: string; fileName: string; fileFormat: string
@@ -85,7 +84,7 @@ async function batchRestore() {
     ElMessage.success(`已恢复 ${selStore.count} 张照片`)
     selStore.disable()
     loadTrash()
-  } catch { /* */ }
+  } catch (e: any) { ElMessage.error(e.response?.data?.error || '恢复失败') }
 }
 
 onMounted(loadTrash)
@@ -100,8 +99,8 @@ onMounted(loadTrash)
             <el-icon><Select /></el-icon>选择
           </el-button>
           <template v-else>
-            <BatchToolbar :show-hide="false" :show-share="false" />
-            <el-button size="small" type="primary" @click="batchRestore">
+            <el-button size="small" @click="selStore.selectByDatePreset('all')">全选</el-button>
+            <el-button size="small" type="primary" :disabled="selStore.count === 0" @click="batchRestore">
               <el-icon style="margin-right:2px"><Refresh /></el-icon>恢复选中
             </el-button>
           </template>

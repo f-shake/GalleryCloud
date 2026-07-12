@@ -7,31 +7,36 @@ function getQueue() {
   return queue
 }
 
+// Match internal URL: /api/photos/{id}/thumbnail
+const internalRe = /\/api\/photos\/([^/]+)\/thumbnail/
+
 export const vLazyImg: Directive<HTMLImageElement, string> = {
   mounted(el, binding) {
     const src = binding.value
     if (!src) return
 
-    // Parse photoId from URL: /api/photos/{id}/thumbnail?...
-    const match = src.match(/\/api\/photos\/([^/]+)\/thumbnail/)
-    if (!match) { el.src = src; return }
-    const photoId = match[1]
+    const match = src.match(internalRe)
+    const photoId = match?.[1]
 
     const observer = new IntersectionObserver(
       (entries) => {
-        const q = getQueue()
         for (const entry of entries) {
-          if (entry.isIntersecting) {
-            q.register(photoId, el)
+          if (!entry.isIntersecting) {
+            if (photoId) getQueue().unregister(photoId)
+            continue
+          }
+          observer.disconnect()
+          if (photoId) {
+            getQueue().register(photoId, el)
           } else {
-            q.unregister(photoId)
+            el.src = src
           }
         }
       },
       { rootMargin: '80px' }
     )
 
-    el.dataset.lazyId = photoId
+    if (photoId) el.dataset.lazyId = photoId
     observer.observe(el)
     ;(el as any).__lazyObserver = observer
   },

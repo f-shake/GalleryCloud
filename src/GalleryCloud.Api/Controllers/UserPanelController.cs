@@ -187,8 +187,10 @@ public class UserPanelController : ControllerBase
             return Conflict(new ErrorResult("Thumbnail generation is running, wait for it to finish"));
 
         var thumbDb = HttpContext.RequestServices.GetRequiredService<ThumbnailDbContext>();
+        var count = await thumbDb.ThumbnailCaches.CountAsync();
         thumbDb.ThumbnailCaches.RemoveRange(thumbDb.ThumbnailCaches);
         await thumbDb.SaveChangesAsync();
+        _logger.LogInformation("用户 {UserId} 清除了缩略图缓存：{Count} 条记录", _userContext.UserId, count);
 
         return Ok(new MessageResult("Cache cleared"));
     }

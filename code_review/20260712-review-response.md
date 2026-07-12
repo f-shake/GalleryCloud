@@ -85,9 +85,8 @@
 
 | 条目 | 内容 |
 |------|------|
-| **判定** | ✅ **逻辑缺陷确认，已修复** |
-| **评估** | `AddPhotosToShareAsync` 确实未验证 `photoIds` 中的照片归属权。利用条件：用户 A 必须知道用户 B 的 `photoId`（GUID，不可枚举）。私有部署场景下攻击面极小，但修复成本极低（3 行），顺手修复。 |
-| **修复** | `ShareService.AddPhotosToShareAsync` 在添加照片前增加归属验证：`db.Photos.CountAsync(p => photoIds.Contains(p.Id) && p.UserId == userId)`，计数不匹配则抛 `InvalidOperationException`。 |
+| **判定** | ❌ **已回退，不修复** |
+| **评估** | 尝试添加归属验证（`CountAsync` + batch），但 SQLite 有 SQL 变量数量限制（~999 个），大量照片时触发 `too many SQL variables` 错误。分批查询后性能又过差导致请求超时。私有部署场景下此攻击路径需要知道对方照片的 GUID（不可枚举），风险极低，不值得为此牺牲性能。 |
 
 ---
 
