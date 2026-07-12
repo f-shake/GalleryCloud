@@ -1,11 +1,13 @@
 using GalleryCloud.Api.Data;
 using GalleryCloud.Api.Dtos;
+using GalleryCloud.Api.Helpers;
 using GalleryCloud.Api.Services;
 using GalleryCloud.Core.Entities;
 using GalleryCloud.Core.Enums;
 using GalleryCloud.Core.Interfaces;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 
 namespace GalleryCloud.Api.Controllers;
 
@@ -17,12 +19,15 @@ public class PhotosController : ControllerBase
     private readonly UserContext _userContext;
     private readonly IThumbnailService? _thumbnailService;
     private readonly ISettingService _settingService;
+    private readonly ILogger<PhotosController> _logger;
 
-    public PhotosController(AppDbContext db, UserContext userContext, ISettingService settingService, IThumbnailService? thumbnailService = null)
+    public PhotosController(AppDbContext db, UserContext userContext, ISettingService settingService,
+        ILogger<PhotosController> logger, IThumbnailService? thumbnailService = null)
     {
         _db = db;
         _userContext = userContext;
         _settingService = settingService;
+        _logger = logger;
         _thumbnailService = thumbnailService;
     }
 
@@ -176,17 +181,62 @@ public class PhotosController : ControllerBase
         {
             var result = await _thumbnailService.GetThumbnailAsync(id, thumbSize, w, HttpContext.RequestAborted);
             if (result == null) return NotFound();
-            return new FileContentResult(await ReadFullyAsync(result), "image/webp");
+            return new FileContentResult(await StreamHelper.ReadFullyAsync(result), "image/webp");
         }
 
         // 1. Try cache — if hit, return bytes directly
         var cached = await _thumbnailService.TryGetCachedAsync(id, thumbSize, w);
         if (cached != null)
-            return new FileContentResult(await ReadFullyAsync(cached), "image/webp");
+            return new FileContentResult(await StreamHelper.ReadFullyAsync(cached), "image/webp");
 
         // 2. Not cached — grid: enqueue background generation, return 202 immediately
         _thumbnailService.EnqueueAsync(id, thumbSize, w);
         return Accepted(new MessageResult("pending"));
+    }
+
+    [HttpPatch("batch/delete")]
+    public async Task<IActionResult> BatchDelete([FromBody] BatchIdsRequest request)
+    {
+        if (!_userContext.IsAuthenticated)
+            return Unauthorized();
+
+        var photos = await _db.Photos
+            .Where(p => request.Ids.Contains(p.Id) && p.UserId == _userContext.UserId && !p.IsDeleted)
+            .ToListAsync();
+
+        var now = DateTime.UtcNow;
+        foreach (var photo in photos)
+        {
+            photo.IsDeleted = true;
+            photo.DeletedAt = now;
+            photo.UpdatedAt = now;
+        }
+
+        await _db.SaveChangesAsync();
+        return Ok(new MessageResult($"Deleted {photos.Count} photos"));
+    }
+
+    [HttpPatch("batch/restore")]
+    public async Task<IActionResult> BatchRestore([FromBody] BatchIdsRequest request)
+    {
+        if (!_userContext.IsAuthenticated)
+            return Unauthorized();
+
+        var toRestore = await _db.Photos
+            .IgnoreQueryFilters()
+            .Where(p => request.Ids.Contains(p.Id) && p.UserId == _userContext.UserId && p.IsDeleted)
+            .ToListAsync();
+
+        foreach (var photo in toRestore)
+        {
+            photo.IsDeleted = false;
+            photo.DeletedAt = null;
+            photo.UpdatedAt = DateTime.UtcNow;
+        }
+
+        await _db.SaveChangesAsync();
+        _logger.LogInformation("批量恢复 {Count} 张照片 (请求 {IdsCount} 张)", toRestore.Count, request.Ids.Count);
+        return Ok(new MessageResult($"Restored {toRestore.Count} photos"));
     }
 
     [HttpDelete("{id}")]
@@ -217,6 +267,7 @@ public class PhotosController : ControllerBase
             return Unauthorized();
 
         var photo = await _db.Photos
+            .IgnoreQueryFilters()
             .FirstOrDefaultAsync(p => p.Id == id && p.UserId == _userContext.UserId && p.IsDeleted);
 
         if (photo == null)
@@ -311,10 +362,4 @@ public class PhotosController : ControllerBase
         return Ok(new MessageResult("Renamed"));
     }
 
-    private static async Task<byte[]> ReadFullyAsync(Stream stream)
-    {
-        using var ms = new MemoryStream();
-        await stream.CopyToAsync(ms);
-        return ms.ToArray();
-    }
 }

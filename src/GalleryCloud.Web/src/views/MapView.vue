@@ -3,6 +3,7 @@ import { ref, watch, onMounted, onUnmounted, onActivated } from 'vue'
 import client from '../api/client'
 import { thumbUrl } from '../composables/useThumbnailUrl'
 import { usePhotoGrid } from '../composables/usePhotoGrid'
+import { useSelectionStore } from '../stores/selectionStore'
 import { usePhotoViewStore, toDateInt } from '../stores/photoViewStore'
 import { useMap, type MapInstance } from '../composables/useMap'
 import FeatureLayer from '@arcgis/core/layers/FeatureLayer'
@@ -15,10 +16,12 @@ import PictureMarkerSymbol from '@arcgis/core/symbols/PictureMarkerSymbol'
 import { watch as reactiveWatch } from '@arcgis/core/core/reactiveUtils'
 import PhotoGridToolbar from '../components/PhotoGridToolbar.vue'
 import PhotoGrid from '../components/PhotoGrid.vue'
+import BatchToolbar from '../components/BatchToolbar.vue'
 
 interface MapPoint { id: string; latitude: number; longitude: number; fileName: string; takenAt: string | null }
 
 const viewStore = usePhotoViewStore()
+const selStore = useSelectionStore()
 const { columns, groupLevel, zoomIn, zoomOut } = usePhotoGrid()
 const mapContainer = ref<HTMLDivElement | null>(null)
 const { loading, initMap, switchBasemap, updateTileUrls, destroy: destroyMap } = useMap(mapContainer)
@@ -327,6 +330,13 @@ watch(groupLevel, () => {
   }
 })
 
+// Sync cluster photos to selection store for date-range selection
+watch(clusterView, (val) => {
+  if (val && val.photos.length) {
+    selStore.setViewPhotos(val.photos.map(p => ({ id: p.id, takenAt: p.takenAt })))
+  }
+}, { immediate: false, deep: true })
+
 function closeClusterView() { clusterView.value = null }
 
 function mapZoomIn() { mapInst?.view.zoomIn() }
@@ -534,14 +544,30 @@ onUnmounted(() => {
       <div class="cluster-overlay-header">
         <PhotoGridToolbar :count="clusterView.photos.length">
           <template #left>
-            <el-button text @click="closeClusterView">
-              <el-icon style="margin-right:4px"><ArrowLeft /></el-icon>返回地图
-            </el-button>
+            <template v-if="selStore.enabled">
+              <BatchToolbar />
+            </template>
+            <template v-else>
+              <el-button text @click="closeClusterView">
+                <el-icon style="margin-right:4px"><ArrowLeft /></el-icon>返回地图
+              </el-button>
+              <el-button text size="small" style="margin-left:4px" @click="selStore.enable('map')">
+                <el-icon><Select /></el-icon>选择
+              </el-button>
+            </template>
           </template>
         </PhotoGridToolbar>
       </div>
       <div class="cluster-overlay-body" v-loading="clusterView.loading">
-        <PhotoGrid v-if="clusterView.photos.length" :groups="clusterView.groups" :columns="columns" @photo-click="onPhotoClick" />
+        <PhotoGrid
+          v-if="clusterView.photos.length"
+          :groups="clusterView.groups"
+          :columns="columns"
+          :selection-mode="selStore.enabled"
+          :selected-ids="selStore.selectedIds"
+          @photo-click="onPhotoClick"
+          @selection-toggle="selStore.toggle"
+        />
         <el-empty v-else-if="!clusterView.loading" description="该位置没有照片" />
       </div>
     </div>

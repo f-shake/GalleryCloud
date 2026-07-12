@@ -18,9 +18,11 @@ public class UserPanelController : ControllerBase
     private readonly IAuthService _authService;
     private readonly IThumbnailService _thumbnailService;
     private readonly IStatsService _statsService;
+    private readonly ILogger<UserPanelController> _logger;
 
     public UserPanelController(AppDbContext db, UserContext userContext, IScanService scanService,
-        IAuthService authService, IThumbnailService thumbnailService, IStatsService statsService)
+        IAuthService authService, IThumbnailService thumbnailService, IStatsService statsService,
+        ILogger<UserPanelController> logger)
     {
         _db = db;
         _userContext = userContext;
@@ -28,6 +30,7 @@ public class UserPanelController : ControllerBase
         _authService = authService;
         _thumbnailService = thumbnailService;
         _statsService = statsService;
+        _logger = logger;
     }
 
     // ==================== Scan ====================
@@ -43,23 +46,12 @@ public class UserPanelController : ControllerBase
         if (_thumbnailService.RegenerationStatus.IsRunning)
             return Conflict(new ErrorResult("当前有缩略图生成任务正在运行，无法同时扫描，请稍后再试"));
 
-        _ = Task.Run(() => _scanService.TriggerFullScanAsync(_userContext.UserId));
+        _ = Task.Run(async () =>
+        {
+            try { await _scanService.TriggerFullScanAsync(_userContext.UserId); }
+            catch (Exception ex) { _logger.LogError(ex, "Full scan failed"); }
+        });
         return Ok(new MessageResult("Scan started"));
-    }
-
-    [HttpPost("scan/trigger-incremental")]
-    public async Task<IActionResult> TriggerIncrementalScan()
-    {
-        if (!_userContext.IsAuthenticated || _userContext.IsAdmin)
-            return Unauthorized();
-
-        if (_scanService.Status.IsRunning)
-            return Conflict(new ErrorResult("当前有扫描任务正在运行，请稍后再试"));
-        if (_thumbnailService.RegenerationStatus.IsRunning)
-            return Conflict(new ErrorResult("当前有缩略图生成任务正在运行，无法同时扫描，请稍后再试"));
-
-        _ = Task.Run(() => _scanService.TriggerIncrementalScanAsync(_userContext.UserId));
-        return Ok(new MessageResult("Incremental scan started"));
     }
 
     [HttpPost("scan/cancel")]
@@ -95,7 +87,11 @@ public class UserPanelController : ControllerBase
         if (_thumbnailService.RegenerationStatus.IsRunning)
             return Conflict(new ErrorResult("当前有缩略图生成任务正在运行，无法刷新EXIF，请稍后再试"));
 
-        _ = Task.Run(() => _scanService.RefreshExifAsync(_userContext.UserId));
+        _ = Task.Run(async () =>
+        {
+            try { await _scanService.RefreshExifAsync(_userContext.UserId); }
+            catch (Exception ex) { _logger.LogError(ex, "EXIF refresh failed"); }
+        });
         return Ok(new MessageResult("EXIF refresh started"));
     }
 
@@ -191,8 +187,10 @@ public class UserPanelController : ControllerBase
             return Conflict(new ErrorResult("Thumbnail generation is running, wait for it to finish"));
 
         var thumbDb = HttpContext.RequestServices.GetRequiredService<ThumbnailDbContext>();
+        var count = await thumbDb.ThumbnailCaches.CountAsync();
         thumbDb.ThumbnailCaches.RemoveRange(thumbDb.ThumbnailCaches);
         await thumbDb.SaveChangesAsync();
+        _logger.LogInformation("用户 {UserId} 清除了缩略图缓存：{Count} 条记录", _userContext.UserId, count);
 
         return Ok(new MessageResult("Cache cleared"));
     }

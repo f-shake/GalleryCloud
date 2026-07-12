@@ -115,7 +115,7 @@ public class FileWatcherService : BackgroundService
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         var debounceMs = await _settings.GetAsync(SettingKeys.FileWatcherDebounceDelayMs, 5000);
-        var batch = new Dictionary<string, FileEvent>();
+        var batch = new Dictionary<string, List<FileEvent>>();
 
         while (!stoppingToken.IsCancellationRequested)
         {
@@ -123,8 +123,7 @@ public class FileWatcherService : BackgroundService
             {
                 // Wait for first event
                 var firstEvent = await _eventChannel.Reader.ReadAsync(stoppingToken);
-                var key = GetEventKey(firstEvent);
-                batch[key] = firstEvent;
+                batch[GetEventKey(firstEvent)] = [firstEvent];
 
                 // Debounce: collect events for debounceMs milliseconds
                 var deadline = DateTime.UtcNow.AddMilliseconds(debounceMs);
@@ -137,8 +136,10 @@ public class FileWatcherService : BackgroundService
                     try
                     {
                         var nextEvent = await _eventChannel.Reader.ReadAsync(cts.Token);
-                        key = GetEventKey(nextEvent);
-                        batch[key] = nextEvent; // Last event for a file wins
+                        var key = GetEventKey(nextEvent);
+                        if (!batch.TryGetValue(key, out var events))
+                            batch[key] = events = [];
+                        events.Add(nextEvent); // Preserve event order per file
                     }
                     catch (OperationCanceledException)
                     {
@@ -146,9 +147,9 @@ public class FileWatcherService : BackgroundService
                     }
                 }
 
-                // Process batch
-                _logger.LogInformation("FileWatcher processing {Count} events", batch.Count);
-                await ProcessBatchAsync(batch.Values.ToList(), stoppingToken);
+                // Process batch in order
+                _logger.LogInformation("FileWatcher processing {Count} events", batch.Sum(kv => kv.Value.Count));
+                await ProcessBatchAsync(batch.Values.SelectMany(v => v).ToList(), stoppingToken);
                 batch.Clear();
             }
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)

@@ -15,6 +15,8 @@ public class AppDbContext : DbContext
     public DbSet<Favorite> Favorites => Set<Favorite>();
     public DbSet<ScanLog> ScanLogs => Set<ScanLog>();
     public DbSet<SystemSetting> SystemSettings => Set<SystemSetting>();
+    public DbSet<Share> Shares => Set<Share>();
+    public DbSet<SharePhoto> SharePhotos => Set<SharePhoto>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -129,6 +131,33 @@ public class AppDbContext : DbContext
             e.Property(x => x.UserId).HasMaxLength(32).IsRequired();
             e.Property(x => x.Mode).HasMaxLength(16).IsRequired();
             e.HasOne(x => x.User).WithMany().HasForeignKey(x => x.UserId).IsRequired(false).OnDelete(DeleteBehavior.Cascade);
+        });
+
+        // --- Share ---
+        modelBuilder.Entity<Share>(e =>
+        {
+            e.ToTable("Shares");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).HasMaxLength(32);
+            e.Property(x => x.UserId).HasMaxLength(32).IsRequired();
+            e.Property(x => x.Name).HasMaxLength(256).IsRequired();
+            e.Property(x => x.Token).HasMaxLength(64).IsRequired();
+            e.HasIndex(x => x.Token).IsUnique();
+            e.HasIndex(x => x.UserId);
+            e.HasOne(x => x.User).WithMany().HasForeignKey(x => x.UserId).OnDelete(DeleteBehavior.Cascade);
+            e.HasQueryFilter(p => !p.IsDeleted);
+        });
+
+        // --- SharePhoto ---
+        modelBuilder.Entity<SharePhoto>(e =>
+        {
+            e.ToTable("SharePhotos");
+            e.HasKey(x => new { x.ShareId, x.PhotoId });
+            e.Property(x => x.ShareId).HasMaxLength(32);
+            e.Property(x => x.PhotoId).HasMaxLength(32);
+            e.HasOne(x => x.Share).WithMany(s => s.SharePhotos).HasForeignKey(x => x.ShareId).OnDelete(DeleteBehavior.Cascade);
+            e.HasOne(x => x.Photo).WithMany().HasForeignKey(x => x.PhotoId).OnDelete(DeleteBehavior.Cascade);
+            e.HasQueryFilter(p => !p.IsDeleted);
         });
 
         // --- SystemSetting ---

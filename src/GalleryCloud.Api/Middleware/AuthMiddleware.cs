@@ -20,6 +20,14 @@ public class AuthMiddleware
 
     public async Task InvokeAsync(HttpContext context, UserContext userContext, IOptions<AuthOptions> authOptions)
     {
+        // Skip authentication for public endpoints (e.g., share viewing)
+        var path = context.Request.Path.Value ?? "";
+        if (path.StartsWith("/api/public/", StringComparison.OrdinalIgnoreCase))
+        {
+            await _next(context);
+            return;
+        }
+
         var token = ExtractToken(context);
 
         if (!string.IsNullOrEmpty(token))
@@ -77,7 +85,11 @@ public class AuthMiddleware
         if (!string.IsNullOrEmpty(authHeader) && authHeader.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase))
             return authHeader["Bearer ".Length..].Trim();
 
-        // 2. Fallback: query parameter (for <img> tags that can't send headers)
+        // 2. Fallback: cookie (for <img> tags that can't send Authorization header)
+        if (context.Request.Cookies.TryGetValue("token", out var tokenFromCookie) && !string.IsNullOrEmpty(tokenFromCookie))
+            return tokenFromCookie;
+
+        // 3. Last resort: query parameter (deprecated, only for backward compat)
         if (context.Request.Query.TryGetValue("token", out var tokenFromQuery))
             return tokenFromQuery.ToString();
 

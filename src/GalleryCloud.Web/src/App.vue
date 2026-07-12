@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import { useDark } from './composables/useDark'
+import { initGlobalSelectionHandler } from './stores/selectionStore'
 useDark()
+initGlobalSelectionHandler()
 </script>
 
 <template>

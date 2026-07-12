@@ -1,8 +1,8 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { computed } from 'vue'
 import { useRoute } from 'vue-router'
 const route = useRoute()
-const active = ref(route.path === '/manage/scan' ? 'scan' : 'dashboard')
+const active = computed(() => route.path === '/manage/scan' ? 'scan' : 'dashboard')
 </script>
 
 <template>

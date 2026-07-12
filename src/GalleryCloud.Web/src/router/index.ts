@@ -1,5 +1,6 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import { useAuthStore } from '../stores/authStore'
+import { useSelectionStore } from '../stores/selectionStore'
 
 const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
@@ -16,6 +17,8 @@ const router = createRouter({
         { path: 'map', name: 'map', component: () => import('../views/MapView.vue') },
         { path: 'search', name: 'search', component: () => import('../views/SearchView.vue') },
         { path: 'favorites', name: 'favorites', component: () => import('../views/FavoritesView.vue') },
+        { path: 'trash', name: 'trash', component: () => import('../views/TrashView.vue') },
+        { path: 'shares', name: 'shares', component: () => import('../views/SharesView.vue') },
         {
           path: 'manage',
           component: () => import('../views/user/ManageLayout.vue'),
@@ -37,12 +40,23 @@ const router = createRouter({
         },
       ],
     },
+    { path: '/share/:token', name: 'public-share', component: () => import('../views/PublicShareView.vue'), meta: { noAuth: true } },
     { path: '/:pathMatch(.*)*', name: 'not-found', component: () => import('../views/NotFoundView.vue') },
   ],
 })
 
+router.afterEach(() => {
+  // Pinia 在 app.use(createPinia()) 时已通过 setActivePinia() 注册到全局，
+  // 所以 useSelectionStore() 在路由守卫中可以正常调用。
+  useSelectionStore().disable()
+})
+
 router.beforeEach((to, _from) => {
   const auth = useAuthStore()
+
+  // Public routes (e.g., public share) — no auth required
+  if (to.meta.noAuth) return
+
   // Admin can only access admin routes
   if (auth.isAdmin && !to.path.startsWith('/admin') && to.path !== '/login')
     return '/admin'

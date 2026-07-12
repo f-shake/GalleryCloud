@@ -139,8 +139,10 @@ public class ThumbnailService : IThumbnailService
         finally
         {
             Interlocked.Decrement(ref _inProgressCount);
+            Interlocked.Decrement(ref _queueCount);
             _queuedIds.TryRemove($"{photoId}:{size.ToString().ToLowerInvariant()}", out _);
             perPhotoLock.Release();
+            _photoLocks.TryRemove(photoId, out _);
         }
     }
 
@@ -168,6 +170,7 @@ public class ThumbnailService : IThumbnailService
             Interlocked.Decrement(ref _inProgressCount);
             _queuedIds.TryRemove($"{photoId}:{size.ToString().ToLowerInvariant()}", out _);
             perPhotoLock.Release();
+            _photoLocks.TryRemove(photoId, out _);
             semaphore.Release();
         }
     }
@@ -191,10 +194,13 @@ public class ThumbnailService : IThumbnailService
         var isPreview = sizeKey == "preview";
 
         // Photo + root (for source file path)
-        var photo = await db.Photos.FirstOrDefaultAsync(p => p.Id == photoId && !p.IsDeleted, ct);
+        // 使用 IgnoreQueryFilters 以支持已删除（回收站）照片的缩略图生成
+        var photo = await db.Photos.IgnoreQueryFilters()
+            .FirstOrDefaultAsync(p => p.Id == photoId, ct);
         if (photo == null) return null;
 
-        var root = await db.UserRoots.FirstOrDefaultAsync(r => r.Id == photo.RootId, ct);
+        var root = await db.UserRoots.IgnoreQueryFilters()
+            .FirstOrDefaultAsync(r => r.Id == photo.RootId, ct);
         if (root == null) return null;
 
         var fullPath = Path.GetFullPath(Path.Combine(root.RootPath, photo.FilePath));
@@ -284,9 +290,8 @@ public class ThumbnailService : IThumbnailService
         var dbMs = sw.ElapsedMilliseconds;
 
         CacheInMemory($"thumb:{photoId}:{sizeKey}", resultBytes);
-        var remaining = Interlocked.Decrement(ref _queueCount);
-        _logger.LogInformation("已生成缩略图 [{Size}] {PhotoId} 原图{W}x{H} 解码:{Decode}ms 编码:{Encode}ms({Size}KB) DB:{Db}ms 排队:{Queue} 并行:{Parallel}",
-            sizeKey switch { "preview" => "pre", "grid" => "grd", _ => sizeKey }, photoId[..8], srcW, srcH, decodeMs, encodeMs, resultBytes.Length / 1024, dbMs, Math.Max(0, remaining), Math.Max(0, _inProgressCount));
+        _logger.LogInformation("已生成缩略图 [{Size}] {PhotoId} 原图{W}x{H} 解码:{Decode}ms 编码:{Encode}ms({Size}KB) DB:{Db}ms",
+            sizeKey switch { "preview" => "pre", "grid" => "grd", _ => sizeKey }, photoId[..8], srcW, srcH, decodeMs, encodeMs, resultBytes.Length / 1024, dbMs);
 
         return new MemoryStream(resultBytes);
     }

@@ -26,10 +26,12 @@ public class AdminController : ControllerBase
     private readonly IStatsService _statsService;
     private readonly IFilesystemBrowserService _fsService;
     private readonly FileWatcherService _fileWatcher;
+    private readonly ILogger<AdminController> _logger;
 
     public AdminController(AppDbContext db, ThumbnailDbContext thumbDb, IScanService scanService,
         ISettingService settingService, IThumbnailService thumbnailService, IUserService userService,
-        IStatsService statsService, IFilesystemBrowserService fsService, FileWatcherService fileWatcher)
+        IStatsService statsService, IFilesystemBrowserService fsService, FileWatcherService fileWatcher,
+        ILogger<AdminController> logger)
     {
         _db = db;
         _thumbDb = thumbDb;
@@ -40,6 +42,7 @@ public class AdminController : ControllerBase
         _statsService = statsService;
         _fsService = fsService;
         _fileWatcher = fileWatcher;
+        _logger = logger;
     }
 
     // ==================== Users ====================
@@ -53,7 +56,9 @@ public class AdminController : ControllerBase
     {
         try
         {
-            return Ok(await _userService.CreateUserAsync(request));
+            var result = await _userService.CreateUserAsync(request);
+            _logger.LogInformation("创建用户: {Username} (ID={Id})", request.Username, result.Id);
+            return Ok(result);
         }
         catch (InvalidOperationException ex)
         {
@@ -81,6 +86,7 @@ public class AdminController : ControllerBase
     {
         var ok = await _userService.DisableUserAsync(id);
         if (!ok) return NotFound();
+        _logger.LogInformation("禁用用户: {UserId}", id);
         return Ok(new MessageResult("User disabled"));
     }
 
@@ -126,7 +132,10 @@ public class AdminController : ControllerBase
     public async Task<IActionResult> UpdateSettings([FromBody] Dictionary<string, string> updates)
     {
         foreach (var (key, value) in updates)
+        {
+            _logger.LogInformation("设置变更: {Key} = {Value}", key, value);
             await _settingService.SetAsync(key, value);
+        }
 
         // FileWatcher 开关即时生效
         if (updates.TryGetValue(SettingKeys.FileWatcherEnabled, out var enabled))
@@ -150,20 +159,12 @@ public class AdminController : ControllerBase
         if (_thumbnailService.RegenerationStatus.IsRunning)
             return Conflict(new ErrorResult("当前有缩略图生成任务正在运行，无法同时扫描，请稍后再试"));
 
-        _ = Task.Run(() => _scanService.TriggerFullScanForAllUsersAsync());
+        _ = Task.Run(async () =>
+        {
+            try { await _scanService.TriggerFullScanForAllUsersAsync(); }
+            catch (Exception ex) { _logger.LogError(ex, "Full scan failed"); }
+        });
         return Ok(new MessageResult("Scan started"));
-    }
-
-    [HttpPost("scan/trigger-incremental")]
-    public async Task<IActionResult> TriggerIncrementalScan()
-    {
-        if (_scanService.Status.IsRunning)
-            return Conflict(new ErrorResult("当前有扫描任务正在运行，请稍后再试"));
-        if (_thumbnailService.RegenerationStatus.IsRunning)
-            return Conflict(new ErrorResult("当前有缩略图生成任务正在运行，无法同时扫描，请稍后再试"));
-
-        _ = Task.Run(() => _scanService.TriggerFullScanForAllUsersAsync());
-        return Ok(new MessageResult("Incremental scan started"));
     }
 
     [HttpPost("scan/cancel")]
@@ -239,6 +240,7 @@ public class AdminController : ControllerBase
         var count = await _thumbDb.ThumbnailCaches.CountAsync();
         _thumbDb.ThumbnailCaches.RemoveRange(_thumbDb.ThumbnailCaches);
         await _thumbDb.SaveChangesAsync();
+        _logger.LogInformation("缩略图缓存已清除：{Count} 条记录", count);
         return Ok(new MessageResult("Cache cleared"));
     }
 

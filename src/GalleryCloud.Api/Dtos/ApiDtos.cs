@@ -172,6 +172,46 @@ public record ReadyResponse(List<string> Ready, List<string> Pending);
 public record EnqueueResponse(int Enqueued);
 
 // ============================================================
+// Shares
+// ============================================================
+
+public record ShareItem(string Id, string Name, string Token, DateTime? ExpiresAt, DateTime CreatedAt, int PhotoCount, bool AllowDownload = true, bool AllowMetadata = true);
+
+public record CreateShareRequest(string Name, int? ExpireDays, bool? AllowDownload = null, bool? AllowMetadata = null);
+
+public record ExtendShareRequest(string? Name, int? ExpireDays);
+
+public record SharePhotoItem(string Id, string FileName, string FileFormat, int? Width, int? Height);
+
+public record ShareDetailResponse(ShareItem Share, List<SharePhotoItem> Photos);
+
+public record AddPhotosToShareRequest(List<string> PhotoIds);
+
+// ============================================================
+// Trash
+// ============================================================
+
+public record TrashItem(
+    string Id,
+    string FileName,
+    string FileFormat,
+    int? Width,
+    int? Height,
+    int Orientation,
+    DateTime? TakenAt,
+    DateTime DeletedAt,
+    long FileSize
+);
+
+public record TrashListResponse(int Total, List<TrashItem> Items);
+
+// ============================================================
+// Batch
+// ============================================================
+
+public record BatchIdsRequest(List<string> Ids);
+
+// ============================================================
 // Files
 // ============================================================
 

@@ -3,14 +3,24 @@ import client from '../api/client'
 
 const isScanning = ref(false)
 let started = false
+let intervalId: ReturnType<typeof setInterval> | null = null
 
 export function useScanStatus() {
   if (!started) {
     started = true
     poll()
-    setInterval(poll, 5000)
+    intervalId = setInterval(poll, 5000)
   }
-  return { isScanning }
+
+  function stop() {
+    if (intervalId !== null) {
+      clearInterval(intervalId)
+      intervalId = null
+      started = false
+    }
+  }
+
+  return { isScanning, stop }
 }
 
 async function poll() {

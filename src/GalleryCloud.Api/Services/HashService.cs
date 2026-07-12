@@ -4,11 +4,11 @@ namespace GalleryCloud.Api.Services;
 
 public class HashService
 {
-    public static async Task<string> ComputeMd5Async(string filePath)
+    public static async Task<string> ComputeMd5Async(string filePath, CancellationToken ct = default)
     {
         using var md5 = MD5.Create();
         await using var stream = File.OpenRead(filePath);
-        var hash = await md5.ComputeHashAsync(stream);
+        var hash = await md5.ComputeHashAsync(stream, ct);
         return Convert.ToHexStringLower(hash);
     }
 

@@ -7,6 +7,7 @@ interface PendingItem {
 }
 
 const pending = ref(new Map<string, PendingItem>())
+const enqueued = new Set<string>()  // 已入队过的 ID，避免重复入队
 let debounceTimer: any = null
 let checkTimer: any = null
 
@@ -32,6 +33,7 @@ export function useThumbnailQueue() {
 
   function unregister(id: string) {
     pending.value.delete(id)
+    enqueued.delete(id)
     // Abort any in-flight fetch for this photo
     const ctrl = controllers.get(id)
     if (ctrl) { ctrl.abort(); controllers.delete(id) }
@@ -49,8 +51,12 @@ export function useThumbnailQueue() {
     const ids = [...pending.value.keys()]
 
     try {
-      // 1. Enqueue all pending IDs (triggers background generation)
-      await client.post('/thumbnails/enqueue', { ids, size: 'grid', width: 400 })
+      // 1. Enqueue only new IDs (skip already-enqueued to avoid queue inflation)
+      const newIds = ids.filter(id => !enqueued.has(id))
+      if (newIds.length > 0) {
+        await client.post('/thumbnails/enqueue', { ids: newIds, size: 'grid', width: 400 })
+        newIds.forEach(id => enqueued.add(id))
+      }
 
       // 2. Check which are ready
       const res = await client.post('/thumbnails/ready', { ids, size: 'grid', width: 400 })
@@ -89,11 +95,26 @@ export function useThumbnailQueue() {
     }
   }
 
-  return { register, unregister }
+  return { register, unregister, clearBlobCache }
+}
+
+export function clearBlobCache() {
+  // Revoke all blob URLs to free memory
+  for (const url of blobCache.values()) {
+    URL.revokeObjectURL(url)
+  }
+  blobCache.clear()
+  enqueued.clear()
+  pending.value.clear()
+  // Abort any in-flight fetches
+  for (const ctrl of controllers.values()) {
+    ctrl.abort()
+  }
+  controllers.clear()
 }
 
 async function fetchThumbnailImage(photoId: string, token: string, signal: AbortSignal): Promise<string> {
-  const url = `${API_BASE}/photos/${photoId}/thumbnail?size=grid&w=400&token=${token}`
+  const url = `${API_BASE}/photos/${photoId}/thumbnail?size=grid&w=400`
 
   for (let attempt = 0; attempt < 120; attempt++) {
     if (signal.aborted) throw new Error('aborted')

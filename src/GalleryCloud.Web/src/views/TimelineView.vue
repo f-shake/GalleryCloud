@@ -2,18 +2,24 @@
 import { ref, onMounted, onUnmounted, watch, nextTick } from 'vue'
 import { useVirtualizer } from '@tanstack/vue-virtual'
 import { usePhotoGrid } from '../composables/usePhotoGrid'
+import { useSelectionStore } from '../stores/selectionStore'
+import type { DatePreset } from '../stores/selectionStore'
 import { useTimeline, type RowItem } from '../composables/useTimeline'
 import { HEADER_HEIGHT, estimateGridRowSize } from '../composables/usePhotoGridLayout'
 import { thumbUrl } from '../composables/useThumbnailUrl'
 import { useScanStatus } from '../composables/useScanStatus'
 import { usePhotoClick } from '../composables/usePhotoClick'
+import { useLongPressSelection } from '../composables/useLongPressSelection'
 import TimeScrubber from '../components/timeline/TimeScrubber.vue'
 import PhotoGridToolbar from '../components/PhotoGridToolbar.vue'
+import BatchToolbar from '../components/BatchToolbar.vue'
 
 const { columns, groupLevel, zoomIn, zoomOut } = usePhotoGrid()
 const { isScanning } = useScanStatus()
 const tl = useTimeline()
+const selStore = useSelectionStore()
 const { onPhotoClick } = usePhotoClick(() => tl.allLoadedItems.value)
+const { onTouchStart: onLpTouchStart, onTouchMove: onLpTouchMove, onTouchEnd: onLpTouchEnd } = useLongPressSelection()
 
 const containerRef = ref<HTMLElement | null>(null)
 const rows = ref<RowItem[]>([])
@@ -171,6 +177,19 @@ watch(
 
 watch([columns, groupLevel], rebuildRows)
 
+// Sync loaded items to selection store for date-range selection
+watch(() => tl.allLoadedItems.value, (val) => {
+  selStore.setViewPhotos(val.map(p => {
+    // Convert YYYYMMDD integer to date string for date range filtering
+    let takenAt: string | null = null
+    if (p.takenAtDate) {
+      const s = String(p.takenAtDate)
+      takenAt = `${s.substring(0, 4)}-${s.substring(4, 6)}-${s.substring(6, 8)}`
+    }
+    return { id: p.id, takenAt }
+  }))
+}, { immediate: true, deep: true })
+
 function onTlResize() { virtualizer.value?.measure() }
 
 onMounted(async () => {
@@ -180,8 +199,12 @@ onMounted(async () => {
   ready.value = true
   loadVisibleDays()
   window.addEventListener('resize', onTlResize)
+  window.addEventListener('photo-hidden', onPhotoHidden)
 })
-onUnmounted(() => window.removeEventListener('resize', onTlResize))
+onUnmounted(() => {
+  window.removeEventListener('resize', onTlResize)
+  window.removeEventListener('photo-hidden', onPhotoHidden)
+})
 
 function onJumpToDate(dateStr: string) {
   const target = dateStr.substring(0, 10)
@@ -197,6 +220,66 @@ function onJumpToDate(dateStr: string) {
   }
   if (idx < 0 && rows.value.length > 0) idx = 0
   if (idx >= 0) virtualizer.value?.scrollToIndex(idx, { align: 'start' })
+}
+
+/** 该日期的所有照片是否已全选 */
+function isDayAllSelected(date: string): boolean {
+  // 优先检查 timeline 已加载的数据
+  const dd = tl.dayDensities.value.find(d => d.date === date)
+  if (dd?.ids?.length) {
+    return dd.ids.every(p => selStore.selectedIds.has(p.id))
+  }
+  // 兜底：用 viewPhotos（可能被服务端全选填充过）
+  const dayPhotos = selStore.viewPhotos.filter((p: { id: string; takenAt: string | null }) => p.takenAt?.startsWith(date))
+  if (dayPhotos.length > 0) {
+    return dayPhotos.every((p: { id: string; takenAt: string | null }) => selStore.selectedIds.has(p.id))
+  }
+  return false
+}
+
+/** 选择/取消选择指定日期的所有照片 */
+async function selectDay(date: string) {
+  await tl.loadDayIds(date)
+  const dd = tl.dayDensities.value.find(d => d.date === date)
+  if (!dd?.ids?.length) return
+  if (!selStore.enabled) selStore.enable('timeline')
+
+  const dayIds = dd.ids.map(p => p.id)
+  const allSelected = dayIds.every(id => selStore.selectedIds.has(id))
+
+  // 基于当前已选，追加或移除本日，不丢失其他天的选择
+  const newSet = new Set(selStore.selectedIds)
+  if (allSelected) {
+    for (const id of dayIds) newSet.delete(id)
+  } else {
+    for (const id of dayIds) newSet.add(id)
+  }
+  selStore.selectAll(Array.from(newSet))
+}
+
+/** 批量隐藏后刷新 timeline */
+async function onBatchHide(_hiddenIds: string[]) {
+  await tl.init()
+  await tl.loadNullDateIds()
+  await rebuildRows()
+  loadVisibleDays()
+}
+
+/** 单张隐藏后刷新 timeline */
+async function onPhotoHidden(e: Event) {
+  const id = (e as CustomEvent).detail.id
+  // 从已加载的照片中移除
+  const idx = tl.allLoadedItems.value.findIndex(p => p.id === id)
+  if (idx >= 0) {
+    tl.allLoadedItems.value.splice(idx, 1)
+    await rebuildRows()
+    loadVisibleDays()
+  }
+}
+
+/** Timeline 是懒加载，viewPhotos 不全，所以 preset 选择走服务端 */
+async function serverPreset(preset: DatePreset) {
+  await selStore.selectByDatePreset(preset, false)
 }
 
 // Map any scrollTop to a date using daily density data
@@ -277,7 +360,18 @@ function onTouchEnd() {
   <div class="tl-wrap" @touchstart="onTouchStart" @touchmove="onTouchMove" @touchend="onTouchEnd">
     <!-- Toolbar: outside scroll, always visible -->
     <div class="tl-toolbar">
-      <PhotoGridToolbar :count="tl.totalPhotos.value" />
+      <PhotoGridToolbar :count="tl.totalPhotos.value" @batch-hide="onBatchHide">
+        <template #left>
+          <template v-if="selStore.enabled">
+            <BatchToolbar @batch-hide="onBatchHide" :on-preset="serverPreset" />
+          </template>
+          <template v-else>
+            <el-button text size="small" @click="selStore.enable('timeline')">
+              <el-icon><Select /></el-icon>选择
+            </el-button>
+          </template>
+        </template>
+      </PhotoGridToolbar>
     </div>
 
     <!-- Date header overlay (outside scroll area, doesn't affect virtualizer) -->
@@ -295,8 +389,9 @@ function onTouchEnd() {
           :style="{ position: 'absolute', top: 0, left: 0, width: '100%', height: vItem.size + 'px', transform: `translateY(${vItem.start}px)` }"
         >
           <template v-if="(rows[vItem.index] as RowItem).type === 'header'">
-            <div style="padding:6px 16px 4px 16px">
+            <div style="padding:6px 16px 4px 16px;display:flex;align-items:center;gap:8px;flex-wrap:wrap">
               <el-tag type="info" size="large">{{ (rows[vItem.index] as any).label }}</el-tag>
+              <el-button v-if="selStore.enabled" text size="small" @click="selectDay((rows[vItem.index] as any).date)">{{ isDayAllSelected((rows[vItem.index] as any).date) ? '全不选' : '全选' }}</el-button>
             </div>
           </template>
           <template v-else>
@@ -309,8 +404,17 @@ function onTouchEnd() {
                   v-for="p in (rows[vItem.index] as any).photos"
                   :key="p.id"
                   class="thumb-cell"
-                  @click="onPhotoClick(p.id, $event)"
+                  :class="{ 'thumb-cell--selected': selStore.enabled && selStore.selectedIds.has(p.id) }"
+                  @click="selStore.enabled ? selStore.toggle(p.id) : onPhotoClick(p.id, $event)"
+                  @touchstart.passive="selStore.enabled ? undefined : onLpTouchStart($event, p.id)"
+                  @touchmove="selStore.enabled ? undefined : onLpTouchMove"
+                  @touchend="selStore.enabled ? undefined : onLpTouchEnd"
                 >
+                  <div v-if="selStore.enabled" class="thumb-cell-check" :class="{ 'thumb-cell-check--on': selStore.selectedIds.has(p.id) }">
+                    <svg v-if="selStore.selectedIds.has(p.id)" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
+                      <polyline points="5,12 10,17 19,8" />
+                    </svg>
+                  </div>
                   <img v-lazy-img="thumbUrl(p.id, 'grid', 400)" class="thumb-img" />
                 </div>
               </template>
@@ -373,6 +477,18 @@ function onTouchEnd() {
 .thumb-cell.skeleton {
   border-radius: 4px;
 }
+.thumb-cell--selected { outline: 3px solid var(--el-color-primary); outline-offset: -3px; border-radius: 4px; }
+.thumb-cell { position: relative; }
+.thumb-cell-check {
+  position: absolute; top: 6px; left: 6px; z-index: 2;
+  width: 22px; height: 22px; border-radius: 50%;
+  border: 2px solid rgba(255,255,255,0.9);
+  background: rgba(0,0,0,0.3);
+  display: flex; align-items: center; justify-content: center;
+  transition: background .15s;
+  pointer-events: none;
+}
+.thumb-cell-check--on { background: var(--el-color-primary); border-color: var(--el-color-primary); }
 
 /* Date header overlay — outside scroll area, absolute positioned */
 .tl-overlay-header {

@@ -8,6 +8,7 @@ using GalleryCloud.Core.Settings;
 using Microsoft.EntityFrameworkCore;
 using Serilog;
 using Microsoft.AspNetCore.ResponseCompression;
+using Microsoft.Extensions.Options;
 // Serilog: 控制台输出 + 按天滚动文件到 App_Data/logs/
 Log.Logger = new LoggerConfiguration()
     .MinimumLevel.Information()
@@ -32,7 +33,13 @@ var connectionString = builder.Configuration.GetConnectionString("Default")
 var thumbConnectionString = builder.Configuration.GetConnectionString("Thumbnails")
     ?? "Data Source=App_Data/thumbnails.db";
 
-builder.Services.Configure<AuthOptions>(builder.Configuration.GetSection("Auth"));
+builder.Services.AddOptions<AuthOptions>()
+    .Bind(builder.Configuration.GetSection("Auth"))
+    .ValidateDataAnnotations()
+    .Validate(ao => builder.Environment.IsDevelopment()
+        || (ao.JwtSecret != AuthOptions.DefaultJwtSecret && ao.AdminDefaultPassword != AuthOptions.DefaultAdminPassword),
+        "Auth:JwtSecret and Auth:AdminDefaultPassword must not be default placeholders in production.")
+    .ValidateOnStart();
 builder.Services.AddDbContext<AppDbContext>(options =>
     options.UseSqlite(connectionString));
 builder.Services.AddDbContext<ThumbnailDbContext>(options =>
@@ -60,6 +67,7 @@ builder.Services.AddScoped<UserContext>();
 builder.Services.AddScoped<IUserContext>(sp => sp.GetRequiredService<UserContext>());
 
 // Application services (singletons for in-memory state)
+builder.Services.AddScoped<ShareService>();
 builder.Services.AddSingleton<IScanService, ScanService>();
 builder.Services.AddSingleton<IThumbnailService, ThumbnailService>();
 

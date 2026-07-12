@@ -55,6 +55,8 @@ const navItems = computed(() => {
     { path: '/map', title: '地图', icon: 'MapLocation' },
     { path: '/search', title: '搜索', icon: 'Search' },
     { path: '/favorites', title: '收藏', icon: 'Star' },
+    { path: '/trash', title: '回收站', icon: 'Delete' },
+    { path: '/shares', title: '分享', icon: 'Share' },
     { path: '/manage', title: '管理', icon: 'Setting' },
   ]
 })
@@ -216,9 +218,7 @@ html, body, #app { margin:0; height:100%; }
 .app-main {
   background: var(--el-bg-color-page);
   overflow-y: auto;
-  scrollbar-width: none;
   position: relative; /* anchor for absolute children */
   padding: 0;
 }
-.app-main::-webkit-scrollbar { display: none; }
 </style>
