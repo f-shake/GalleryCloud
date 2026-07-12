@@ -26,10 +26,12 @@ public class AdminController : ControllerBase
     private readonly IStatsService _statsService;
     private readonly IFilesystemBrowserService _fsService;
     private readonly FileWatcherService _fileWatcher;
+    private readonly ILogger<AdminController> _logger;
 
     public AdminController(AppDbContext db, ThumbnailDbContext thumbDb, IScanService scanService,
         ISettingService settingService, IThumbnailService thumbnailService, IUserService userService,
-        IStatsService statsService, IFilesystemBrowserService fsService, FileWatcherService fileWatcher)
+        IStatsService statsService, IFilesystemBrowserService fsService, FileWatcherService fileWatcher,
+        ILogger<AdminController> logger)
     {
         _db = db;
         _thumbDb = thumbDb;
@@ -40,6 +42,7 @@ public class AdminController : ControllerBase
         _statsService = statsService;
         _fsService = fsService;
         _fileWatcher = fileWatcher;
+        _logger = logger;
     }
 
     // ==================== Users ====================
@@ -150,20 +153,12 @@ public class AdminController : ControllerBase
         if (_thumbnailService.RegenerationStatus.IsRunning)
             return Conflict(new ErrorResult("当前有缩略图生成任务正在运行，无法同时扫描，请稍后再试"));
 
-        _ = Task.Run(() => _scanService.TriggerFullScanForAllUsersAsync());
+        _ = Task.Run(async () =>
+        {
+            try { await _scanService.TriggerFullScanForAllUsersAsync(); }
+            catch (Exception ex) { _logger.LogError(ex, "Full scan failed"); }
+        });
         return Ok(new MessageResult("Scan started"));
-    }
-
-    [HttpPost("scan/trigger-incremental")]
-    public async Task<IActionResult> TriggerIncrementalScan()
-    {
-        if (_scanService.Status.IsRunning)
-            return Conflict(new ErrorResult("当前有扫描任务正在运行，请稍后再试"));
-        if (_thumbnailService.RegenerationStatus.IsRunning)
-            return Conflict(new ErrorResult("当前有缩略图生成任务正在运行，无法同时扫描，请稍后再试"));
-
-        _ = Task.Run(() => _scanService.TriggerFullScanForAllUsersAsync());
-        return Ok(new MessageResult("Incremental scan started"));
     }
 
     [HttpPost("scan/cancel")]

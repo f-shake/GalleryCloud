@@ -3,8 +3,7 @@ import { API_BASE } from '../api/client'
 const retryInterval = 1200 // ms
 
 export function thumbUrl(photoId: string, size = 'grid', width = 400): string {
-  const token = localStorage.getItem('token') || ''
-  return `${API_BASE}/photos/${photoId}/thumbnail?size=${size}&w=${width}&token=${token}`
+  return `${API_BASE}/photos/${photoId}/thumbnail?size=${size}&w=${width}`
 }
 
 export function publicThumbUrl(shareToken: string, photoId: string, size = 'grid', width = 400): string {

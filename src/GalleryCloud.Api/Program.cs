@@ -32,7 +32,10 @@ var connectionString = builder.Configuration.GetConnectionString("Default")
 var thumbConnectionString = builder.Configuration.GetConnectionString("Thumbnails")
     ?? "Data Source=App_Data/thumbnails.db";
 
-builder.Services.Configure<AuthOptions>(builder.Configuration.GetSection("Auth"));
+builder.Services.AddOptions<AuthOptions>()
+    .Bind(builder.Configuration.GetSection("Auth"))
+    .ValidateDataAnnotations()
+    .ValidateOnStart();
 builder.Services.AddDbContext<AppDbContext>(options =>
     options.UseSqlite(connectionString));
 builder.Services.AddDbContext<ThumbnailDbContext>(options =>

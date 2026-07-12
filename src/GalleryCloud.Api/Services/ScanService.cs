@@ -40,9 +40,6 @@ public class ScanService : IScanService
     public Task TriggerFullScanAsync(string userId, CancellationToken ct = default)
         => RunWithStatusLockedAsync(userId, ScanMode.Full, ct);
 
-    public Task TriggerIncrementalScanAsync(string userId, CancellationToken ct = default)
-        => RunWithStatusLockedAsync(userId, ScanMode.Incremental, ct);
-
     public async Task TriggerFullScanForAllUsersAsync(CancellationToken ct = default)
     {
         CancellationTokenSource? cts;

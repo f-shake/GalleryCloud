@@ -28,5 +28,8 @@ App_Data/
 **/Data/thumbnails/
 **/Data/*.db*
 
+# Tooling
+.omo/
+
 # Publish
 publish/

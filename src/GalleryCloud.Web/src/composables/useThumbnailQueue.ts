@@ -99,7 +99,7 @@ export function useThumbnailQueue() {
 }
 
 async function fetchThumbnailImage(photoId: string, token: string, signal: AbortSignal): Promise<string> {
-  const url = `${API_BASE}/photos/${photoId}/thumbnail?size=grid&w=400&token=${token}`
+  const url = `${API_BASE}/photos/${photoId}/thumbnail?size=grid&w=400`
 
   for (let attempt = 0; attempt < 120; attempt++) {
     if (signal.aborted) throw new Error('aborted')

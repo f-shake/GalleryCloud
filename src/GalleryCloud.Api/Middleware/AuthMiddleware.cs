@@ -85,7 +85,11 @@ public class AuthMiddleware
         if (!string.IsNullOrEmpty(authHeader) && authHeader.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase))
             return authHeader["Bearer ".Length..].Trim();
 
-        // 2. Fallback: query parameter (for <img> tags that can't send headers)
+        // 2. Fallback: cookie (for <img> tags that can't send Authorization header)
+        if (context.Request.Cookies.TryGetValue("token", out var tokenFromCookie) && !string.IsNullOrEmpty(tokenFromCookie))
+            return tokenFromCookie;
+
+        // 3. Last resort: query parameter (deprecated, only for backward compat)
         if (context.Request.Query.TryGetValue("token", out var tokenFromQuery))
             return tokenFromQuery.ToString();
 
