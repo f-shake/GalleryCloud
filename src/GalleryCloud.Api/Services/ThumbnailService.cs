@@ -142,6 +142,7 @@ public class ThumbnailService : IThumbnailService
             Interlocked.Decrement(ref _queueCount);
             _queuedIds.TryRemove($"{photoId}:{size.ToString().ToLowerInvariant()}", out _);
             perPhotoLock.Release();
+            _photoLocks.TryRemove(photoId, out _);
         }
     }
 
@@ -169,6 +170,7 @@ public class ThumbnailService : IThumbnailService
             Interlocked.Decrement(ref _inProgressCount);
             _queuedIds.TryRemove($"{photoId}:{size.ToString().ToLowerInvariant()}", out _);
             perPhotoLock.Release();
+            _photoLocks.TryRemove(photoId, out _);
             semaphore.Release();
         }
     }
