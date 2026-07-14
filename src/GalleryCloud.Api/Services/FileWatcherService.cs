@@ -15,6 +15,7 @@ public class FileWatcherService : BackgroundService
     private readonly ILogger<FileWatcherService> _logger;
     private readonly ConcurrentDictionary<string, FileSystemWatcher> _watchers = new();
     private readonly Channel<FileEvent> _eventChannel = Channel.CreateBounded<FileEvent>(10000);
+    private HashSet<string> _supportedFormats = [];
 
     public FileWatcherService(IServiceScopeFactory scopeFactory, ISettingService settings, ILogger<FileWatcherService> logger)
     {
@@ -23,8 +24,17 @@ public class FileWatcherService : BackgroundService
         _logger = logger;
     }
 
+    private async Task LoadSupportedFormatsAsync()
+    {
+        var raw = await _settings.GetAsync(SettingKeys.ScanSupportedFormats) ?? string.Empty;
+        _supportedFormats = raw.Split(',')
+            .Select(SettingKeys.NormalizeFormat)
+            .ToHashSet();
+    }
+
     public async Task InitializeAsync()
     {
+        await LoadSupportedFormatsAsync();
         var enabled = await _settings.GetAsync(SettingKeys.FileWatcherEnabled, true);
         if (!enabled) return;
 
@@ -99,6 +109,9 @@ public class FileWatcherService : BackgroundService
 
     private void Enqueue(string userId, string rootId, string rootPath, string changeType, string fullPath, string? oldPath = null)
     {
+        var ext = Path.GetExtension(fullPath).ToLowerInvariant();
+        if (ext.Length > 0 && !_supportedFormats.Contains(ext)) return;
+
         var relative = fullPath[rootPath.Length..].TrimStart(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
         if (oldPath != null)
         {
@@ -167,9 +180,7 @@ public class FileWatcherService : BackgroundService
     {
         using var scope = _scopeFactory.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-
-        var formatsStr = await _settings.GetAsync(SettingKeys.ScanSupportedFormats) ?? ".jpg,.jpeg,.heic,.avif,.png,.webp";
-        var supportedFormats = formatsStr.Split(',').Select(SettingKeys.NormalizeFormat).ToHashSet();
+        var savedCount = 0;
 
         foreach (var evt in events)
         {
@@ -177,34 +188,42 @@ public class FileWatcherService : BackgroundService
                 .TrimStart(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar).Replace('\\', '/');
 
             var ext = Path.GetExtension(relativePath).ToLowerInvariant();
-            if (!supportedFormats.Contains(ext)) continue;
+            if (ext.Length > 0 && !_supportedFormats.Contains(ext)) continue;
 
             switch (evt.ChangeType)
             {
                 case "created":
                 case "changed":
-                    await HandleAddOrUpdate(db, evt.UserId, evt.RootId, evt.RootPath, relativePath, evt.FullPath, ct);
+                    savedCount += await HandleAddOrUpdate(db, evt.UserId, evt.RootId, evt.RootPath, relativePath, evt.FullPath, ct);
                     break;
 
                 case "deleted":
-                    await HandleDelete(db, evt.UserId, evt.RootId, relativePath, ct);
+                    savedCount += await HandleDelete(db, evt.UserId, evt.RootId, relativePath, ct);
                     break;
 
                 case "renamed" when evt.OldPath != null:
                     var oldRelative = evt.OldPath[evt.RootPath.Length..]
                         .TrimStart(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar).Replace('\\', '/');
-                    await HandleRename(db, evt.UserId, evt.RootId, oldRelative, relativePath, evt.FullPath, ct);
+                    savedCount += await HandleRename(db, evt.UserId, evt.RootId, oldRelative, relativePath, evt.FullPath, ct);
                     break;
             }
         }
+
+        if (savedCount > 0)
+        {
+            ct.ThrowIfCancellationRequested();
+            await db.SaveChangesAsync(ct);
+            _logger.LogInformation("FileWatcher batch saved {Count} changes", savedCount);
+        }
     }
 
-    private async Task HandleAddOrUpdate(AppDbContext db, string userId, string rootId, string rootPath,
+    /// <returns>1 if a change was made, 0 if skipped</returns>
+    private async Task<int> HandleAddOrUpdate(AppDbContext db, string userId, string rootId, string rootPath,
         string relativePath, string fullPath, CancellationToken ct)
     {
         try
         {
-            if (!File.Exists(fullPath)) return;
+            if (!File.Exists(fullPath)) return 0;
 
             var fileInfo = new FileInfo(fullPath);
             var exifEngine = await _settings.GetAsync(SettingKeys.ImageProcessingEngine, "ImageSharp");
@@ -239,6 +258,7 @@ public class FileWatcherService : BackgroundService
                 };
                 db.Photos.Add(photo);
                 _logger.LogInformation("FileWatcher created: {Path}", relativePath);
+                return 1;
             }
             else
             {
@@ -261,17 +281,18 @@ public class FileWatcherService : BackgroundService
                 photo.DeletedAt = null;
                 photo.UpdatedAt = DateTime.UtcNow;
                 _logger.LogInformation("FileWatcher updated: {Path}", relativePath);
+                return 1;
             }
-
-            await db.SaveChangesAsync(ct);
         }
         catch (Exception ex)
         {
             _logger.LogWarning(ex, "Error processing file: {Path}", fullPath);
+            return 0;
         }
     }
 
-    private async Task HandleDelete(AppDbContext db, string userId, string rootId, string relativePath, CancellationToken ct)
+    /// <returns>1 if a change was made, 0 if skipped</returns>
+    private async Task<int> HandleDelete(AppDbContext db, string userId, string rootId, string relativePath, CancellationToken ct)
     {
         var photo = await db.Photos
             .FirstOrDefaultAsync(p => p.UserId == userId && p.RootId == rootId && p.FilePath == relativePath && !p.IsDeleted, ct);
@@ -281,24 +302,26 @@ public class FileWatcherService : BackgroundService
             photo.IsDeleted = true;
             photo.DeletedAt = DateTime.UtcNow;
             photo.UpdatedAt = DateTime.UtcNow;
-            await db.SaveChangesAsync(ct);
             _logger.LogInformation("FileWatcher deleted: {Path}", relativePath);
+            return 1;
         }
+        return 0;
     }
 
-    private async Task HandleRename(AppDbContext db, string userId, string rootId, string oldPath,
+    /// <returns>1 if a change was made, 0 if skipped</returns>
+    private async Task<int> HandleRename(AppDbContext db, string userId, string rootId, string oldPath,
         string newPath, string fullPath, CancellationToken ct)
     {
         var photo = await db.Photos
             .FirstOrDefaultAsync(p => p.UserId == userId && p.RootId == rootId && p.FilePath == oldPath, ct);
 
-        if (photo == null) return;
+        if (photo == null) return 0;
 
         photo.FilePath = newPath;
         photo.FileName = Path.GetFileName(newPath);
         photo.UpdatedAt = DateTime.UtcNow;
-        await db.SaveChangesAsync(ct);
         _logger.LogInformation("FileWatcher renamed: {OldPath} → {NewPath}", oldPath, newPath);
+        return 1;
     }
 
     private static string GetEventKey(FileEvent evt) => $"{evt.UserId}|{evt.RootId}|{evt.FullPath}";
